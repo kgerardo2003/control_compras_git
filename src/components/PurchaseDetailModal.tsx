@@ -80,10 +80,10 @@ export const PurchaseDetailModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsReportModalOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-black text-xs font-bold transition-all shadow-xs border border-slate-300 flex items-center gap-1.5 cursor-pointer"
                 title="Generar Boleta Oficial Imprimible"
               >
-                <Printer className="w-3.5 h-3.5" />
+                <Printer className="w-3.5 h-3.5 text-black" />
                 <span className="hidden sm:inline">Boleta Oficial</span>
               </button>
 
@@ -284,13 +284,20 @@ export const PurchaseDetailModal: React.FC = () => {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Evaluado por la GIT:
                 </span>
-                <span className={`inline-block mt-0.5 px-2.5 py-0.5 rounded text-xs font-bold ${
-                  selectedPurchase.evaluadoGIT === 'Sí' 
-                    ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' 
-                    : 'text-slate-600 bg-slate-100 border border-slate-200'
-                }`}>
-                  {selectedPurchase.evaluadoGIT === 'Sí' ? 'Sí (Evaluado por la GIT)' : 'No (No evaluado por la GIT)'}
-                </span>
+                <div className="mt-0.5">
+                  <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-bold ${
+                    selectedPurchase.evaluadoGIT === 'Sí' 
+                      ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' 
+                      : 'text-slate-600 bg-slate-100 border border-slate-200'
+                  }`}>
+                    {selectedPurchase.evaluadoGIT === 'Sí' ? 'Sí (Evaluado por la GIT)' : 'No (No evaluado por la GIT)'}
+                  </span>
+                  {selectedPurchase.evaluadoGIT === 'Sí' && selectedPurchase.fechaDictamenGIT && (
+                    <span className="block text-[11px] font-semibold text-slate-600 mt-1">
+                      Fecha de Dictamen: <strong className="text-slate-900 font-mono">{formatDate(selectedPurchase.fechaDictamenGIT)}</strong>
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -359,7 +366,7 @@ export const PurchaseDetailModal: React.FC = () => {
             <button
               type="button"
               onClick={() => setSelectedPurchase(null)}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-white text-black hover:bg-slate-100 border border-slate-300 shadow-2xs transition-colors cursor-pointer"
             >
               Cerrar
             </button>
@@ -368,9 +375,9 @@ export const PurchaseDetailModal: React.FC = () => {
               <button
                 type="button"
                 onClick={handleEditFromDetail}
-                className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+                className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 shadow-xs text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
               >
-                <Edit className="w-3.5 h-3.5" />
+                <Edit className="w-3.5 h-3.5 text-black" />
                 <span>Editar Adquisición</span>
               </button>
             )}

@@ -82,9 +82,9 @@ export const AuditLogView: React.FC = () => {
           id="btn-export-audit-csv"
           type="button"
           onClick={handleExportAuditCSV}
-          className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
         >
-          <FileSpreadsheet className="w-4 h-4 text-amber-400" />
+          <FileSpreadsheet className="w-4 h-4 text-black" />
           <span>Exportar Bitácora CSV</span>
         </button>
       </div>
@@ -290,7 +290,7 @@ export const AuditLogView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedEntry(null)}
-                className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded-lg hover:bg-slate-800"
+                className="px-4 py-2 bg-white text-black border border-slate-300 font-bold text-xs rounded-xl hover:bg-slate-100 shadow-2xs cursor-pointer"
               >
                 Cerrar Inspector
               </button>

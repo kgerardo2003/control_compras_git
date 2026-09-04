@@ -404,13 +404,13 @@ export const UsersView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => { setIsNewUserModalOpen(false); setEditingUser(null); }}
-                  className="px-3 py-1.5 text-slate-600 font-semibold"
+                  className="px-3.5 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs cursor-pointer shadow-2xs"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className={`px-4 py-2 ${themeConfig.primaryBtn} text-white font-bold rounded-lg shadow-xs cursor-pointer`}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs shadow-2xs cursor-pointer"
                 >
                   {editingUser ? 'Actualizar Usuario' : 'Guardar Usuario'}
                 </button>

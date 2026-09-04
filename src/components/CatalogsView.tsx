@@ -102,9 +102,9 @@ export const CatalogsView: React.FC = () => {
             id="btn-create-catalog"
             type="button"
             onClick={() => setIsNewCatModalOpen(true)}
-            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
           >
-            <PlusCircle className="w-4 h-4" />
+            <PlusCircle className="w-4 h-4 text-black" />
             <span>Crear Catálogo</span>
           </button>
         )}
@@ -190,9 +190,9 @@ export const CatalogsView: React.FC = () => {
                     id="btn-add-catalog-item"
                     type="button"
                     onClick={() => setIsNewItemModalOpen(true)}
-                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1 self-start sm:self-auto cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1 self-start sm:self-auto cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-3.5 h-3.5 text-black" />
                     <span>Agregar Elemento</span>
                   </button>
                 )}
@@ -389,13 +389,13 @@ export const CatalogsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsNewCatModalOpen(false)}
-                  className="px-3 py-1.5 text-slate-600 font-semibold"
+                  className="px-3.5 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs cursor-pointer shadow-2xs"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-xs"
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs shadow-2xs cursor-pointer"
                 >
                   Guardar Catálogo
                 </button>
@@ -466,13 +466,13 @@ export const CatalogsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsNewItemModalOpen(false)}
-                  className="px-3 py-1.5 text-slate-600 font-semibold"
+                  className="px-3.5 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs cursor-pointer shadow-2xs"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-xs"
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs shadow-2xs cursor-pointer"
                 >
                   Guardar Opción
                 </button>

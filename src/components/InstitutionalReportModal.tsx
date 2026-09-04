@@ -29,9 +29,9 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
-              <Printer className="w-3.5 h-3.5" />
+              <Printer className="w-3.5 h-3.5 text-black" />
               <span>Imprimir Boleta</span>
             </button>
             <button
@@ -97,7 +97,11 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
                   <td className="border border-slate-300 p-2 font-bold text-slate-700">Monto Estimado / Adjudicado:</td>
                   <td className="border border-slate-300 p-2 font-bold text-slate-900 font-mono text-sm">{formatQuetzales(purchase.monto)}</td>
                   <td className="border border-slate-300 p-2 font-bold text-slate-700">Evaluado por la GIT:</td>
-                  <td className="border border-slate-300 p-2 font-bold">{purchase.evaluadoGIT === 'Sí' ? 'SÍ (Dictamen Favorable)' : 'NO'}</td>
+                  <td className="border border-slate-300 p-2 font-bold">
+                    {purchase.evaluadoGIT === 'Sí' 
+                      ? `SÍ (Dictamen Favorable${purchase.fechaDictamenGIT ? ` - Fecha: ${formatDate(purchase.fechaDictamenGIT)}` : ''})` 
+                      : 'NO'}
+                  </td>
                 </tr>
                 <tr>
                   <td className="border border-slate-300 p-2 font-bold text-slate-700">Área Solicitante (GIT):</td>

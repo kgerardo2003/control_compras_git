@@ -36,6 +36,7 @@ export const ReportsView: React.FC = () => {
       'Fecha Autorizado': p.fechaAutorizado,
       'Fecha Publicación': p.fechaPublicacion,
       'Fecha Ofertas': p.fechaOfertas,
+      'Fecha Dictamen GIT': p.fechaDictamenGIT || 'N/A',
       'Cantidad Ofertas': p.cantidadOfertas,
       'Monto (GTQ)': p.monto,
       'Evaluado por GIT': p.evaluadoGIT,
@@ -68,18 +69,18 @@ export const ReportsView: React.FC = () => {
             id="btn-print-report"
             type="button"
             onClick={handlePrint}
-            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            <Printer className="w-4 h-4" />
+            <Printer className="w-4 h-4 text-black" />
             <span>Imprimir</span>
           </button>
           <button
             id="btn-export-full-report-csv"
             type="button"
             onClick={handleExportFullCSV}
-            className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            <FileSpreadsheet className="w-4 h-4 text-amber-400" />
+            <FileSpreadsheet className="w-4 h-4 text-black" />
             <span>Descargar CSV</span>
           </button>
         </div>

@@ -71,9 +71,9 @@ export const AdminAccessGate: React.FC<AdminAccessGateProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-sm transition-all duration-150 cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold text-xs rounded-xl shadow-2xs transition-all duration-150 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4 text-black" />
             <span>Volver al Panel Principal</span>
           </button>
         </div>

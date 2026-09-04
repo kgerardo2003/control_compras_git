@@ -124,7 +124,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (adminIndex >= 0) {
           parsed[adminIndex].nombreCompleto = 'Lic. Kevin Gerarado López de León';
           parsed[adminIndex].email = 'klopez@oj.gob.gt';
-          parsed[adminIndex].password = 'Jslb16042015@@';
+          parsed[adminIndex].password = 'Guate2026*';
           parsed[adminIndex].rol = 'administrador';
           parsed[adminIndex].cargo = 'Gerente de Informática y Telecomunicaciones';
           parsed[adminIndex].departamento = 'Gerencia de Informática - OJ';
@@ -221,7 +221,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (parsed && parsed.username && parsed.username.toLowerCase() === 'admin') {
             parsed.nombreCompleto = 'Lic. Kevin Gerarado López de León';
             parsed.email = 'klopez@oj.gob.gt';
-            parsed.password = 'Jslb16042015@@';
+            parsed.password = 'Guate2026*';
             parsed.cargo = 'Gerente de Informática y Telecomunicaciones';
             parsed.departamento = 'Gerencia de Informática - OJ';
           }
@@ -377,7 +377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'La cuenta de usuario se encuentra suspendida o inactiva.' };
     }
 
-    const expectedPassword = user.username.toLowerCase() === 'admin' ? 'Jslb16042015@@' : user.password;
+    const expectedPassword = user.username.toLowerCase() === 'admin' ? 'Guate2026*' : user.password;
     if (password && expectedPassword && password !== expectedPassword) {
       return { success: false, message: 'Contraseña institucional incorrecta.' };
     }

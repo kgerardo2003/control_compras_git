@@ -99,9 +99,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
               id="btn-sidebar-new-purchase"
               type="button"
               onClick={handleNewPurchaseClick}
-              className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg ${themeConfig.primaryBtn} font-bold text-xs transition-all duration-150 active:scale-[0.98] cursor-pointer shadow-xs`}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold text-xs transition-all duration-150 active:scale-[0.98] cursor-pointer shadow-md"
             >
-              <PlusCircle className="w-4 h-4" />
+              <PlusCircle className="w-4 h-4 text-black" />
               <span>+ Nueva Adquisición</span>
             </button>
           ) : (

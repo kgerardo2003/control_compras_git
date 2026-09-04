@@ -41,6 +41,7 @@ export interface PurchaseRecord {
   cantidadOfertas: number;  // Numeric >= 0
   monto: number;            // Quetzales (GTQ)
   evaluadoGIT: EvaluacionGIT; // Sí | No
+  fechaDictamenGIT?: string; // Fecha en que se realizó el dictamen técnico por la GIT (YYYY-MM-DD)
   estatusEvento: string;    // Evaluación | Adjudicación | Prescindido | Desierto or custom
   areaSolicitante?: string;
   categoriaTecnologica?: string;

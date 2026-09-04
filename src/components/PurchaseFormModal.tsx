@@ -81,6 +81,7 @@ export const PurchaseFormModal: React.FC = () => {
   const [monto, setMonto] = useState<number | ''>('');
   const [montoInput, setMontoInput] = useState<string>('');
   const [evaluadoGIT, setEvaluadoGIT] = useState<EvaluacionGIT>('Sí');
+  const [fechaDictamenGIT, setFechaDictamenGIT] = useState<string>('');
   const [estatusEvento, setEstatusEvento] = useState<string>('Evaluación');
   const [areaSolicitante, setAreaSolicitante] = useState('Soporte técnico');
   const [categoriaTecnologica, setCategoriaTecnologica] = useState('');
@@ -150,6 +151,7 @@ export const PurchaseFormModal: React.FC = () => {
       setMonto(purchaseToEdit.monto ?? '');
       setMontoInput(purchaseToEdit.monto !== undefined && purchaseToEdit.monto !== null && purchaseToEdit.monto !== '' ? formatMontoMask(purchaseToEdit.monto) : '');
       setEvaluadoGIT(purchaseToEdit.evaluadoGIT || 'Sí');
+      setFechaDictamenGIT(purchaseToEdit.fechaDictamenGIT || '');
       setEstatusEvento(purchaseToEdit.estatusEvento || 'Evaluación');
       setAreaSolicitante(purchaseToEdit.areaSolicitante || areaOptions[0] || 'Soporte técnico');
       setCategoriaTecnologica(purchaseToEdit.categoriaTecnologica || categoryOptions[0] || '');
@@ -172,6 +174,7 @@ export const PurchaseFormModal: React.FC = () => {
       setCantidadOfertas(0);
       setMonto('');
       setEvaluadoGIT('Sí');
+      setFechaDictamenGIT('');
       setEstatusEvento('Evaluación');
       setAreaSolicitante(areaOptions[0] || 'Soporte técnico');
       setCategoriaTecnologica(categoryOptions[0] || 'Servidores y Almacenamiento');
@@ -232,64 +235,57 @@ export const PurchaseFormModal: React.FC = () => {
     }
   };
 
-  // Manejador de la máscara de entrada para montos: 000,000,000.00
+  // Función para ingresar montos de derecha a izquierda con decimales automáticos (máscara 000,000,000.00)
+  const formatMontoRTL = (digits: string): { display: string; value: number | '' } => {
+    // Truncar a máximo 11 dígitos numéricos (9 enteros + 2 decimales = 999,999,999.99)
+    const cleanDigits = digits.replace(/\D/g, '').slice(-11);
+    if (!cleanDigits || parseInt(cleanDigits, 10) === 0) {
+      return { display: '', value: '' };
+    }
+    const cents = parseInt(cleanDigits, 10);
+    const numValue = cents / 100;
+    const parts = numValue.toFixed(2).split('.');
+    const integerWithCommas = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return {
+      display: `${integerWithCommas}.${parts[1]}`,
+      value: numValue,
+    };
+  };
+
+  // Manejador de entrada de derecha a izquierda con decimales automáticos
   const handleMontoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
-    
-    // Si el usuario vació el campo completamente
-    if (!raw.trim()) {
+    const digitsOnly = raw.replace(/\D/g, '');
+    if (!digitsOnly || parseInt(digitsOnly, 10) === 0) {
       setMontoInput('');
       setMonto('');
       return;
     }
-
-    // Filtrar caracteres: sólo números, coma y punto
-    let cleaned = raw.replace(/[^\d.,]/g, '');
-
-    // Detectar si el usuario colocó coma o punto como decimal al final
-    const isEndingWithSeparator = cleaned.endsWith('.') || cleaned.endsWith(',');
-
-    // Remover comas para procesar la secuencia pura
-    const withoutCommas = cleaned.replace(/,/g, '');
-
-    // Separar parte entera y decimal
-    const parts = withoutCommas.split('.');
-    let integerDigits = (parts[0] || '').replace(/\D/g, '');
-    
-    // Limitar parte entera a 9 dígitos (máscara 000,000,000)
-    if (integerDigits.length > 9) {
-      integerDigits = integerDigits.slice(0, 9);
-    }
-
-    let decimalDigits = parts.length > 1 ? parts[1].replace(/\D/g, '').slice(0, 2) : undefined;
-
-    // Formatear la parte entera con comas de millares
-    const formattedInteger = integerDigits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-
-    // Armar el string de visualización respetando la máscara
-    let display = formattedInteger;
-    if (isEndingWithSeparator && parts.length === 1) {
-      display = `${formattedInteger}.`;
-    } else if (decimalDigits !== undefined) {
-      display = `${formattedInteger}.${decimalDigits}`;
-    }
-
+    const { display, value } = formatMontoRTL(digitsOnly);
     setMontoInput(display);
+    setMonto(value);
+  };
 
-    // Calcular valor numérico real
-    if (integerDigits === '' && (decimalDigits === undefined || decimalDigits === '')) {
-      setMonto('');
-    } else {
-      const numString = decimalDigits !== undefined ? `${integerDigits || '0'}.${decimalDigits}` : integerDigits;
-      const parsed = parseFloat(numString);
-      setMonto(isNaN(parsed) ? '' : parsed);
+  const handleMontoPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text');
+    if (!pasted) return;
+    const cleaned = pasted.replace(/[^\d.,]/g, '').replace(/,/g, '');
+    const parsed = parseFloat(cleaned);
+    if (!isNaN(parsed) && parsed >= 0) {
+      const cents = Math.round(parsed * 100);
+      const { display, value } = formatMontoRTL(String(cents));
+      setMontoInput(display);
+      setMonto(value);
     }
   };
 
   // Al desenfocar el campo (onBlur), auto-formatear con dos decimales exactos
   const handleMontoBlur = () => {
-    if (monto !== '' && !isNaN(Number(monto))) {
-      setMontoInput(formatMontoMask(Number(monto)));
+    if (monto !== '' && !isNaN(Number(monto)) && Number(monto) > 0) {
+      const parts = Number(monto).toFixed(2).split('.');
+      const integerWithCommas = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      setMontoInput(`${integerWithCommas}.${parts[1]}`);
     } else {
       setMontoInput('');
       setMonto('');
@@ -350,6 +346,11 @@ export const PurchaseFormModal: React.FC = () => {
       newErrors.cantidadOfertas = 'La cantidad de ofertas debe ser mayor o igual a 0.';
     }
 
+    // 8. Fecha de dictamen técnico por la GIT
+    if (evaluadoGIT === 'Sí' && !fechaDictamenGIT) {
+      newErrors.fechaDictamenGIT = 'Ingrese la fecha en que se realizó el dictamen técnico por la GIT.';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -374,6 +375,7 @@ export const PurchaseFormModal: React.FC = () => {
       cantidadOfertas: Number(cantidadOfertas),
       monto: Number(monto),
       evaluadoGIT,
+      fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
       estatusEvento,
       areaSolicitante,
       categoriaTecnologica,
@@ -678,32 +680,34 @@ export const PurchaseFormModal: React.FC = () => {
                 )}
               </div>
 
-              {/* Campo 11: Monto (Quetzales) con Máscara 000,000,000.00 */}
+              {/* Campo 11: Monto (Quetzales) con ingreso de derecha a izquierda y decimales automáticos */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label htmlFor="input-purchase-monto" className="block text-xs font-bold text-slate-800">
                     Monto (Q) <span className="text-rose-600">*</span>
                   </label>
                   <span 
-                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-300 font-bold"
-                    title="Máscara obligatoria para el ingreso de valores: 000,000,000.00"
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200 font-bold"
+                    title="Ingreso de derecha a izquierda con decimales automáticos"
                   >
-                    Máscara: 000,000,000.00
+                    Entrada Der. a Izq. (0.00)
                   </span>
                 </div>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-500 font-bold text-xs">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-600 font-black text-xs">
                     Q
                   </div>
                   <input
                     id="input-purchase-monto"
                     type="text"
-                    inputMode="decimal"
+                    inputMode="numeric"
+                    dir="rtl"
                     value={montoInput}
                     onChange={handleMontoChange}
+                    onPaste={handleMontoPaste}
                     onBlur={handleMontoBlur}
-                    placeholder="000,000,000.00"
-                    className={`w-full pl-7 pr-2.5 py-2 text-xs font-bold font-mono border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                    placeholder="0.00"
+                    className={`w-full pl-8 pr-3 py-2 text-right text-xs font-black font-mono border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] ${
                       errors.monto ? 'border-rose-400 bg-rose-50/20 text-rose-950' : 'border-slate-300 text-slate-900'
                     }`}
                   />
@@ -716,7 +720,7 @@ export const PurchaseFormModal: React.FC = () => {
                       {monto !== '' ? formatQuetzales(Number(monto)) : 'Q. 0.00'}
                     </span>
                     <span className="text-slate-400 text-[9px]">
-                      Separador de miles (,) y decimales (.)
+                      Coloca decimales automáticamente
                     </span>
                   </div>
                 )}
@@ -768,8 +772,37 @@ export const PurchaseFormModal: React.FC = () => {
                 </select>
               </div>
 
-              {/* Estatus del Evento */}
+              {/* Fecha en que se realizó el dictamen técnico por la GIT */}
               <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#1c39bb]" />
+                    <span>Fecha de Dictamen Técnico GIT</span>
+                  </span>
+                  {evaluadoGIT === 'Sí' && <span className="text-rose-600 font-bold">*</span>}
+                </label>
+                <input
+                  id="input-purchase-fecha-dictamen-git"
+                  type="date"
+                  value={fechaDictamenGIT}
+                  onChange={(e) => setFechaDictamenGIT(e.target.value)}
+                  disabled={evaluadoGIT === 'No'}
+                  className={`w-full p-2 text-xs font-semibold border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] ${
+                    evaluadoGIT === 'No' ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' :
+                    errors.fechaDictamenGIT ? 'border-rose-400 bg-rose-50/20 text-rose-900' : 'border-slate-300 bg-white text-slate-900'
+                  }`}
+                />
+                {errors.fechaDictamenGIT ? (
+                  <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaDictamenGIT}</p>
+                ) : (
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {evaluadoGIT === 'Sí' ? 'Fecha de emisión del informe técnico por la GIT' : 'No aplica (Sin Dictamen)'}
+                  </p>
+                )}
+              </div>
+
+              {/* Estatus del Evento */}
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-slate-800 mb-1">
                   Estatus del Evento <span className="text-rose-600">*</span>
                 </label>
@@ -816,7 +849,7 @@ export const PurchaseFormModal: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               
               {/* Fecha Solicitud */}
               <div>
@@ -890,20 +923,6 @@ export const PurchaseFormModal: React.FC = () => {
                 />
               </div>
 
-              {/* Categoría Tecnológica */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Categoría Tecnológica
-                </label>
-                <select
-                  value={categoriaTecnologica}
-                  onChange={(e) => setCategoriaTecnologica(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                >
-                  {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
             </div>
           </div>
 
@@ -928,7 +947,7 @@ export const PurchaseFormModal: React.FC = () => {
           <button
             type="button"
             onClick={() => { setIsPurchaseModalOpen(false); setPurchaseToEdit(null); }}
-            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
+            className="px-3.5 py-2 rounded-xl text-xs font-bold text-black bg-white border border-slate-300 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer"
           >
             Cancelar
           </button>
@@ -938,13 +957,13 @@ export const PurchaseFormModal: React.FC = () => {
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className={`px-4 py-2 rounded-lg ${themeConfig.primaryBtn} text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer`}
+            className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             {isSubmitting ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-slate-400 border-t-black rounded-full animate-spin" />
             ) : (
               <>
-                <Save className="w-3.5 h-3.5" />
+                <Save className="w-3.5 h-3.5 text-black" />
                 <span>{purchaseToEdit ? 'Guardar Cambios' : 'Registrar Adquisición'}</span>
               </>
             )}

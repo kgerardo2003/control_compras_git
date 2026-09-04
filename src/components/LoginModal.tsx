@@ -156,13 +156,13 @@ export const LoginModal: React.FC = () => {
               id="btn-submit-login"
               type="submit"
               disabled={isLoading}
-              className="w-full py-2.5 px-4 rounded-lg bg-[#1c39bb] hover:bg-[#152e99] text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer border border-[#4682b4]/40"
+              className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-black font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-300 active:scale-95"
             >
               {isLoading ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-slate-800 border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <Lock className="w-4 h-4" />
+                  <Lock className="w-4 h-4 text-black" />
                   <span>Ingresar al Sistema</span>
                 </>
               )}

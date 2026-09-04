@@ -271,9 +271,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                 <button
                   type="button"
                   onClick={triggerSimulatedNotification}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-bold"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-black border border-slate-300 text-[10px] font-bold shadow-2xs cursor-pointer"
                 >
-                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <Sparkles className="w-3 h-3 text-black" />
                   Simular Alerta
                 </button>
               </div>
@@ -342,7 +342,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
               <button
                 type="button"
                 onClick={() => setIsLoginModalOpen(true)}
-                className={`px-3 py-1.5 ${themeConfig.primaryBtn} text-xs font-bold rounded-lg`}
+                className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold rounded-xl shadow-2xs cursor-pointer"
               >
                 Ingresar
               </button>
