@@ -32,6 +32,17 @@ const formatF56Input = (raw: string): string => {
   return raw.replace(/\D/g, '').slice(0, 6);
 };
 
+// Función para aplicar la máscara de entrada de valores: 000,000,000.00
+const formatMontoMask = (val: number | string | undefined | null): string => {
+  if (val === undefined || val === null || val === '') return '';
+  const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/,/g, ''));
+  if (isNaN(num)) return '';
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
 const formatFileSize = (bytes?: number): string => {
   if (!bytes) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
@@ -47,7 +58,8 @@ export const PurchaseFormModal: React.FC = () => {
     setPurchaseToEdit,
     addPurchase, 
     updatePurchase, 
-    catalogs
+    catalogs,
+    themeConfig
   } = useApp();
 
   // Estados del Formulario (Validaciones de longitud y tipos requeridos)
@@ -67,6 +79,7 @@ export const PurchaseFormModal: React.FC = () => {
   const [fechaOfertas, setFechaOfertas] = useState('');
   const [cantidadOfertas, setCantidadOfertas] = useState<number>(0);
   const [monto, setMonto] = useState<number | ''>('');
+  const [montoInput, setMontoInput] = useState<string>('');
   const [evaluadoGIT, setEvaluadoGIT] = useState<EvaluacionGIT>('Sí');
   const [estatusEvento, setEstatusEvento] = useState<string>('Evaluación');
   const [areaSolicitante, setAreaSolicitante] = useState('Soporte técnico');
@@ -135,6 +148,7 @@ export const PurchaseFormModal: React.FC = () => {
       setFechaOfertas(purchaseToEdit.fechaOfertas || '');
       setCantidadOfertas(purchaseToEdit.cantidadOfertas ?? 0);
       setMonto(purchaseToEdit.monto ?? '');
+      setMontoInput(purchaseToEdit.monto !== undefined && purchaseToEdit.monto !== null && purchaseToEdit.monto !== '' ? formatMontoMask(purchaseToEdit.monto) : '');
       setEvaluadoGIT(purchaseToEdit.evaluadoGIT || 'Sí');
       setEstatusEvento(purchaseToEdit.estatusEvento || 'Evaluación');
       setAreaSolicitante(purchaseToEdit.areaSolicitante || areaOptions[0] || 'Soporte técnico');
@@ -218,6 +232,70 @@ export const PurchaseFormModal: React.FC = () => {
     }
   };
 
+  // Manejador de la máscara de entrada para montos: 000,000,000.00
+  const handleMontoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    
+    // Si el usuario vació el campo completamente
+    if (!raw.trim()) {
+      setMontoInput('');
+      setMonto('');
+      return;
+    }
+
+    // Filtrar caracteres: sólo números, coma y punto
+    let cleaned = raw.replace(/[^\d.,]/g, '');
+
+    // Detectar si el usuario colocó coma o punto como decimal al final
+    const isEndingWithSeparator = cleaned.endsWith('.') || cleaned.endsWith(',');
+
+    // Remover comas para procesar la secuencia pura
+    const withoutCommas = cleaned.replace(/,/g, '');
+
+    // Separar parte entera y decimal
+    const parts = withoutCommas.split('.');
+    let integerDigits = (parts[0] || '').replace(/\D/g, '');
+    
+    // Limitar parte entera a 9 dígitos (máscara 000,000,000)
+    if (integerDigits.length > 9) {
+      integerDigits = integerDigits.slice(0, 9);
+    }
+
+    let decimalDigits = parts.length > 1 ? parts[1].replace(/\D/g, '').slice(0, 2) : undefined;
+
+    // Formatear la parte entera con comas de millares
+    const formattedInteger = integerDigits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+    // Armar el string de visualización respetando la máscara
+    let display = formattedInteger;
+    if (isEndingWithSeparator && parts.length === 1) {
+      display = `${formattedInteger}.`;
+    } else if (decimalDigits !== undefined) {
+      display = `${formattedInteger}.${decimalDigits}`;
+    }
+
+    setMontoInput(display);
+
+    // Calcular valor numérico real
+    if (integerDigits === '' && (decimalDigits === undefined || decimalDigits === '')) {
+      setMonto('');
+    } else {
+      const numString = decimalDigits !== undefined ? `${integerDigits || '0'}.${decimalDigits}` : integerDigits;
+      const parsed = parseFloat(numString);
+      setMonto(isNaN(parsed) ? '' : parsed);
+    }
+  };
+
+  // Al desenfocar el campo (onBlur), auto-formatear con dos decimales exactos
+  const handleMontoBlur = () => {
+    if (monto !== '' && !isNaN(Number(monto))) {
+      setMontoInput(formatMontoMask(Number(monto)));
+    } else {
+      setMontoInput('');
+      setMonto('');
+    }
+  };
+
   if (!isPurchaseModalOpen) return null;
 
   // Validación estricta de campos según el requerimiento
@@ -260,9 +338,11 @@ export const PurchaseFormModal: React.FC = () => {
       newErrors.nog = 'El NOG debe tener exactamente 8 dígitos numéricos (ej. 21948201).';
     }
 
-    // 6. Monto: moneda en Quetzales
+    // 6. Monto: moneda en Quetzales con máscara 000,000,000.00
     if (monto === '' || isNaN(Number(monto)) || Number(monto) <= 0) {
-      newErrors.monto = 'Ingrese un monto válido en Quetzales mayor a 0.';
+      newErrors.monto = 'Ingrese un monto válido en Quetzales mayor a 0 con máscara 000,000,000.00.';
+    } else if (Number(monto) > 999999999.99) {
+      newErrors.monto = 'El monto no puede exceder el límite de la máscara: 999,999,999.99.';
     }
 
     // 7. Cantidad de ofertas: numérico >= 0
@@ -598,34 +678,47 @@ export const PurchaseFormModal: React.FC = () => {
                 )}
               </div>
 
-              {/* Campo 11: Monto (Quetzales) */}
+              {/* Campo 11: Monto (Quetzales) con Máscara 000,000,000.00 */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Monto (Q) <span className="text-rose-600">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="input-purchase-monto" className="block text-xs font-bold text-slate-800">
+                    Monto (Q) <span className="text-rose-600">*</span>
+                  </label>
+                  <span 
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-300 font-bold"
+                    title="Máscara obligatoria para el ingreso de valores: 000,000,000.00"
+                  >
+                    Máscara: 000,000,000.00
+                  </span>
+                </div>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400 font-bold text-xs">
+                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-500 font-bold text-xs">
                     Q
                   </div>
                   <input
                     id="input-purchase-monto"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={monto}
-                    onChange={(e) => setMonto(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    placeholder="845000.00"
-                    className={`w-full pl-7 pr-2.5 py-2 text-xs font-bold border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                      errors.monto ? 'border-rose-400' : 'border-slate-300'
+                    type="text"
+                    inputMode="decimal"
+                    value={montoInput}
+                    onChange={handleMontoChange}
+                    onBlur={handleMontoBlur}
+                    placeholder="000,000,000.00"
+                    className={`w-full pl-7 pr-2.5 py-2 text-xs font-bold font-mono border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                      errors.monto ? 'border-rose-400 bg-rose-50/20 text-rose-950' : 'border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
                 {errors.monto ? (
                   <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.monto}</p>
                 ) : (
-                  <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-                    {monto ? formatQuetzales(Number(monto)) : 'Q. 0.00'}
-                  </p>
+                  <div className="flex items-center justify-between text-[10px] mt-0.5">
+                    <span className="text-emerald-700 font-semibold font-mono">
+                      {monto !== '' ? formatQuetzales(Number(monto)) : 'Q. 0.00'}
+                    </span>
+                    <span className="text-slate-400 text-[9px]">
+                      Separador de miles (,) y decimales (.)
+                    </span>
+                  </div>
                 )}
               </div>
 
@@ -845,7 +938,7 @@ export const PurchaseFormModal: React.FC = () => {
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+            className={`px-4 py-2 rounded-lg ${themeConfig.primaryBtn} text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer`}
           >
             {isSubmitting ? (
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

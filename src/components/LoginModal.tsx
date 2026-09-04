@@ -11,10 +11,9 @@ import {
   X,
   CheckCircle2
 } from 'lucide-react';
-import { UserRole } from '../types';
 
 export const LoginModal: React.FC = () => {
-  const { isLoginModalOpen, setIsLoginModalOpen, login, switchDemoUser } = useApp();
+  const { isLoginModalOpen, setIsLoginModalOpen, login } = useApp();
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -53,31 +52,22 @@ export const LoginModal: React.FC = () => {
     }, 400);
   };
 
-  const handleQuickDemo = (role: UserRole) => {
-    switchDemoUser(role);
-    setSuccessMsg(`Sesión iniciada con éxito con perfil: ${role.toUpperCase()}`);
-    setTimeout(() => {
-      setIsLoginModalOpen(false);
-      setSuccessMsg('');
-    }, 600);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
       <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-8">
         
         {/* Encabezado Institucional (Professional Polish) */}
-        <div className="bg-slate-900 p-6 text-white text-center relative border-b border-slate-800">
+        <div className="bg-[#0d1f4d] p-6 text-white text-center relative border-b border-[#1c39bb]/40">
           <button
             type="button"
             onClick={() => setIsLoginModalOpen(false)}
-            className="absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            className="absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-[#162e7a]"
           >
             <X className="w-5 h-5" />
           </button>
 
           <div className="flex justify-center mb-3">
-            <div className="w-12 h-12 bg-amber-500 rounded-lg flex items-center justify-center text-slate-950 font-bold text-lg shadow-sm">
+            <div className="w-12 h-12 bg-[#1c39bb] border border-[#4682b4]/50 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-sm">
               OJ
             </div>
           </div>
@@ -85,7 +75,7 @@ export const LoginModal: React.FC = () => {
           <h2 className="text-base font-bold uppercase tracking-wider text-white">
             Organismo Judicial de Guatemala
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-[#93c5fd] mt-0.5">
             Gerencia de Informática • Control de Adquisiciones
           </p>
         </div>
@@ -128,8 +118,8 @@ export const LoginModal: React.FC = () => {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="ej. admin, auditor, operador"
-                  className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Ingrese su usuario"
+                  className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] focus:border-[#4682b4]"
                   required
                 />
               </div>
@@ -150,7 +140,7 @@ export const LoginModal: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Contraseña"
-                  className="w-full pl-9 pr-10 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="w-full pl-9 pr-10 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] focus:border-[#4682b4]"
                 />
                 <button
                   type="button"
@@ -166,7 +156,7 @@ export const LoginModal: React.FC = () => {
               id="btn-submit-login"
               type="submit"
               disabled={isLoading}
-              className="w-full py-2.5 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-lg bg-[#1c39bb] hover:bg-[#152e99] text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer border border-[#4682b4]/40"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -179,42 +169,9 @@ export const LoginModal: React.FC = () => {
             </button>
           </form>
 
-          {/* Acceso Rápido con Perfiles Institucionales */}
-          <div className="mt-6 pt-4 border-t border-slate-200">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 text-center">
-              Acceso Rápido por Perfil:
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('administrador')}
-                className="p-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-amber-500/10 hover:border-amber-500 text-slate-800 text-center transition-colors cursor-pointer"
-              >
-                <div className="text-xs font-bold">Admin</div>
-                <div className="text-[10px] text-slate-400">Carlos M.</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('auditor')}
-                className="p-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-amber-500/10 hover:border-amber-500 text-slate-800 text-center transition-colors cursor-pointer"
-              >
-                <div className="text-xs font-bold">Auditor</div>
-                <div className="text-[10px] text-slate-400">Patricia M.</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('usuario_estandar')}
-                className="p-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-amber-500/10 hover:border-amber-500 text-slate-800 text-center transition-colors cursor-pointer"
-              >
-                <div className="text-xs font-bold">Estándar</div>
-                <div className="text-[10px] text-slate-400">Mario G.</div>
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 text-[10px] text-center text-slate-400 flex items-center justify-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Acceso seguro y registrado en bitácora de auditoría.</span>
+          <div className="mt-5 pt-4 border-t border-slate-200 text-[11px] text-center text-slate-500 flex items-center justify-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-[#4682b4]" />
+            <span>Acceso oficial restringido. Sesión registrada en bitácora de auditoría.</span>
           </div>
 
         </div>

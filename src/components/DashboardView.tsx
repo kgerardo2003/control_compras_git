@@ -54,7 +54,8 @@ export const DashboardView: React.FC = () => {
     setSelectedPurchase,
     currentUser,
     auditLogs,
-    logAudit
+    logAudit,
+    themeConfig
   } = useApp();
 
   const [selectedYear, setSelectedYear] = useState<string>('todos');
@@ -190,7 +191,7 @@ export const DashboardView: React.FC = () => {
             <button
               type="button"
               onClick={() => { setPurchaseToEdit(null); setIsPurchaseModalOpen(true); }}
-              className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+              className={`px-3.5 py-1.5 rounded-lg ${themeConfig.primaryBtn} text-xs font-bold flex items-center gap-1 shadow-xs transition-colors`}
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>+ Nueva Adquisición</span>

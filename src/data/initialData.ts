@@ -4,9 +4,9 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'usr-admin-1',
     username: 'admin',
-    nombreCompleto: 'Ing. Carlos A. Mendoza Rivera',
-    email: 'cmendoza@oj.gob.gt',
-    password: 'admin',
+    nombreCompleto: 'Lic. Kevin Gerarado López de León',
+    email: 'klopez@oj.gob.gt',
+    password: 'Jslb16042015@@',
     rol: 'administrador',
     cargo: 'Gerente de Informática y Telecomunicaciones',
     departamento: 'Gerencia de Informática - OJ',
@@ -169,7 +169,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     dependenciaSolicitante: 'Centro de Cómputo Principal Torre de Tribunales',
     modalidadCompra: 'Cotización Pública',
     proveedorAdjudicado: 'Tecnologías y Sistemas Corporativos, S.A.',
-    creadoPor: 'Carlos Mendoza',
+    creadoPor: 'Lic. Kevin Gerarado López de León',
     fechaCreacion: '2026-01-15T09:00:00Z',
     observaciones: 'Adjudicado a proveedor con mayor puntaje técnico. Garantía de 3 años On-Site 24x7.'
   },
@@ -246,7 +246,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     categoriaTecnologica: 'Redes y Telecomunicaciones',
     dependenciaSolicitante: 'Subgerencia de Infraestructura GIT',
     modalidadCompra: 'Cotización Pública',
-    creadoPor: 'Carlos Mendoza',
+    creadoPor: 'Lic. Kevin Gerarado López de León',
     fechaCreacion: '2026-02-10T14:20:00Z',
     observaciones: 'Publicado en Guatecompras. Convocatoria vigente para recepción de plicas.'
   },
@@ -323,7 +323,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     categoriaTecnologica: 'Redes y Telecomunicaciones',
     dependenciaSolicitante: 'Subgerencia de Infraestructura GIT',
     modalidadCompra: 'Cotización Pública',
-    creadoPor: 'Carlos Mendoza',
+    creadoPor: 'Lic. Kevin Gerarado López de León',
     fechaCreacion: '2026-01-08T10:00:00Z',
     observaciones: 'Se prescindió debido a reestructuración de fondos hacia proyecto de fibra óptica departamental.'
   },
@@ -356,7 +356,7 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   {
     id: 'aud-101',
     fecha: '2026-09-03T14:15:22Z',
-    usuario: 'admin (Ing. Carlos Mendoza)',
+    usuario: 'admin (Lic. Kevin Gerarado López de León)',
     rol: 'administrador',
     accion: 'LOGIN',
     modulo: 'Autenticación',
@@ -387,7 +387,7 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   {
     id: 'aud-104',
     fecha: '2026-09-02T16:15:00Z',
-    usuario: 'admin (Ing. Carlos Mendoza)',
+    usuario: 'admin (Lic. Kevin Gerarado López de León)',
     rol: 'administrador',
     accion: 'CAMBIO_ESTATUS',
     modulo: 'Compras',
@@ -400,7 +400,7 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   {
     id: 'aud-105',
     fecha: '2026-09-01T09:10:00Z',
-    usuario: 'admin (Ing. Carlos Mendoza)',
+    usuario: 'admin (Lic. Kevin Gerarado López de León)',
     rol: 'administrador',
     accion: 'CREAR_CATALOGO',
     modulo: 'Catálogos',

@@ -145,12 +145,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
           {isThemeMenuOpen && (
             <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 text-slate-800 text-xs">
               <div className="px-3 py-1.5 border-b border-slate-100 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                <span>3 Temas del Sistema</span>
+                <span>Paletas Institucionales</span>
                 {currentUser?.rol === 'administrador' ? (
                   <button
                     type="button"
                     onClick={() => { setActiveTab('personalizacion'); setIsThemeMenuOpen(false); }}
-                    className="text-amber-600 hover:text-amber-800 font-bold cursor-pointer"
+                    className="text-[#1c39bb] hover:underline font-bold cursor-pointer"
                   >
                     Personalizar →
                   </button>
@@ -168,7 +168,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                     type="button"
                     onClick={() => { setTheme(themeKey); setIsThemeMenuOpen(false); }}
                     className={`w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between transition-colors ${
-                      isSelected ? 'bg-amber-50/50 font-bold text-slate-900' : 'text-slate-700'
+                      isSelected ? 'bg-[#ebf2f8] font-bold text-[#1c39bb]' : 'text-slate-700'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                       />
                       <span className="truncate">{item.name}</span>
                     </div>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-amber-600" />}
+                    {isSelected && <Check className="w-3.5 h-3.5 text-[#1c39bb]" />}
                   </button>
                 );
               })}
@@ -334,7 +334,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                 className="flex items-center gap-2 focus:outline-none"
               >
-                <div className="w-8 h-8 rounded-full bg-slate-900 text-amber-400 flex items-center justify-center font-bold text-xs shadow-sm hover:ring-2 hover:ring-amber-500 transition-all">
+                <div className="w-8 h-8 rounded-full bg-[#0d1f4d] border border-[#4682b4]/40 text-[#93c5fd] flex items-center justify-center font-bold text-xs shadow-sm hover:ring-2 hover:ring-[#4682b4] transition-all">
                   {currentUser.username.slice(0, 2).toUpperCase()}
                 </div>
               </button>
@@ -342,7 +342,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
               <button
                 type="button"
                 onClick={() => setIsLoginModalOpen(true)}
-                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-lg"
+                className={`px-3 py-1.5 ${themeConfig.primaryBtn} text-xs font-bold rounded-lg`}
               >
                 Ingresar
               </button>

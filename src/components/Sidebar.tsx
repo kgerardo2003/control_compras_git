@@ -250,8 +250,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
                   <Palette className={`w-4 h-4 mr-3 ${activeTab === 'personalizacion' ? themeConfig.sidebarIconActive : 'text-slate-400'}`} />
                   <span>Personalización & Temas</span>
                 </div>
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
-                  3 Temas
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${themeConfig.sidebarBadge} font-bold`}>
+                  Paletas
                 </span>
               </button>
             </>
@@ -271,7 +271,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
                 {currentUser?.nombreCompleto || 'Invitado'}
               </p>
             </div>
-            <div className="w-7 h-7 rounded-full bg-white/10 text-amber-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
+            <div className={`w-7 h-7 rounded-full bg-white/10 ${themeConfig.sidebarIconActive} flex items-center justify-center font-bold text-xs flex-shrink-0`}>
               {currentUser?.username.slice(0, 2).toUpperCase() || 'OJ'}
             </div>
           </div>
@@ -281,7 +281,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
             <button
               type="button"
               onClick={resetToDemoData}
-              className="hover:text-amber-400 flex items-center gap-1 transition-colors cursor-pointer"
+              className="hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
               title="Restaurar datos iniciales"
             >
               <RotateCcw className="w-2.5 h-2.5" />

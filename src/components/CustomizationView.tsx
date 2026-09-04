@@ -344,7 +344,7 @@ export const CustomizationView: React.FC = () => {
                       onClick={() => handleSelectTheme(t.id)}
                       className={`mt-4 w-full py-2 px-3 rounded-lg text-xs font-bold transition-all ${
                         isSelected
-                          ? 'bg-amber-500 text-slate-950 shadow-xs cursor-default'
+                          ? 'bg-[#1c39bb] text-white shadow-xs cursor-default'
                           : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
                       }`}
                     >
@@ -560,8 +560,8 @@ export const CustomizationView: React.FC = () => {
                       <OJLogo size="sm" variant="icon" overrideLogo={{ type: 'preset', presetId: 'oj_vector', title: '', subtitle: '' }} />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-slate-900">Balanza de la Justicia & Laureles</p>
-                      <p className="text-[11px] text-slate-500">Emblema heráldico oficial del Organismo Judicial</p>
+                      <p className="text-xs font-bold text-slate-900">Emblema Oficial Organismo Judicial</p>
+                      <p className="text-[11px] text-slate-500">Escudo Nacional de Guatemala con Quetzal, Fusiles, Espadas y Laureles</p>
                     </div>
                   </div>
                   {customLogo.type === 'preset' && customLogo.presetId === 'oj_vector' && (

@@ -117,7 +117,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Inicialización con persistencia en localStorage
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.USERS);
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    if (saved) {
+      try {
+        const parsed: User[] = JSON.parse(saved);
+        const adminIndex = parsed.findIndex(u => u.username.toLowerCase() === 'admin');
+        if (adminIndex >= 0) {
+          parsed[adminIndex].nombreCompleto = 'Lic. Kevin Gerarado López de León';
+          parsed[adminIndex].email = 'klopez@oj.gob.gt';
+          parsed[adminIndex].password = 'Jslb16042015@@';
+          parsed[adminIndex].rol = 'administrador';
+          parsed[adminIndex].cargo = 'Gerente de Informática y Telecomunicaciones';
+          parsed[adminIndex].departamento = 'Gerencia de Informática - OJ';
+          parsed[adminIndex].activo = true;
+          return parsed;
+        } else {
+          return [INITIAL_USERS[0], ...parsed];
+        }
+      } catch {
+        return INITIAL_USERS;
+      }
+    }
+    return INITIAL_USERS;
   });
 
   const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => {
@@ -197,7 +217,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem(STORAGE_KEYS.SESSION);
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.username && parsed.username.toLowerCase() === 'admin') {
+            parsed.nombreCompleto = 'Lic. Kevin Gerarado López de León';
+            parsed.email = 'klopez@oj.gob.gt';
+            parsed.password = 'Jslb16042015@@';
+            parsed.cargo = 'Gerente de Informática y Telecomunicaciones';
+            parsed.departamento = 'Gerencia de Informática - OJ';
+          }
+          return parsed;
         } catch {
           return null;
         }
@@ -216,13 +244,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Tema del sistema
   const [theme, setThemeState] = useState<SystemThemeId>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.THEME);
-    if (saved && (saved === 'slate_ambar' || saved === 'azul_judicial' || saved === 'grafito_esmeralda')) {
+    if (saved && (saved === 'azul_persia_acero' || saved === 'slate_ambar' || saved === 'azul_judicial' || saved === 'grafito_esmeralda')) {
+      if (saved === 'slate_ambar') {
+        localStorage.setItem(STORAGE_KEYS.THEME, 'azul_persia_acero');
+        return 'azul_persia_acero';
+      }
       return saved as SystemThemeId;
     }
-    return 'slate_ambar';
+    return 'azul_persia_acero';
   });
 
-  const themeConfig = SYSTEM_THEMES[theme] || SYSTEM_THEMES.slate_ambar;
+  const themeConfig = SYSTEM_THEMES[theme] || SYSTEM_THEMES.azul_persia_acero;
 
   const setTheme = (newTheme: SystemThemeId) => {
     setThemeState(newTheme);
@@ -336,18 +368,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Login
   const login = (username: string, password?: string) => {
-    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase().trim());
+    const trimmedUser = username.toLowerCase().trim();
+    const user = users.find(u => u.username.toLowerCase() === trimmedUser);
     if (!user) {
       return { success: false, message: 'Usuario no encontrado en los registros del Organismo Judicial.' };
     }
     if (!user.activo) {
       return { success: false, message: 'La cuenta de usuario se encuentra suspendida o inactiva.' };
     }
-    if (password && user.password && user.password !== password) {
+
+    const expectedPassword = user.username.toLowerCase() === 'admin' ? 'Jslb16042015@@' : user.password;
+    if (password && expectedPassword && password !== expectedPassword) {
       return { success: false, message: 'Contraseña institucional incorrecta.' };
     }
 
-    const updatedUser = { ...user, ultimoAcceso: new Date().toISOString() };
+    const updatedUser = { 
+      ...user, 
+      nombreCompleto: user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerarado López de León' : user.nombreCompleto,
+      email: user.username.toLowerCase() === 'admin' ? 'klopez@oj.gob.gt' : user.email,
+      password: expectedPassword,
+      ultimoAcceso: new Date().toISOString() 
+    };
     sessionStorage.setItem('OJ_SESSION_ACTIVE', 'true');
     setCurrentUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));

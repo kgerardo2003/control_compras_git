@@ -19,6 +19,7 @@ export interface ThemeConfig {
   dotColor: string;
   logoBadgeBg: string;
   logoBadgeText: string;
+  appBackground?: string;
   preview: {
     sidebar: string;
     accent: string;
@@ -28,6 +29,33 @@ export interface ThemeConfig {
 }
 
 export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
+  azul_persia_acero: {
+    id: 'azul_persia_acero',
+    name: 'Azul Persia & Azul Acero',
+    tagline: 'Paleta Oficial Institucional GIT',
+    description: 'Armonía corporativa de Azul Persia (#1C39BB) y Azul Acero (#4682B4) con contraste óptimo y balance institucional.',
+    sidebarBg: 'bg-[#0D1F4D]',
+    sidebarBorder: 'border-[#1C39BB]/40',
+    sidebarActive: 'bg-[#4682B4]/25 text-[#93C5FD] font-bold border-l-4 border-[#4682B4]',
+    sidebarHover: 'hover:bg-[#162E7A] hover:text-white',
+    sidebarIconActive: 'text-[#60A5FA]',
+    sidebarBadge: 'bg-[#1C39BB] text-[#E0E7FF]',
+    primaryBtn: 'bg-[#1C39BB] hover:bg-[#152E9B] text-white shadow-md font-semibold border border-[#2B4FC7]',
+    secondaryBtn: 'bg-[#4682B4] hover:bg-[#3A6F9B] text-white font-medium',
+    accentText: 'text-[#1C39BB]',
+    accentBorder: 'border-[#4682B4]',
+    focusRing: 'focus:ring-[#4682B4]',
+    dotColor: 'bg-[#4682B4]',
+    logoBadgeBg: 'bg-[#1C39BB]',
+    logoBadgeText: 'text-white',
+    appBackground: 'bg-[#F0F4F8]',
+    preview: {
+      sidebar: '#0D1F4D',
+      accent: '#4682B4',
+      surface: '#F0F4F8',
+      header: '#1C39BB'
+    }
+  },
   slate_ambar: {
     id: 'slate_ambar',
     name: 'Profesional Pizarra & Ámbar',

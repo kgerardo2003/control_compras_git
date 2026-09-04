@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 560" width="100%" height="100%" fill="none">
+  <defs>
+    <!-- Camino circular superior para el texto "ORGANISMO JUDICIAL" -->
+    <path id="oj-arch-top" d="M 65 210 A 185 185 0 0 1 435 210" fill="none" />
+    <!-- Gradiente dorado sutil para detalles de gala -->
+    <linearGradient id="oj-gold-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4AF37" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+  </defs>
+
+  <g id="official-oj-emblem" stroke-linecap="round" stroke-linejoin="round">
+    <!-- TEXTO ARQUEADO SUPERIOR: ORGANISMO JUDICIAL -->
+    <text font-family="'Times New Roman', 'Cinzel', serif" font-size="34" font-weight="bold" fill="#1b365d" letter-spacing="4">
+      <textPath href="#oj-arch-top" startOffset="50%" text-anchor="middle">
+        ORGANISMO JUDICIAL
+      </textPath>
+    </text>
+
+    <!-- RAMAS DE LAUREL (CORONA CÍVICA) -->
+    <!-- Rama izquierda -->
+    <path d="M 230 460 C 130 440 60 350 75 220 C 80 180 95 140 120 110" stroke="#1b365d" stroke-width="4.5" fill="none" />
+    <!-- Hojas rama izquierda -->
+    <g fill="#1b365d">
+      <path d="M 80 230 C 60 220 55 195 72 205 C 80 210 85 220 80 230 Z" />
+      <path d="M 90 260 C 65 255 60 230 80 240 C 90 245 95 255 90 260 Z" />
+      <path d="M 105 295 C 80 295 75 270 95 275 C 105 280 110 290 105 295 Z" />
+      <path d="M 125 335 C 100 340 95 315 115 315 C 125 320 130 330 125 335 Z" />
+      <path d="M 150 375 C 125 385 120 360 140 355 C 150 360 155 370 150 375 Z" />
+      <path d="M 185 415 C 160 425 155 400 175 395 C 185 400 190 410 185 415 Z" />
+      <path d="M 220 445 C 195 455 190 430 210 425 C 220 430 225 440 220 445 Z" />
+      <!-- Hojas internas rama izquierda -->
+      <path d="M 95 215 C 110 200 125 215 110 225 C 100 225 95 220 95 215 Z" />
+      <path d="M 110 250 C 125 235 140 250 125 260 C 115 260 110 255 110 250 Z" />
+      <path d="M 130 290 C 145 275 160 290 145 300 C 135 300 130 295 130 290 Z" />
+      <path d="M 155 330 C 170 315 185 330 170 340 C 160 340 155 335 155 330 Z" />
+      <path d="M 185 370 C 200 355 215 370 200 380 C 190 380 185 375 185 370 Z" />
+    </g>
+
+    <!-- Rama derecha -->
+    <path d="M 270 460 C 370 440 440 350 425 220 C 420 180 405 140 380 110" stroke="#1b365d" stroke-width="4.5" fill="none" />
+    <!-- Hojas rama derecha -->
+    <g fill="#1b365d">
+      <path d="M 420 230 C 440 220 445 195 428 205 C 420 210 415 220 420 230 Z" />
+      <path d="M 410 260 C 435 255 440 230 420 240 C 410 245 405 255 410 260 Z" />
+      <path d="M 395 295 C 420 295 425 270 405 275 C 395 280 390 290 395 295 Z" />
+      <path d="M 375 335 C 400 340 405 315 385 315 C 375 320 370 330 375 335 Z" />
+      <path d="M 350 375 C 375 385 380 360 360 355 C 350 360 345 370 350 375 Z" />
+      <path d="M 315 415 C 340 425 345 400 325 395 C 315 400 310 410 315 415 Z" />
+      <path d="M 280 445 C 305 455 310 430 290 425 C 280 430 275 440 280 445 Z" />
+      <!-- Hojas internas rama derecha -->
+      <path d="M 405 215 C 390 200 375 215 390 225 C 400 225 405 220 405 215 Z" />
+      <path d="M 390 250 C 375 235 360 250 375 260 C 385 260 390 255 390 250 Z" />
+      <path d="M 370 290 C 355 275 340 290 355 300 C 365 300 370 295 370 290 Z" />
+      <path d="M 345 330 C 330 315 315 330 330 340 C 340 340 345 335 345 330 Z" />
+      <path d="M 315 370 C 300 355 285 370 300 380 C 310 380 315 375 315 370 Z" />
+    </g>
+
+    <!-- LAZO DE UNIÓN DE LAURELES EN LA BASE -->
+    <path d="M 230 460 Q 250 470 270 460 Q 250 455 230 460 Z" fill="#1b365d" />
+    <path d="M 245 460 C 235 480 225 490 215 495" stroke="#1b365d" stroke-width="3" fill="none" />
+    <path d="M 255 460 C 265 480 275 490 285 495" stroke="#1b365d" stroke-width="3" fill="none" />
+
+    <!-- DOS ESPADAS CRUZADAS (DETRÁS DE LOS FUSILES) -->
+    <!-- Espada 1: de abajo izquierda a arriba derecha -->
+    <line x1="170" y1="410" x2="350" y2="170" stroke="#1b365d" stroke-width="4" />
+    <!-- Guarnición espada 1 -->
+    <line x1="160" y1="400" x2="190" y2="420" stroke="#1b365d" stroke-width="5" />
+    <circle cx="155" cy="425" r="7" fill="none" stroke="#1b365d" stroke-width="3" />
+
+    <!-- Espada 2: de abajo derecha a arriba izquierda -->
+    <line x1="330" y1="410" x2="150" y2="170" stroke="#1b365d" stroke-width="4" />
+    <!-- Guarnición espada 2 -->
+    <line x1="340" y1="400" x2="310" y2="420" stroke="#1b365d" stroke-width="5" />
+    <circle cx="345" cy="425" r="7" fill="none" stroke="#1b365d" stroke-width="3" />
+
+    <!-- DOS FUSILES REMINGTON CRUZADOS CON BAYONETAS -->
+    <!-- Fusil 1: diagonal izq a der -->
+    <g id="rifle-left-to-right">
+      <!-- Cañón y bayoneta -->
+      <line x1="120" y1="415" x2="365" y2="155" stroke="#1b365d" stroke-width="6" />
+      <!-- Bayoneta en la punta superior derecha -->
+      <path d="M 360 160 L 390 128 L 368 152 Z" fill="#1b365d" stroke="#1b365d" stroke-width="2" />
+      <!-- Culata de madera abajo izquierda -->
+      <path d="M 125 410 L 95 440 Q 105 450 125 445 L 145 425 Z" fill="#1b365d" />
+      <!-- Gatillo y guardamonte -->
+      <path d="M 160 380 Q 155 390 168 395" stroke="#1b365d" stroke-width="3" fill="none" />
+    </g>
+
+    <!-- Fusil 2: diagonal der a izq -->
+    <g id="rifle-right-to-left">
+      <!-- Cañón y bayoneta -->
+      <line x1="380" y1="415" x2="135" y2="155" stroke="#1b365d" stroke-width="6" />
+      <!-- Bayoneta en la punta superior izquierda -->
+      <path d="M 140 160 L 110 128 L 132 152 Z" fill="#1b365d" stroke="#1b365d" stroke-width="2" />
+      <!-- Culata de madera abajo derecha -->
+      <path d="M 375 410 L 405 440 Q 395 450 375 445 L 355 425 Z" fill="#1b365d" />
+      <!-- Gatillo y guardamonte -->
+      <path d="M 340 380 Q 345 390 332 395" stroke="#1b365d" stroke-width="3" fill="none" />
+    </g>
+
+    <!-- PERGAMINO CENTRAL (ESCUDO DE ARMAS) -->
+    <g id="scroll-pergamino">
+      <!-- Cuerpo del pergamino -->
+      <path d="M 195 210 Q 180 210 180 230 L 180 345 Q 180 365 200 365 L 300 365 Q 320 365 320 345 L 320 230 Q 320 210 300 210 Z" 
+            fill="#FFFFFF" stroke="#1b365d" stroke-width="4.5" />
+      
+      <!-- Rollos decorativos superior e inferior del pergamino -->
+      <!-- Rollo superior izquierdo -->
+      <path d="M 195 210 C 185 200 170 205 170 220 C 170 235 185 235 195 225" fill="#FFFFFF" stroke="#1b365d" stroke-width="3.5" />
+      <!-- Rollo inferior izquierdo -->
+      <path d="M 180 345 C 165 345 165 365 180 375 C 195 385 205 375 200 365" fill="#FFFFFF" stroke="#1b365d" stroke-width="3.5" />
+      <!-- Rollo superior derecho -->
+      <path d="M 305 210 C 315 200 330 205 330 220 C 330 235 315 235 305 225" fill="#FFFFFF" stroke="#1b365d" stroke-width="3.5" />
+      
+      <!-- Líneas de sombra y textura de pergamino en la base -->
+      <line x1="205" y1="355" x2="235" y2="355" stroke="#1b365d" stroke-width="2" />
+      <line x1="205" y1="360" x2="225" y2="360" stroke="#1b365d" stroke-width="2" />
+
+      <!-- TEXTO INSCRITO EN EL PERGAMINO: LIBERTAD 15 DE SEPTIEMBRE DE 1821 -->
+      <text x="250" y="245" font-family="'Times New Roman', serif" font-size="14" font-weight="bold" fill="#1b365d" text-anchor="middle" letter-spacing="1.5">
+        LIBERTAD
+      </text>
+      <text x="250" y="265" font-family="'Times New Roman', serif" font-size="13" font-weight="bold" fill="#1b365d" text-anchor="middle" letter-spacing="1.5">
+        15 DE
+      </text>
+      <text x="250" y="285" font-family="'Times New Roman', serif" font-size="12" font-weight="bold" fill="#1b365d" text-anchor="middle" letter-spacing="1">
+        SEPTIEMBRE
+      </text>
+      <text x="250" y="305" font-family="'Times New Roman', serif" font-size="12" font-weight="bold" fill="#1b365d" text-anchor="middle" letter-spacing="1.5">
+        DE 1821
+      </text>
+    </g>
+
+    <!-- EL RESPLANDECIENTE QUETZAL (POSADO EN EL PERGAMINO) -->
+    <g id="quetzal-bird">
+      <!-- Cabeza con penacho -->
+      <circle cx="258" cy="148" r="11" fill="#1b365d" />
+      <!-- Pico hacia la izquierda -->
+      <path d="M 248 147 L 238 149 L 248 152 Z" fill="#1b365d" />
+      <!-- Ojo con brillo -->
+      <circle cx="255" cy="146" r="2" fill="#FFFFFF" />
+      <!-- Penacho erguido -->
+      <path d="M 258 137 C 260 130 266 132 264 139 Z" fill="#1b365d" />
+      <path d="M 262 138 C 266 132 272 135 268 142 Z" fill="#1b365d" />
+      
+      <!-- Pecho y cuerpo -->
+      <path d="M 252 155 C 245 168 250 188 262 195 C 275 195 285 180 275 160 Z" fill="#1b365d" />
+      
+      <!-- Ala plegada con plumaje -->
+      <path d="M 268 162 C 285 170 295 195 285 220 C 275 220 270 195 265 178 Z" fill="#1b365d" stroke="#FFFFFF" stroke-width="1.2" />
+      
+      <!-- Patas aferradas al rollo del pergamino -->
+      <line x1="262" y1="195" x2="260" y2="208" stroke="#1b365d" stroke-width="3" />
+      <line x1="270" y1="195" x2="272" y2="208" stroke="#1b365d" stroke-width="3" />
+
+      <!-- Cola larga serpenteante hacia abajo a la derecha -->
+      <path d="M 280 210 C 300 230 320 265 315 310 C 310 350 285 390 280 435" 
+            stroke="#1b365d" stroke-width="5" fill="none" stroke-linecap="round" />
+      <path d="M 284 215 C 305 240 326 280 320 330 C 315 370 290 410 286 455" 
+            stroke="#1b365d" stroke-width="3.5" fill="none" stroke-linecap="round" />
+    </g>
+
+    <!-- TEXTO INFERIOR: GUATEMALA, C.A. -->
+    <text x="250" y="525" font-family="'Times New Roman', 'Cinzel', serif" font-size="34" font-weight="bold" fill="#1b365d" text-anchor="middle" letter-spacing="4">
+      GUATEMALA, C.A.
+    </text>
+  </g>
+</svg>

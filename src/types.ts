@@ -115,7 +115,7 @@ export interface AppNotification {
 
 export type ActiveTab = 'dashboard' | 'compras' | 'catalogos' | 'auditoria' | 'usuarios' | 'reportes' | 'personalizacion';
 
-export type SystemThemeId = 'slate_ambar' | 'azul_judicial' | 'grafito_esmeralda';
+export type SystemThemeId = 'azul_persia_acero' | 'slate_ambar' | 'azul_judicial' | 'grafito_esmeralda';
 
 export interface CustomLogoConfig {
   type: 'preset' | 'custom_image';

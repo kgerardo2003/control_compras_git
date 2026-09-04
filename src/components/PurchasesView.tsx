@@ -31,7 +31,8 @@ export const PurchasesView: React.FC = () => {
     setSelectedPurchase, 
     deletePurchase,
     currentUser,
-    logAudit
+    logAudit,
+    themeConfig
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -150,7 +151,7 @@ export const PurchasesView: React.FC = () => {
               id="btn-register-purchase-top"
               type="button"
               onClick={() => { setPurchaseToEdit(null); setIsPurchaseModalOpen(true); }}
-              className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className={`px-3.5 py-1.5 rounded-lg ${themeConfig.primaryBtn} text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer`}
             >
               <PlusCircle className="w-4 h-4" />
               <span>+ Nueva Adquisición</span>

@@ -9,16 +9,12 @@ import {
   ShieldCheck, 
   AlertCircle, 
   CheckCircle2,
-  ArrowRight,
-  Shield,
-  Layers,
-  Server
+  ArrowRight
 } from 'lucide-react';
-import { UserRole } from '../types';
 import { OJLogo } from './OJLogo';
 
 export const LoginView: React.FC = () => {
-  const { login, switchDemoUser, themeConfig, setActiveTab } = useApp();
+  const { login, setActiveTab } = useApp();
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -55,56 +51,45 @@ export const LoginView: React.FC = () => {
     }, 600);
   };
 
-  const handleQuickDemoLogin = (role: UserRole) => {
-    setErrorMsg('');
-    setIsLoading(true);
-    setTimeout(() => {
-      switchDemoUser(role);
-      setIsLoading(false);
-      setSuccessMsg(`Autenticado con éxito con perfil: ${role.toUpperCase()}`);
-      setActiveTab('dashboard');
-    }, 450);
-  };
-
   return (
-    <div className="min-h-screen w-full flex flex-col justify-between bg-slate-950 text-slate-100 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-slate-950">
+    <div className="min-h-screen w-full flex flex-col justify-between bg-[#0a1533] text-slate-100 font-sans relative overflow-x-hidden selection:bg-[#1c39bb] selection:text-white">
       
       {/* Fondo con Textura Institucional Sutil */}
       <div 
-        className="absolute inset-0 opacity-15 pointer-events-none"
+        className="absolute inset-0 opacity-20 pointer-events-none"
         style={{
-          backgroundImage: `radial-gradient(#d4af37 0.75px, transparent 0.75px), radial-gradient(#38bdf8 0.75px, #020617 0.75px)`,
-          backgroundSize: '30px 30px',
-          backgroundPosition: '0 0, 15px 15px'
+          backgroundImage: `radial-gradient(#4682b4 0.85px, transparent 0.85px), radial-gradient(#1c39bb 0.85px, #070e24 0.85px)`,
+          backgroundSize: '32px 32px',
+          backgroundPosition: '0 0, 16px 16px'
         }}
       />
 
       {/* Barra Superior Decorativa de la República de Guatemala */}
-      <div className="h-1.5 w-full bg-gradient-to-r from-sky-600 via-amber-400 to-sky-600" />
+      <div className="h-1.5 w-full bg-gradient-to-r from-[#1c39bb] via-[#4682b4] to-[#1c39bb]" />
 
       {/* Contenedor Principal Centrado */}
       <div className="flex-1 flex items-center justify-center p-4 sm:p-6 z-10 my-4 sm:my-8">
-        <div className="w-full max-w-lg bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
+        <div className="w-full max-w-lg bg-[#0d1d45]/95 backdrop-blur-md rounded-2xl border border-[#4682b4]/40 shadow-2xl overflow-hidden">
           
           {/* Encabezado con Logotipo Grande Arriba de ORGANISMO JUDICIAL */}
-          <div className="p-6 sm:p-8 text-center border-b border-slate-800/80 bg-gradient-to-b from-slate-900 to-slate-950/80">
+          <div className="p-6 sm:p-8 text-center border-b border-[#1c39bb]/40 bg-gradient-to-b from-[#0e214f] to-[#0a1738]">
             
             {/* Logo en Área Grande Arriba de ORGANISMO JUDICIAL */}
             <div className="w-full flex justify-center mb-3">
               <OJLogo size="xl" layout="stacked" variant="full" lightMode={false} />
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-center gap-2 text-amber-400 text-xs font-semibold uppercase tracking-wider">
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <div className="mt-4 pt-3 border-t border-[#1c39bb]/40 flex items-center justify-center gap-2 text-[#93c5fd] text-xs font-semibold uppercase tracking-wider">
+              <ShieldCheck className="w-4 h-4 text-[#4682b4]" />
               <span>Sistema de Control de Adquisiciones (GIT)</span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-[11px] text-slate-300 mt-1">
               Registro, Monitoreo y Fiscalización de Formularios F56-e y Eventos NOG
             </p>
           </div>
 
           {/* Formulario de Inicio de Sesión */}
-          <div className="p-6 sm:p-8 bg-slate-900">
+          <div className="p-6 sm:p-8 bg-[#0b183c]">
             
             {/* Alertas */}
             {errorMsg && (
@@ -128,20 +113,20 @@ export const LoginView: React.FC = () => {
               
               {/* Campo Usuario */}
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-1.5">
                   Usuario Institucional
                 </label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                     <UserIcon className="w-4 h-4" />
                   </div>
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Ej. admin, auditor, operador"
+                    placeholder="Ingrese su usuario"
                     disabled={isLoading}
-                    className="w-full pl-9 pr-4 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
+                    className="w-full pl-9 pr-4 py-2.5 bg-[#060f26]/80 border border-[#4682b4]/40 rounded-xl text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#4682b4] focus:border-transparent transition-all"
                   />
                 </div>
               </div>
@@ -149,15 +134,15 @@ export const LoginView: React.FC = () => {
               {/* Campo Contraseña */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-200">
                     Contraseña de Acceso
                   </label>
-                  <span className="text-[10px] text-slate-500">
+                  <span className="text-[10px] text-slate-400">
                     Sensible a mayúsculas
                   </span>
                 </div>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                     <KeyRound className="w-4 h-4" />
                   </div>
                   <input
@@ -166,7 +151,7 @@ export const LoginView: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     disabled={isLoading}
-                    className="w-full pl-9 pr-10 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
+                    className="w-full pl-9 pr-10 py-2.5 bg-[#060f26]/80 border border-[#4682b4]/40 rounded-xl text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#4682b4] focus:border-transparent transition-all"
                   />
                   <button
                     type="button"
@@ -183,11 +168,11 @@ export const LoginView: React.FC = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer disabled:opacity-50"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#1c39bb] to-[#2a4ec7] hover:from-[#152e99] hover:to-[#1c39bb] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-[#1c39bb]/30 border border-[#4682b4]/50 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer disabled:opacity-50"
               >
                 {isLoading ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     <span>Verificando Credenciales...</span>
                   </>
                 ) : (
@@ -200,84 +185,25 @@ export const LoginView: React.FC = () => {
               </button>
             </form>
 
-            {/* Accesos Rápidos de Demostración para Pruebas del Evaluador */}
-            <div className="mt-6 pt-5 border-t border-slate-800">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5 text-center">
-                Perfiles Institucionales Disponibles (Acceso Rápido)
-              </p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                
-                {/* 1. Administrador */}
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('administrador')}
-                  disabled={isLoading}
-                  className="p-2.5 bg-slate-950/70 hover:bg-slate-800 border border-slate-700/70 rounded-xl text-left transition-all hover:border-amber-500/50 group cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-400 group-hover:text-amber-300">
-                      Administrador
-                    </span>
-                    <Shield className="w-3 h-3 text-amber-400" />
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
-                    Acceso total + Paneles Admin
+            {/* Aviso Institucional de Seguridad y Privacidad */}
+            <div className="mt-6 pt-5 border-t border-[#1c39bb]/30">
+              <div className="flex items-start gap-3 p-3.5 rounded-xl bg-[#071129]/80 border border-[#4682b4]/30 text-slate-300">
+                <ShieldCheck className="w-5 h-5 text-[#4682b4] flex-shrink-0 mt-0.5" />
+                <div className="space-y-1 leading-relaxed text-left">
+                  <p className="font-bold text-xs text-white">
+                    Acceso Oficial Restringido y Protegido
                   </p>
-                  <span className="text-[9px] font-mono text-slate-500 mt-1 block">
-                    admin / admin123
-                  </span>
-                </button>
-
-                {/* 2. Auditor */}
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('auditor')}
-                  disabled={isLoading}
-                  className="p-2.5 bg-slate-950/70 hover:bg-slate-800 border border-slate-700/70 rounded-xl text-left transition-all hover:border-sky-500/50 group cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-sky-400 group-hover:text-sky-300">
-                      Auditor GIT
-                    </span>
-                    <ShieldCheck className="w-3 h-3 text-sky-400" />
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
-                    Auditoría y Fiscalización
+                  <p className="text-[11px] text-slate-300">
+                    El ingreso a esta plataforma está estrictamente reservado para personal autorizado del Organismo Judicial. Toda sesión y transacción es fiscalizada y registrada en la bitácora de auditoría interna de la GIT.
                   </p>
-                  <span className="text-[9px] font-mono text-slate-500 mt-1 block">
-                    auditor / auditor123
-                  </span>
-                </button>
-
-                {/* 3. Operador / Usuario Estándar */}
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('usuario_estandar')}
-                  disabled={isLoading}
-                  className="p-2.5 bg-slate-950/70 hover:bg-slate-800 border border-slate-700/70 rounded-xl text-left transition-all hover:border-emerald-500/50 group cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-400 group-hover:text-emerald-300">
-                      Operador GIT
-                    </span>
-                    <Server className="w-3 h-3 text-emerald-400" />
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
-                    Gestión de Eventos NOG
-                  </p>
-                  <span className="text-[9px] font-mono text-slate-500 mt-1 block">
-                    operador / user123
-                  </span>
-                </button>
-
+                </div>
               </div>
             </div>
 
           </div>
 
           {/* Pie del Panel de Login */}
-          <div className="px-6 py-3 bg-slate-950 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+          <div className="px-6 py-3 bg-[#060e24] border-t border-[#1c39bb]/40 flex items-center justify-between text-[10px] text-slate-400 font-mono">
             <span>TERMINAL: GIT-SEC-01</span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

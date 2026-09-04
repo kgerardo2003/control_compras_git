@@ -19,7 +19,8 @@ export const UsersView: React.FC = () => {
     updateUser, 
     toggleUserStatus, 
     deleteUser, 
-    currentUser 
+    currentUser,
+    themeConfig
   } = useApp();
 
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState(false);
@@ -129,7 +130,7 @@ export const UsersView: React.FC = () => {
             id="btn-create-user"
             type="button"
             onClick={handleOpenCreate}
-            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            className={`px-3.5 py-1.5 rounded-lg ${themeConfig.primaryBtn} text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer`}
           >
             <UserPlus className="w-4 h-4" />
             <span>Crear Usuario</span>
@@ -409,7 +410,7 @@ export const UsersView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-xs"
+                  className={`px-4 py-2 ${themeConfig.primaryBtn} text-white font-bold rounded-lg shadow-xs cursor-pointer`}
                 >
                   {editingUser ? 'Actualizar Usuario' : 'Guardar Usuario'}
                 </button>
