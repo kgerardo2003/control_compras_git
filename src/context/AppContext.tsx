@@ -20,6 +20,22 @@ import {
   INITIAL_NOTIFICATIONS 
 } from '../data/initialData';
 import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
+import { 
+  db,
+  PURCHASES_COLLECTION, 
+  AUDIT_LOGS_COLLECTION, 
+  CATALOGS_COLLECTION, 
+  USERS_COLLECTION,
+  savePurchaseToFirestore,
+  removePurchaseFromFirestore,
+  saveAuditLogToFirestore,
+  saveCatalogToFirestore,
+  removeCatalogFromFirestore,
+  saveUserToFirestore,
+  removeUserFromFirestore,
+  seedInitialDataIfEmpty
+} from '../lib/firebase';
+import { collection, onSnapshot, query, limit } from 'firebase/firestore';
 
 export const DEFAULT_LOGO_CONFIG: CustomLogoConfig = {
   type: 'preset',
@@ -39,6 +55,8 @@ interface AppContextType {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
   isOnline: boolean;
+  isFirestoreConnected: boolean;
+  firestoreStatus: 'conectado' | 'conectando' | 'offline';
   selectedPurchase: PurchaseRecord | null;
   setSelectedPurchase: (purchase: PurchaseRecord | null) => void;
   isPurchaseModalOpen: boolean;
@@ -236,10 +254,90 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(true);
+  const [firestoreStatus, setFirestoreStatus] = useState<'conectado' | 'conectando' | 'offline'>('conectando');
   const [selectedPurchase, setSelectedPurchase] = useState<PurchaseRecord | null>(null);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState<boolean>(false);
   const [purchaseToEdit, setPurchaseToEdit] = useState<PurchaseRecord | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+
+  // Sincronización en Tiempo Real Multiusuario con Firebase Firestore
+  useEffect(() => {
+    // Sembrado inicial de contingencia si la base de datos en la nube está limpia
+    seedInitialDataIfEmpty(INITIAL_PURCHASES, INITIAL_CATALOGS, INITIAL_USERS, INITIAL_AUDIT_LOGS)
+      .then(() => {
+        setIsFirestoreConnected(true);
+        setFirestoreStatus('conectado');
+      })
+      .catch((err) => {
+        console.warn("Conexión Firestore:", err);
+      });
+
+    // Suscripción reactiva a Adquisiciones (Purchases)
+    const unsubPurchases = onSnapshot(collection(db, PURCHASES_COLLECTION), (snapshot) => {
+      if (!snapshot.empty) {
+        const remoteItems: PurchaseRecord[] = [];
+        snapshot.forEach((doc) => {
+          remoteItems.push(doc.data() as PurchaseRecord);
+        });
+        remoteItems.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
+        setPurchases(remoteItems);
+      }
+      setIsFirestoreConnected(true);
+      setFirestoreStatus('conectado');
+    }, (error) => {
+      console.warn("Firestore Purchases Listener Error:", error);
+      setFirestoreStatus('offline');
+    });
+
+    // Suscripción reactiva a Bitácora Oficial (Audit Logs)
+    const qLogs = query(collection(db, AUDIT_LOGS_COLLECTION), limit(150));
+    const unsubLogs = onSnapshot(qLogs, (snapshot) => {
+      if (!snapshot.empty) {
+        const remoteLogs: AuditLogEntry[] = [];
+        snapshot.forEach((doc) => {
+          remoteLogs.push(doc.data() as AuditLogEntry);
+        });
+        remoteLogs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+        setAuditLogs(remoteLogs);
+      }
+    }, (error) => {
+      console.warn("Firestore Logs Listener Error:", error);
+    });
+
+    // Suscripción reactiva a Catálogos Parametrizados
+    const unsubCatalogs = onSnapshot(collection(db, CATALOGS_COLLECTION), (snapshot) => {
+      if (!snapshot.empty) {
+        const remoteCatalogs: Catalog[] = [];
+        snapshot.forEach((doc) => {
+          remoteCatalogs.push(doc.data() as Catalog);
+        });
+        setCatalogs(remoteCatalogs);
+      }
+    }, (error) => {
+      console.warn("Firestore Catalogs Listener Error:", error);
+    });
+
+    // Suscripción reactiva a Directorio de Usuarios
+    const unsubUsers = onSnapshot(collection(db, USERS_COLLECTION), (snapshot) => {
+      if (!snapshot.empty) {
+        const remoteUsers: User[] = [];
+        snapshot.forEach((doc) => {
+          remoteUsers.push(doc.data() as User);
+        });
+        setUsers(remoteUsers);
+      }
+    }, (error) => {
+      console.warn("Firestore Users Listener Error:", error);
+    });
+
+    return () => {
+      unsubPurchases();
+      unsubLogs();
+      unsubCatalogs();
+      unsubUsers();
+    };
+  }, []);
 
   // Tema del sistema
   const [theme, setThemeState] = useState<SystemThemeId>(() => {
@@ -352,6 +450,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setAuditLogs(prev => [newEntry, ...prev]);
+    saveAuditLogToFirestore(newEntry);
   }, [currentUser]);
 
   // Helper de Notificación
@@ -450,6 +549,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setPurchases(prev => [newRecord, ...prev]);
+    savePurchaseToFirestore(newRecord);
 
     logAudit(
       'CREAR_COMPRA', 
@@ -483,6 +583,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setPurchases(prevList => prevList.map(p => p.id === id ? updated : p));
+    savePurchaseToFirestore(updated);
 
     // Si cambió el estatus, emitir notificación especial
     if (data.estatusEvento && data.estatusEvento !== prev.estatusEvento) {
@@ -520,6 +621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!prev) return;
 
     setPurchases(prevList => prevList.filter(p => p.id !== id));
+    removePurchaseFromFirestore(id);
     logAudit('ELIMINAR_COMPRA', 'Compras', `Eliminación de evento NOG: ${prev.nog} (${prev.descripcion.slice(0, 40)}...)`, id, prev);
   };
 
@@ -531,12 +633,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       esSistema: false,
     };
     setCatalogs(prev => [...prev, newCat]);
+    saveCatalogToFirestore(newCat);
     logAudit('CREAR_CATALOGO', 'Catálogos', `Creación de nuevo catálogo: ${data.nombre} (${data.codigo})`, newCat.id);
     return newCat;
   };
 
   const updateCatalog = (id: string, data: Partial<Catalog>) => {
-    setCatalogs(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+    const current = catalogs.find(c => c.id === id);
+    if (!current) return;
+    const updated = { ...current, ...data };
+    setCatalogs(prev => prev.map(c => c.id === id ? updated : c));
+    saveCatalogToFirestore(updated);
     logAudit('EDITAR_CATALOGO', 'Catálogos', `Actualización de catálogo ID: ${id}`, id, undefined, data);
   };
 
@@ -544,6 +651,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cat = catalogs.find(c => c.id === id);
     if (cat?.esSistema) return; // Proteger catálogos del sistema
     setCatalogs(prev => prev.filter(c => c.id !== id));
+    removeCatalogFromFirestore(id);
     logAudit('EDITAR_CATALOGO', 'Catálogos', `Eliminación de catálogo: ${cat?.nombre}`, id);
   };
 
@@ -552,41 +660,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...item,
       id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     };
+    let updatedCatalog: Catalog | null = null;
     setCatalogs(prev => prev.map(cat => {
       if (cat.id === catalogId) {
-        return {
+        updatedCatalog = {
           ...cat,
           items: [...cat.items, newItem]
         };
+        return updatedCatalog;
       }
       return cat;
     }));
+    if (updatedCatalog) {
+      saveCatalogToFirestore(updatedCatalog);
+    }
     logAudit('EDITAR_CATALOGO', 'Catálogos', `Añadido elemento "${item.valor}" al catálogo ID: ${catalogId}`, catalogId);
   };
 
   const updateCatalogItem = (catalogId: string, itemId: string, item: Partial<CatalogItem>) => {
+    let updatedCatalog: Catalog | null = null;
     setCatalogs(prev => prev.map(cat => {
       if (cat.id === catalogId) {
-        return {
+        updatedCatalog = {
           ...cat,
           items: cat.items.map(it => it.id === itemId ? { ...it, ...item } : it)
         };
+        return updatedCatalog;
       }
       return cat;
     }));
+    if (updatedCatalog) {
+      saveCatalogToFirestore(updatedCatalog);
+    }
     logAudit('EDITAR_CATALOGO', 'Catálogos', `Modificado elemento ${itemId} en catálogo ID: ${catalogId}`, catalogId);
   };
 
   const deleteCatalogItem = (catalogId: string, itemId: string) => {
+    let updatedCatalog: Catalog | null = null;
     setCatalogs(prev => prev.map(cat => {
       if (cat.id === catalogId) {
-        return {
+        updatedCatalog = {
           ...cat,
           items: cat.items.filter(it => it.id !== itemId)
         };
+        return updatedCatalog;
       }
       return cat;
     }));
+    if (updatedCatalog) {
+      saveCatalogToFirestore(updatedCatalog);
+    }
     logAudit('EDITAR_CATALOGO', 'Catálogos', `Eliminado elemento ${itemId} de catálogo ID: ${catalogId}`, catalogId);
   };
 
@@ -598,12 +721,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fechaCreacion: new Date().toISOString(),
     };
     setUsers(prev => [...prev, newUser]);
+    saveUserToFirestore(newUser);
     logAudit('CREAR_USUARIO', 'Usuarios', `Creación de usuario: ${newUser.username} con rol ${newUser.rol}`, newUser.id);
     return newUser;
   };
 
   const updateUser = (id: string, data: Partial<User>) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u));
+    const current = users.find(u => u.id === id);
+    if (!current) return;
+    const updated = { ...current, ...data };
+    setUsers(prev => prev.map(u => u.id === id ? updated : u));
+    saveUserToFirestore(updated);
     logAudit('EDITAR_USUARIO', 'Usuarios', `Actualización de usuario ID: ${id}`, id, undefined, data);
   };
 
@@ -611,8 +739,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUsers(prev => prev.map(u => {
       if (u.id === id) {
         const nextState = !u.activo;
+        const updated = { ...u, activo: nextState };
+        saveUserToFirestore(updated);
         logAudit('EDITAR_USUARIO', 'Usuarios', `Cambio de estado de usuario ${u.username} a ${nextState ? 'ACTIVO' : 'INACTIVO'}`, id);
-        return { ...u, activo: nextState };
+        return updated;
       }
       return u;
     }));
@@ -622,6 +752,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const user = users.find(u => u.id === id);
     if (user?.username === 'admin') return; // Proteger superadmin
     setUsers(prev => prev.filter(u => u.id !== id));
+    removeUserFromFirestore(id);
     logAudit('EDITAR_USUARIO', 'Usuarios', `Eliminación de usuario: ${user?.username}`, id);
   };
 
@@ -685,6 +816,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeTab,
         setActiveTab,
         isOnline,
+        isFirestoreConnected,
+        firestoreStatus,
         selectedPurchase,
         setSelectedPurchase,
         isPurchaseModalOpen,

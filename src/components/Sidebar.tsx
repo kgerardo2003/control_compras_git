@@ -30,7 +30,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
     setPurchaseToEdit,
     resetToDemoData,
     purchases,
-    themeConfig
+    themeConfig,
+    firestoreStatus
   } = useApp();
 
   const handleNavClick = (tab: ActiveTab) => {
@@ -261,6 +262,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
         {/* Bloque Inferior de Usuario & Reset */}
         <div className={`p-3 border-t ${themeConfig.sidebarBorder} space-y-2`}>
           
+          {/* Indicador de Base de Datos Nube */}
+          <div className="bg-white/5 px-2.5 py-1.5 rounded-md flex items-center justify-between border border-white/5 text-[11px]">
+            <div className="flex items-center gap-1.5">
+              <span className="relative flex h-1.5 w-1.5">
+                {firestoreStatus === 'conectado' ? (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                  </>
+                ) : (
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400 animate-pulse"></span>
+                )}
+              </span>
+              <span className="text-slate-300 font-medium">BD Firestore</span>
+            </div>
+            <span className="text-[10px] text-emerald-400 font-mono font-semibold">
+              {firestoreStatus === 'conectado' ? 'En Vivo' : 'Conectando'}
+            </span>
+          </div>
+
           {/* Tarjeta de Usuario Activo */}
           <div className="bg-white/5 p-3 rounded-lg flex items-center justify-between border border-white/5">
             <div className="min-w-0">

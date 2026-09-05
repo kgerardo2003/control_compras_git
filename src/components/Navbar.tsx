@@ -13,7 +13,9 @@ import {
   Sparkles,
   ShieldCheck,
   Palette,
-  Check
+  Check,
+  Database,
+  Cloud
 } from 'lucide-react';
 import { UserRole, SystemThemeId } from '../types';
 import { formatDateTime } from '../utils/formatters';
@@ -39,7 +41,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
     setActiveTab,
     theme,
     setTheme,
-    themeConfig
+    themeConfig,
+    firestoreStatus
   } = useApp();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -125,6 +128,28 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
       {/* Lado Derecho: Indicadores, Notificaciones y Perfil */}
       <div className="flex items-center space-x-3 sm:space-x-5">
         
+        {/* Indicador de Base de Datos en la Nube Firestore (Multiusuario en Tiempo Real) */}
+        <div 
+          id="badge-firestore-status"
+          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 bg-slate-50/80 text-slate-700 select-none shadow-2xs"
+          title={firestoreStatus === 'conectado' ? 'Base de datos Firestore sincronizada en tiempo real' : 'Conectando con base de datos en la nube...'}
+        >
+          <span className="relative flex h-2 w-2">
+            {firestoreStatus === 'conectado' ? (
+              <>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </>
+            ) : (
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse"></span>
+            )}
+          </span>
+          <Database className="w-3.5 h-3.5 text-slate-500" />
+          <span className="font-semibold text-slate-800 tracking-tight">
+            {firestoreStatus === 'conectado' ? 'BD Firestore Activa' : 'Conectando BD...'}
+          </span>
+        </div>
+
         {/* Selector de Tema Rápido (3 Temas) */}
         <div className="relative" ref={themeMenuRef}>
           <button

@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isValidPurchase(data) {
+      return data.id is string
+        && data.nog is string
+        && data.descripcion is string
+        && data.monto is number
+        && data.estatusEvento is string;
+    }
+
+    function isValidAuditLog(data) {
+      return data.id is string
+        && data.fecha is string
+        && data.usuario is string
+        && data.accion is string
+        && data.modulo is string
+        && data.detalles is string;
+    }
+
+    // Reglas para Adquisiciones y Procesos de TI
+    match /purchases/{purchaseId} {
+      allow read: if true;
+      allow create: if isValidId(purchaseId) && isValidPurchase(request.resource.data);
+      allow update: if isValidId(purchaseId) && isValidPurchase(request.resource.data);
+      allow delete: if isValidId(purchaseId);
+    }
+
+    // Reglas para Bitácora de Auditoría (Creación y lectura, inmutable contra borrado accidental)
+    match /audit_logs/{logId} {
+      allow read: if true;
+      allow create: if isValidId(logId) && isValidAuditLog(request.resource.data);
+      allow update, delete: if false; // Inmutable: no se permite alterar ni eliminar bitácora
+    }
+
+    // Reglas para Catálogos Institucionales
+    match /catalogs/{catalogId} {
+      allow read: if true;
+      allow write: if isValidId(catalogId);
+    }
+
+    // Reglas para Directorio de Usuarios
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isValidId(userId);
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
