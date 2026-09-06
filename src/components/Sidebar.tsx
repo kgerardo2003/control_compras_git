@@ -11,7 +11,8 @@ import {
   Palette,
   X,
   Lock,
-  RotateCcw
+  RotateCcw,
+  KeyRound
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { OJLogo } from './OJLogo';
@@ -27,6 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
     setActiveTab, 
     currentUser, 
     setIsPurchaseModalOpen, 
+    setIsChangePasswordModalOpen,
     setPurchaseToEdit,
     resetToDemoData,
     purchases,
@@ -292,8 +294,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
                 {currentUser?.nombreCompleto || 'Invitado'}
               </p>
             </div>
-            <div className={`w-7 h-7 rounded-full bg-white/10 ${themeConfig.sidebarIconActive} flex items-center justify-center font-bold text-xs flex-shrink-0`}>
-              {currentUser?.username.slice(0, 2).toUpperCase() || 'OJ'}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsChangePasswordModalOpen(true)}
+                className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                title="Cambiar contraseña de mi cuenta"
+                aria-label="Cambiar contraseña"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+              </button>
+              <div className={`w-7 h-7 rounded-full bg-white/10 ${themeConfig.sidebarIconActive} flex items-center justify-center font-bold text-xs`}>
+                {currentUser?.username.slice(0, 2).toUpperCase() || 'OJ'}
+              </div>
             </div>
           </div>
 

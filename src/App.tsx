@@ -20,6 +20,7 @@ import { LoginView } from './components/LoginView';
 import { AdminAccessGate } from './components/AdminAccessGate';
 import { PurchaseFormModal } from './components/PurchaseFormModal';
 import { PurchaseDetailModal } from './components/PurchaseDetailModal';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { ToastContainer } from './components/ToastContainer';
 
 const AppContent: React.FC = () => {
@@ -127,6 +128,7 @@ const AppContent: React.FC = () => {
       <LoginModal />
       <PurchaseFormModal />
       <PurchaseDetailModal />
+      <ChangePasswordModal />
 
       {/* Notificaciones Flotantes (Toasts) */}
       <ToastContainer />

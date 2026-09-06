@@ -15,7 +15,8 @@ import {
   Palette,
   Check,
   Database,
-  Cloud
+  Cloud,
+  KeyRound
 } from 'lucide-react';
 import { UserRole, SystemThemeId } from '../types';
 import { formatDateTime } from '../utils/formatters';
@@ -30,6 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
     currentUser, 
     logout, 
     setIsLoginModalOpen, 
+    setIsChangePasswordModalOpen,
     switchDemoUser,
     notifications, 
     unreadNotificationsCount, 
@@ -390,11 +392,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                   <p className="text-slate-400 mt-0.5">{currentUser.departamento}</p>
                 </div>
 
-                <div className="border-t border-slate-100 pt-1 px-2">
+                <div className="border-t border-slate-100 pt-1 px-2 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setIsChangePasswordModalOpen(true); setIsUserMenuOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Cambiar Contraseña</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => { logout(); setIsUserMenuOpen(false); }}
-                    className="w-full text-left px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-semibold"
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>Cerrar Sesión</span>

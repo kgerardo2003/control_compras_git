@@ -68,6 +68,8 @@ interface AppContextType {
   setPurchaseToEdit: (purchase: PurchaseRecord | null) => void;
   isLoginModalOpen: boolean;
   setIsLoginModalOpen: (open: boolean) => void;
+  isChangePasswordModalOpen: boolean;
+  setIsChangePasswordModalOpen: (open: boolean) => void;
 
   // Temas y Personalización
   theme: SystemThemeId;
@@ -80,6 +82,7 @@ interface AppContextType {
   // Auth
   login: (username: string, password?: string) => { success: boolean; message: string };
   logout: () => void;
+  changePassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
   switchDemoUser: (role: UserRole) => void;
 
   // Compras CRUD
@@ -150,7 +153,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (adminIndex >= 0) {
           parsed[adminIndex].nombreCompleto = 'Lic. Kevin Gerarado López de León';
           parsed[adminIndex].email = 'klopez@oj.gob.gt';
-          parsed[adminIndex].password = 'Guate2026*';
+          parsed[adminIndex].password = parsed[adminIndex].password || 'Guate2026*';
           parsed[adminIndex].rol = 'administrador';
           parsed[adminIndex].cargo = 'Gerente de Informática y Telecomunicaciones';
           parsed[adminIndex].departamento = 'Gerencia de Informática - OJ';
@@ -247,7 +250,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (parsed && parsed.username && parsed.username.toLowerCase() === 'admin') {
             parsed.nombreCompleto = 'Lic. Kevin Gerarado López de León';
             parsed.email = 'klopez@oj.gob.gt';
-            parsed.password = 'Guate2026*';
+            parsed.password = parsed.password || 'Guate2026*';
             parsed.cargo = 'Gerente de Informática y Telecomunicaciones';
             parsed.departamento = 'Gerencia de Informática - OJ';
           }
@@ -268,6 +271,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState<boolean>(false);
   const [purchaseToEdit, setPurchaseToEdit] = useState<PurchaseRecord | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState<boolean>(false);
 
   // Sincronización en Tiempo Real Multiusuario con Firebase Firestore
   useEffect(() => {
@@ -536,7 +540,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'La cuenta de usuario se encuentra suspendida o inactiva.' };
     }
 
-    const expectedPassword = user.username.toLowerCase() === 'admin' ? 'Guate2026*' : user.password;
+    const expectedPassword = user.password || (user.username.toLowerCase() === 'admin' ? 'Guate2026*' : 'user123');
     if (password && expectedPassword && password !== expectedPassword) {
       return { success: false, message: 'Contraseña institucional incorrecta.' };
     }
@@ -567,6 +571,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs(prev => [tempLog, ...prev]);
 
     return { success: true, message: `Bienvenido, ${updatedUser.nombreCompleto}` };
+  };
+
+  const changePassword = (currentPassword: string, newPassword: string): { success: boolean; message: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'No hay una sesión de usuario activa.' };
+    }
+
+    const expectedPassword = currentUser.password || (currentUser.username.toLowerCase() === 'admin' ? 'Guate2026*' : 'user123');
+    if (currentPassword !== expectedPassword) {
+      return { success: false, message: 'La contraseña actual ingresada no coincide.' };
+    }
+
+    if (!newPassword || newPassword.trim().length < 6) {
+      return { success: false, message: 'La nueva contraseña debe tener al menos 6 caracteres.' };
+    }
+
+    if (newPassword === currentPassword) {
+      return { success: false, message: 'La nueva contraseña debe ser diferente a la contraseña actual.' };
+    }
+
+    const updatedUser: User = {
+      ...currentUser,
+      password: newPassword,
+    };
+
+    // Actualizar usuario actual y almacenamiento local
+    setCurrentUser(updatedUser);
+    localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(updatedUser));
+
+    // Actualizar lista de usuarios y persistir en Firestore
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    saveUserToFirestore(updatedUser);
+
+    // Auditoría
+    logAudit(
+      'EDITAR_USUARIO',
+      'Seguridad',
+      `Cambio de contraseña efectuado para la cuenta: ${currentUser.username} (${currentUser.nombreCompleto}).`,
+      currentUser.id
+    );
+
+    // Notificación en el sistema
+    addNotification({
+      tipo: 'exito',
+      titulo: 'Contraseña Modificada',
+      mensaje: `La contraseña de ${currentUser.username} ha sido actualizada exitosamente en el sistema.`,
+    });
+
+    return { success: true, message: 'Contraseña modificada exitosamente.' };
   };
 
   const logout = () => {
@@ -952,8 +1005,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPurchaseToEdit,
         isLoginModalOpen,
         setIsLoginModalOpen,
+        isChangePasswordModalOpen,
+        setIsChangePasswordModalOpen,
         login,
         logout,
+        changePassword,
         switchDemoUser,
         addPurchase,
         updatePurchase,
