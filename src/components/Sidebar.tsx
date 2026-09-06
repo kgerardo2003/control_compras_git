@@ -9,6 +9,7 @@ import {
   Users, 
   FileText, 
   Palette,
+  Mail,
   X,
   Lock,
   RotateCcw,
@@ -255,6 +256,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
                 </div>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded ${themeConfig.sidebarBadge} font-bold`}>
                   Paletas
+                </span>
+              </button>
+
+              {/* Configuración de Correo (Gmail & Alertas) */}
+              <button
+                id="nav-tab-correo"
+                type="button"
+                onClick={() => handleNavClick('correo')}
+                className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === 'correo'
+                    ? themeConfig.sidebarActive
+                    : `text-slate-300 ${themeConfig.sidebarHover}`
+                }`}
+              >
+                <div className="flex items-center">
+                  <Mail className={`w-4 h-4 mr-3 ${activeTab === 'correo' ? themeConfig.sidebarIconActive : 'text-slate-400'}`} />
+                  <span>Configuración de Correo</span>
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${themeConfig.sidebarBadge} font-bold`}>
+                  Gmail
                 </span>
               </button>
             </>

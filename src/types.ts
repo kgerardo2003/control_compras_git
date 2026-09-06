@@ -29,8 +29,8 @@ export interface AttachedDocument {
 export interface PurchaseRecord {
   id: string;
   descripcion: string; // Max 200
-  f56e: string;        // Máscara 000000-0000 (11 car.)
-  f56: string;         // Máscara 000000 (6 dígitos numéricos)
+  f56e: string;        // Forma F56-e (ej. 00001, 00001-2026, 000001-2026)
+  f56?: string;        // Formulario F56 físico (opcional)
   f56Documento?: AttachedDocument; // Documento físico/digital de la F56 adjunto
   fechaSolicitud: string;   // YYYY-MM-DD
   fechaVoBo: string;        // YYYY-MM-DD
@@ -43,6 +43,7 @@ export interface PurchaseRecord {
   evaluadoGIT: EvaluacionGIT; // Sí | No
   fechaDictamenGIT?: string; // Fecha en que se realizó el dictamen técnico por la GIT (YYYY-MM-DD)
   estatusEvento: string;    // Evaluación | Adjudicación | Prescindido | Desierto or custom
+  fechaAdjudicacion?: string; // Fecha en que se adjudicó el evento (YYYY-MM-DD)
   areaSolicitante?: string;
   categoriaTecnologica?: string;
   dependenciaSolicitante?: string;
@@ -85,7 +86,8 @@ export type AuditAction =
   | 'CREAR_USUARIO' 
   | 'EDITAR_USUARIO' 
   | 'EXPORTAR_DATOS'
-  | 'RESTAURAR_DATOS';
+  | 'RESTAURAR_DATOS'
+  | 'IMPORTAR_DATOS';
 
 export interface AuditLogEntry {
   id: string;
@@ -114,7 +116,25 @@ export interface AppNotification {
   categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema';
 }
 
-export type ActiveTab = 'dashboard' | 'compras' | 'catalogos' | 'auditoria' | 'usuarios' | 'reportes' | 'personalizacion';
+export type ActiveTab = 'dashboard' | 'compras' | 'catalogos' | 'auditoria' | 'usuarios' | 'reportes' | 'personalizacion' | 'correo';
+
+export interface GmailConfig {
+  userEmail: string;
+  senderName: string;
+  appPassword: string;
+  smtpHost: string;
+  smtpPort: number;
+  secure: boolean;
+  recipientEmails: string[];
+  notifyOnNewPurchase: boolean;
+  notifyOnAdjudication: boolean;
+  notifyOnDeadlineWarning: boolean;
+  notifyOnGitOpinion: boolean;
+  notifyOnCriticalAudit: boolean;
+  lastTestDate?: string;
+  lastTestStatus?: 'success' | 'error';
+  lastTestError?: string;
+}
 
 export type SystemThemeId = 'azul_persia_acero' | 'slate_ambar' | 'azul_judicial' | 'grafito_esmeralda';
 

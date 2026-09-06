@@ -15,12 +15,14 @@ import { AuditLogView } from './components/AuditLogView';
 import { UsersView } from './components/UsersView';
 import { ReportsView } from './components/ReportsView';
 import { CustomizationView } from './components/CustomizationView';
+import { EmailConfigView } from './components/EmailConfigView';
 import { LoginModal } from './components/LoginModal';
 import { LoginView } from './components/LoginView';
 import { AdminAccessGate } from './components/AdminAccessGate';
 import { PurchaseFormModal } from './components/PurchaseFormModal';
 import { PurchaseDetailModal } from './components/PurchaseDetailModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { ImportExcelModal } from './components/ImportExcelModal';
 import { ToastContainer } from './components/ToastContainer';
 
 const AppContent: React.FC = () => {
@@ -115,6 +117,17 @@ const AppContent: React.FC = () => {
                 />
               )
             )}
+
+            {activeTab === 'correo' && (
+              isAdmin ? (
+                <EmailConfigView />
+              ) : (
+                <AdminAccessGate 
+                  moduleTitle="Configuración de Correo Electrónico" 
+                  moduleDescription="Parámetros de conexión Gmail SMTP, alertas para autoridades y despliegue en Vercel" 
+                />
+              )
+            )}
           </div>
         </main>
 
@@ -137,6 +150,7 @@ const AppContent: React.FC = () => {
       <PurchaseFormModal />
       <PurchaseDetailModal />
       <ChangePasswordModal />
+      <ImportExcelModal />
 
       {/* Notificaciones Flotantes (Toasts) */}
       <ToastContainer />

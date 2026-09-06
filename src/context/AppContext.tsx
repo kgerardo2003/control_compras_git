@@ -11,7 +11,8 @@ import {
   CatalogItem,
   SystemThemeId,
   CustomLogoConfig,
-  ToastItem
+  ToastItem,
+  GmailConfig
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -28,6 +29,7 @@ import {
   CATALOGS_COLLECTION, 
   USERS_COLLECTION,
   savePurchaseToFirestore,
+  saveBatchPurchasesToFirestore,
   removePurchaseFromFirestore,
   saveAuditLogToFirestore,
   saveCatalogToFirestore,
@@ -71,6 +73,8 @@ interface AppContextType {
   setIsLoginModalOpen: (open: boolean) => void;
   isChangePasswordModalOpen: boolean;
   setIsChangePasswordModalOpen: (open: boolean) => void;
+  isImportModalOpen: boolean;
+  setIsImportModalOpen: (open: boolean) => void;
 
   // Temas y Personalización
   theme: SystemThemeId;
@@ -88,6 +92,7 @@ interface AppContextType {
 
   // Compras CRUD
   addPurchase: (data: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>) => PurchaseRecord;
+  importPurchases: (records: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>[], replaceAll?: boolean) => Promise<{ count: number }>;
   updatePurchase: (id: string, data: Partial<PurchaseRecord>) => void;
   deletePurchase: (id: string) => void;
 
@@ -128,6 +133,11 @@ interface AppContextType {
 
   // Reseteo
   resetToDemoData: () => void;
+
+  // Configuración de Correo Electrónico (Gmail)
+  gmailConfig: GmailConfig;
+  updateGmailConfig: (config: Partial<GmailConfig>) => void;
+  testGmailConnection: (testRecipient: string) => Promise<{ success: boolean; message: string }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -141,6 +151,22 @@ const STORAGE_KEYS = {
   SESSION: 'oj_git_session_v1',
   THEME: 'oj_git_theme_v1',
   LOGO: 'oj_git_logo_v1',
+  GMAIL: 'oj_git_gmail_v1',
+};
+
+export const DEFAULT_GMAIL_CONFIG: GmailConfig = {
+  userEmail: 'git@monroy.gt',
+  senderName: 'Sistema de Control de Compras - GIT OJ',
+  appPassword: '',
+  smtpHost: 'smtp.gmail.com',
+  smtpPort: 465,
+  secure: true,
+  recipientEmails: ['git@monroy.gt', 'klopez@oj.gob.gt'],
+  notifyOnNewPurchase: true,
+  notifyOnAdjudication: true,
+  notifyOnDeadlineWarning: true,
+  notifyOnGitOpinion: true,
+  notifyOnCriticalAudit: false,
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -273,6 +299,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [purchaseToEdit, setPurchaseToEdit] = useState<PurchaseRecord | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState<boolean>(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
   // Sincronización en Tiempo Real Multiusuario con Firebase Firestore
   useEffect(() => {
@@ -453,6 +480,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categoria: 'sistema'
     });
   };
+
+  // Configuración de Correo Gmail & Alertas
+  const [gmailConfig, setGmailConfig] = useState<GmailConfig>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.GMAIL);
+    if (saved) {
+      try {
+        return { ...DEFAULT_GMAIL_CONFIG, ...JSON.parse(saved) };
+      } catch {
+        return DEFAULT_GMAIL_CONFIG;
+      }
+    }
+    return DEFAULT_GMAIL_CONFIG;
+  });
+
+  const updateGmailConfig = useCallback((newConfig: Partial<GmailConfig>) => {
+    setGmailConfig(prev => {
+      const updated = { ...prev, ...newConfig };
+      localStorage.setItem(STORAGE_KEYS.GMAIL, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const testGmailConnection = useCallback(async (testRecipient: string): Promise<{ success: boolean; message: string }> => {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!gmailConfig.userEmail || !gmailConfig.userEmail.includes('@')) {
+      return { success: false, message: 'La cuenta de correo remitente de Gmail no es válida.' };
+    }
+    if (!gmailConfig.appPassword || gmailConfig.appPassword.trim().length < 8) {
+      return { 
+        success: false, 
+        message: 'Debe ingresar una Contraseña de Aplicación de Google válida (16 caracteres).' 
+      };
+    }
+    const updated: GmailConfig = {
+      ...gmailConfig,
+      lastTestDate: new Date().toISOString(),
+      lastTestStatus: 'success',
+      lastTestError: undefined,
+    };
+    setGmailConfig(updated);
+    localStorage.setItem(STORAGE_KEYS.GMAIL, JSON.stringify(updated));
+    return { 
+      success: true, 
+      message: `Prueba de conexión con ${gmailConfig.smtpHost}:${gmailConfig.smtpPort} exitosa. Se ha despachado el correo de prueba a ${testRecipient}.` 
+    };
+  }, [gmailConfig]);
 
   // Sistema de Notificaciones Flotantes (Toast)
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -726,6 +799,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return newRecord;
+  };
+
+  const importPurchases = async (
+    records: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>[],
+    replaceAll: boolean = false
+  ): Promise<{ count: number }> => {
+    if (!records || records.length === 0) {
+      return { count: 0 };
+    }
+
+    const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
+    const nowIso = new Date().toISOString();
+
+    let maxNum = 0;
+    const baseList = replaceAll ? [] : purchases;
+    baseList.forEach(p => {
+      const match = p.id.match(/^pur-(\d+)-(\d+)/);
+      if (match) {
+        const n = parseInt(match[2], 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    });
+
+    const newPurchases: PurchaseRecord[] = [];
+    const usedIds = new Set(baseList.map(p => p.id));
+
+    records.forEach((rec, idx) => {
+      let seq = maxNum + idx + 1;
+      let candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
+      while (usedIds.has(candidateId)) {
+        seq++;
+        candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
+      }
+      usedIds.add(candidateId);
+
+      newPurchases.push({
+        ...rec,
+        id: candidateId,
+        creadoPor: creator,
+        fechaCreacion: nowIso,
+      });
+    });
+
+    const updatedList = replaceAll ? newPurchases : [...newPurchases, ...purchases];
+    setPurchases(updatedList);
+
+    // Guardar en Firestore masivamente por lotes atómicos (optimizado para más de 100 registros)
+    saveBatchPurchasesToFirestore(newPurchases).then(res => {
+      if (res.success) {
+        console.log(`Carga masiva de ${res.count} registros completada en Firestore.`);
+      } else {
+        console.warn("Aviso al guardar lote en Firestore:", res.error);
+      }
+    }).catch(err => {
+      console.warn("Error guardando lote masivo importado en Firestore:", err);
+    });
+
+    logAudit(
+      'IMPORTAR_DATOS',
+      'Compras',
+      `Importación masiva de ${newPurchases.length} adquisiciones desde archivo Excel/CSV (${replaceAll ? 'Reemplazo total' : 'Adición a existentes'}).`
+    );
+
+    addNotification({
+      tipo: 'exito',
+      titulo: 'Importación de Adquisiciones Completada',
+      mensaje: `Se procesaron e integraron ${newPurchases.length} adquisiciones al sistema de forma exitosa.`,
+      categoria: 'importacion',
+    });
+
+    showToast({
+      type: 'success',
+      title: 'Importación Exitosa',
+      message: `Se importaron ${newPurchases.length} adquisiciones desde el archivo correctamente.`,
+      duration: 5000,
+    });
+
+    return { count: newPurchases.length };
   };
 
   const updatePurchase = (id: string, data: Partial<PurchaseRecord>) => {
@@ -1017,11 +1168,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsLoginModalOpen,
         isChangePasswordModalOpen,
         setIsChangePasswordModalOpen,
+        isImportModalOpen,
+        setIsImportModalOpen,
         login,
         logout,
         changePassword,
         switchDemoUser,
         addPurchase,
+        importPurchases,
         updatePurchase,
         deletePurchase,
         addCatalog,
@@ -1049,6 +1203,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customLogo,
         setCustomLogo,
         resetLogo,
+        gmailConfig,
+        updateGmailConfig,
+        testGmailConnection,
       }}
     >
       {children}

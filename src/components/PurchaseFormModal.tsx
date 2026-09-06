@@ -5,31 +5,28 @@ import {
   Save, 
   FileText, 
   Hash, 
-  ShieldCheck,
-  Calendar,
-  Tag,
-  Paperclip,
-  UploadCloud,
-  Trash2,
-  Download,
-  CheckCircle2,
-  AlertCircle
+  ShieldCheck, 
+  Calendar, 
+  Tag, 
+  Paperclip, 
+  UploadCloud, 
+  Trash2, 
+  Download, 
+  CheckCircle2, 
+  AlertCircle, 
+  Award 
 } from 'lucide-react';
 import { EvaluacionGIT, AttachedDocument } from '../types';
 import { formatQuetzales } from '../utils/formatters';
 
-// Función para aplicar la máscara de entrada 000000-0000 a F56-e
+// Función para campo F56e tipo texto de 10 posiciones
 const formatF56eInput = (raw: string): string => {
-  const digits = raw.replace(/\D/g, '').slice(0, 10);
-  if (digits.length <= 6) {
-    return digits;
-  }
-  return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+  return raw.slice(0, 10);
 };
 
-// Función para aplicar la máscara de entrada 000000 a F56
+// Función para campo F56 tipo texto de 6 posiciones
 const formatF56Input = (raw: string): string => {
-  return raw.replace(/\D/g, '').slice(0, 6);
+  return raw.slice(0, 6);
 };
 
 // Función para aplicar la máscara de entrada de valores: 000,000,000.00
@@ -83,6 +80,7 @@ export const PurchaseFormModal: React.FC = () => {
   const [evaluadoGIT, setEvaluadoGIT] = useState<EvaluacionGIT>('Sí');
   const [fechaDictamenGIT, setFechaDictamenGIT] = useState<string>('');
   const [estatusEvento, setEstatusEvento] = useState<string>('Evaluación');
+  const [fechaAdjudicacion, setFechaAdjudicacion] = useState<string>('');
   const [areaSolicitante, setAreaSolicitante] = useState('Soporte técnico');
   const [categoriaTecnologica, setCategoriaTecnologica] = useState('');
   const [dependenciaSolicitante, setDependenciaSolicitante] = useState('');
@@ -153,6 +151,7 @@ export const PurchaseFormModal: React.FC = () => {
       setEvaluadoGIT(purchaseToEdit.evaluadoGIT || 'Sí');
       setFechaDictamenGIT(purchaseToEdit.fechaDictamenGIT || '');
       setEstatusEvento(purchaseToEdit.estatusEvento || 'Evaluación');
+      setFechaAdjudicacion(purchaseToEdit.fechaAdjudicacion || '');
       setAreaSolicitante(purchaseToEdit.areaSolicitante || areaOptions[0] || 'Soporte técnico');
       setCategoriaTecnologica(purchaseToEdit.categoriaTecnologica || categoryOptions[0] || '');
       setDependenciaSolicitante(purchaseToEdit.dependenciaSolicitante || dependencyOptions[0] || '');
@@ -176,6 +175,7 @@ export const PurchaseFormModal: React.FC = () => {
       setEvaluadoGIT('Sí');
       setFechaDictamenGIT('');
       setEstatusEvento('Evaluación');
+      setFechaAdjudicacion('');
       setAreaSolicitante(areaOptions[0] || 'Soporte técnico');
       setCategoriaTecnologica(categoryOptions[0] || 'Servidores y Almacenamiento');
       setDependenciaSolicitante(dependencyOptions[0] || 'Subgerencia de Infraestructura GIT');
@@ -305,20 +305,18 @@ export const PurchaseFormModal: React.FC = () => {
       newErrors.descripcion = 'La descripción no puede exceder 200 caracteres.';
     }
 
-    // 2. F56-e: máscara 000000-0000 (exactamente 6 dígitos, guion y 4 dígitos)
+    // 2. F56-e: campo tipo texto de 10 posiciones (obligatorio)
     const cleanF56e = f56e.trim();
     if (!cleanF56e) {
       newErrors.f56e = 'El campo F56-e es obligatorio.';
-    } else if (!/^\d{6}-\d{4}$/.test(cleanF56e)) {
-      newErrors.f56e = 'El formato de F56-e debe cumplir la máscara 000000-0000 (ej. 000001-2026).';
+    } else if (cleanF56e.length > 10) {
+      newErrors.f56e = 'El campo F56-e no puede exceder 10 posiciones.';
     }
 
-    // 3. F56: máscara 000000 (exactamente 6 dígitos numéricos)
+    // 3. F56: campo tipo texto de 6 posiciones
     const cleanF56 = f56.trim();
-    if (!cleanF56) {
-      newErrors.f56 = 'El campo F56 es obligatorio.';
-    } else if (!/^\d{6}$/.test(cleanF56)) {
-      newErrors.f56 = 'El formato de F56 debe cumplir la máscara 000000 (exactamente 6 dígitos numéricos, ej. 000001).';
+    if (cleanF56 && cleanF56.length > 6) {
+      newErrors.f56 = 'El campo F56 no puede exceder 6 posiciones.';
     }
 
     // 4. Fechas
@@ -351,6 +349,11 @@ export const PurchaseFormModal: React.FC = () => {
       newErrors.fechaDictamenGIT = 'Ingrese la fecha en que se realizó el dictamen técnico por la GIT.';
     }
 
+    // 9. Fecha de adjudicación (si el estatus es Adjudicación)
+    if (estatusEvento === 'Adjudicación' && !fechaAdjudicacion) {
+      newErrors.fechaAdjudicacion = 'Ingrese la fecha en que se adjudicó el evento.';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -364,7 +367,7 @@ export const PurchaseFormModal: React.FC = () => {
     const recordData = {
       descripcion: descripcion.trim(),
       f56e: f56e.trim(),
-      f56: f56.trim(),
+      f56: f56.trim() || undefined,
       f56Documento: f56Documento || undefined,
       fechaSolicitud,
       fechaVoBo: fechaVoBo || '',
@@ -377,6 +380,7 @@ export const PurchaseFormModal: React.FC = () => {
       evaluadoGIT,
       fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
       estatusEvento,
+      fechaAdjudicacion: estatusEvento === 'Adjudicación' ? fechaAdjudicacion : undefined,
       areaSolicitante,
       categoriaTecnologica,
       dependenciaSolicitante,
@@ -428,7 +432,7 @@ export const PurchaseFormModal: React.FC = () => {
         {/* Contenido del Formulario */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           
-          {/* SECCIÓN 1: Descripción y Códigos F56 */}
+          {/* SECCIÓN 1: Identificación del Evento */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
@@ -438,7 +442,7 @@ export const PurchaseFormModal: React.FC = () => {
               <span className="text-[10px] text-slate-400">* Campos Requeridos</span>
             </div>
 
-            {/* Campo 1: Descripción (Max 200 caracteres) */}
+            {/* Campo: Descripción (Max 200 caracteres) */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-bold text-slate-800">
@@ -464,7 +468,7 @@ export const PurchaseFormModal: React.FC = () => {
               )}
             </div>
 
-            {/* Campo: Área Solicitante (Seguido de la descripción) */}
+            {/* Campo: Área Solicitante */}
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
                 Área Solicitante <span className="text-rose-600">*</span>
@@ -485,23 +489,35 @@ export const PurchaseFormModal: React.FC = () => {
                 Área técnica o sección GIT requirente del bien o servicio.
               </p>
             </div>
+          </div>
 
-            {/* F56-e y F56 con Máscaras de Entrada */}
+          {/* SECCIÓN 2: FORMULARIOS F56-e Y F56 */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-amber-600" />
+                Formularios F56-e y F56
+              </span>
+              <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                F56-e (10 pos.) &amp; F56 (6 pos.)
+              </span>
+            </div>
+
+            {/* Campos: F56-e (10 posiciones) y F56 (6 posiciones) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              
-              {/* Campo 2: F56-e (Máscara 000000-0000) */}
+              {/* Formulario F56-e: tipo texto de 10 posiciones */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
+                <label htmlFor="input-purchase-f56e" className="block text-xs font-bold text-slate-800 mb-1">
                   Formulario F56-e <span className="text-rose-600">*</span>
-                  <span className="ml-1 text-[10px] text-amber-600 font-mono font-semibold">(000000-0000)</span>
+                  <span className="ml-1 text-[10px] text-amber-600 font-mono font-semibold">(Texto 10 pos.)</span>
                 </label>
                 <input
                   id="input-purchase-f56e"
                   type="text"
-                  maxLength={11}
+                  maxLength={10}
                   value={f56e}
                   onChange={(e) => setF56e(formatF56eInput(e.target.value))}
-                  placeholder="000000-0000"
+                  placeholder="F56-e (máx. 10)"
                   className={`w-full p-2 text-xs font-mono font-bold tracking-wider uppercase border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
                     errors.f56e ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
                   }`}
@@ -509,15 +525,15 @@ export const PurchaseFormModal: React.FC = () => {
                 {errors.f56e ? (
                   <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.f56e}</p>
                 ) : (
-                  <p className="text-[10px] text-slate-400 mt-0.5">Máscara requerida: 6 dígitos - 4 dígitos (ej. 000001-2026)</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Campo tipo texto de hasta 10 posiciones</p>
                 )}
               </div>
 
-              {/* Campo 3: F56 (Máscara 000000) */}
+              {/* Formulario F56: tipo texto de 6 posiciones */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Formulario F56 Físico <span className="text-rose-600">*</span>
-                  <span className="ml-1 text-[10px] text-amber-600 font-mono font-semibold">(000000)</span>
+                <label htmlFor="input-purchase-f56" className="block text-xs font-bold text-slate-800 mb-1">
+                  Formulario F56
+                  <span className="ml-1 text-[10px] text-amber-600 font-mono font-semibold">(Texto 6 pos.)</span>
                 </label>
                 <input
                   id="input-purchase-f56"
@@ -525,7 +541,7 @@ export const PurchaseFormModal: React.FC = () => {
                   maxLength={6}
                   value={f56}
                   onChange={(e) => setF56(formatF56Input(e.target.value))}
-                  placeholder="000000"
+                  placeholder="F56 (máx. 6)"
                   className={`w-full p-2 text-xs font-mono font-bold tracking-wider uppercase border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
                     errors.f56 ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
                   }`}
@@ -533,23 +549,78 @@ export const PurchaseFormModal: React.FC = () => {
                 {errors.f56 ? (
                   <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.f56}</p>
                 ) : (
-                  <p className="text-[10px] text-slate-400 mt-0.5">Máscara requerida: 6 dígitos numéricos (ej. 000001)</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Campo tipo texto de hasta 6 posiciones</p>
                 )}
+              </div>
+            </div>
+
+            {/* Fechas de Gestión */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
+              
+              {/* Fecha Solicitud */}
+              <div>
+                <label htmlFor="input-purchase-fecha-solicitud" className="block text-xs font-bold text-slate-800 mb-1">
+                  Fecha de Solicitud <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  id="input-purchase-fecha-solicitud"
+                  type="date"
+                  value={fechaSolicitud}
+                  onChange={(e) => setFechaSolicitud(e.target.value)}
+                  className={`w-full p-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                    errors.fechaSolicitud ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
+                  }`}
+                />
+                {errors.fechaSolicitud ? (
+                  <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaSolicitud}</p>
+                ) : (
+                  <p className="text-[10px] text-slate-400 mt-0.5">Fecha oficial de solicitud</p>
+                )}
+              </div>
+
+              {/* Fecha Vo.Bo. */}
+              <div>
+                <label htmlFor="input-purchase-fecha-vobo" className="block text-xs font-bold text-slate-800 mb-1">
+                  Fecha Vo.Bo.
+                </label>
+                <input
+                  id="input-purchase-fecha-vobo"
+                  type="date"
+                  value={fechaVoBo}
+                  onChange={(e) => setFechaVoBo(e.target.value)}
+                  className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">Visto Bueno de jefatura</p>
+              </div>
+
+              {/* Fecha Autorizado */}
+              <div>
+                <label htmlFor="input-purchase-fecha-autorizado" className="block text-xs font-bold text-slate-800 mb-1">
+                  Fecha de Autorizado
+                </label>
+                <input
+                  id="input-purchase-fecha-autorizado"
+                  type="date"
+                  value={fechaAutorizado}
+                  onChange={(e) => setFechaAutorizado(e.target.value)}
+                  className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">Aprobación del formulario</p>
               </div>
 
             </div>
 
-            {/* SECCIÓN ADJUNTAR DOCUMENTO DE LA F56 */}
-            <div className="mt-3 pt-3 border-t border-slate-200">
+            {/* Documento Adjunto F56-e / F56 */}
+            <div className="pt-2 border-t border-slate-200">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <Paperclip className="w-3.5 h-3.5 text-amber-600" />
-                  Documento de la F56 (Adjuntar Documento Oficial F56)
+                  Documento Adjunto (F56-e / F56)
                 </label>
                 {f56Documento && (
                   <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                    Documento F56 Adjunto
+                    Documento Adjunto
                   </span>
                 )}
               </div>
@@ -586,7 +657,7 @@ export const PurchaseFormModal: React.FC = () => {
                         href={f56Documento.dataUrl}
                         download={f56Documento.nombre}
                         className="px-2.5 py-1.5 text-slate-700 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 border border-slate-200"
-                        title="Descargar documento F56 adjunto"
+                        title="Descargar documento F56e adjunto"
                       >
                         <Download className="w-3.5 h-3.5 text-amber-600" />
                         <span>Ver / Descargar</span>
@@ -595,8 +666,8 @@ export const PurchaseFormModal: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-2.5 py-1.5 text-slate-700 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 border border-slate-200"
-                      title="Reemplazar documento F56"
+                      className="px-2.5 py-1.5 text-slate-700 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 border border-slate-200 cursor-pointer"
+                      title="Reemplazar documento F56e"
                     >
                       <UploadCloud className="w-3.5 h-3.5 text-blue-600" />
                       <span>Reemplazar</span>
@@ -607,7 +678,7 @@ export const PurchaseFormModal: React.FC = () => {
                         setF56Documento(null);
                         if (fileInputRef.current) fileInputRef.current.value = '';
                       }}
-                      className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors text-xs font-semibold border border-rose-200"
+                      className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors text-xs font-semibold border border-rose-200 cursor-pointer"
                       title="Eliminar documento adjunto"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -620,7 +691,7 @@ export const PurchaseFormModal: React.FC = () => {
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-lg p-3.5 text-center cursor-pointer transition-colors ${
+                  className={`border-2 border-dashed rounded-lg p-3 text-center cursor-pointer transition-colors ${
                     isDragging
                       ? 'border-amber-500 bg-amber-50/50'
                       : 'border-slate-300 hover:border-amber-400 bg-white hover:bg-slate-50'
@@ -629,7 +700,7 @@ export const PurchaseFormModal: React.FC = () => {
                   <div className="flex flex-col items-center justify-center gap-1">
                     <UploadCloud className="w-5 h-5 text-amber-600" />
                     <p className="text-xs font-semibold text-slate-700">
-                      Haga clic aquí o arrastre el documento de la F56 física
+                      Haga clic aquí o arrastre el documento digital de la Forma F56-e
                     </p>
                     <p className="text-[10px] text-slate-400">
                       Formatos soportados: PDF, Word (.docx), JPG, PNG (Hasta 750 KB)
@@ -645,173 +716,49 @@ export const PurchaseFormModal: React.FC = () => {
               )}
             </div>
 
-            {/* Fechas de Trámite del Formulario F56 (Abajo de F56-e y F56) */}
-            <div className="mt-3 pt-3 border-t border-slate-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                  Fechas de Gestión F56
-                </span>
-                <span className="text-[10px] text-slate-400">Solicitud, Vo.Bo. y Autorización</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                
-                {/* Fecha Solicitud */}
-                <div>
-                  <label htmlFor="input-purchase-fecha-solicitud" className="block text-xs font-bold text-slate-800 mb-1">
-                    Fecha de Solicitud <span className="text-rose-600">*</span>
-                  </label>
-                  <input
-                    id="input-purchase-fecha-solicitud"
-                    type="date"
-                    value={fechaSolicitud}
-                    onChange={(e) => setFechaSolicitud(e.target.value)}
-                    className={`w-full p-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                      errors.fechaSolicitud ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
-                    }`}
-                  />
-                  {errors.fechaSolicitud ? (
-                    <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaSolicitud}</p>
-                  ) : (
-                    <p className="text-[10px] text-slate-400 mt-0.5">Fecha oficial de ingreso</p>
-                  )}
-                </div>
-
-                {/* Fecha Vo.Bo. */}
-                <div>
-                  <label htmlFor="input-purchase-fecha-vobo" className="block text-xs font-bold text-slate-800 mb-1">
-                    Fecha Vo.Bo.
-                  </label>
-                  <input
-                    id="input-purchase-fecha-vobo"
-                    type="date"
-                    value={fechaVoBo}
-                    onChange={(e) => setFechaVoBo(e.target.value)}
-                    className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-0.5">Visto Bueno de jefatura</p>
-                </div>
-
-                {/* Fecha Autorizado */}
-                <div>
-                  <label htmlFor="input-purchase-fecha-autorizado" className="block text-xs font-bold text-slate-800 mb-1">
-                    Fecha de Autorizado
-                  </label>
-                  <input
-                    id="input-purchase-fecha-autorizado"
-                    type="date"
-                    value={fechaAutorizado}
-                    onChange={(e) => setFechaAutorizado(e.target.value)}
-                    className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-0.5">Aprobación del formulario F56</p>
-                </div>
-
-              </div>
-            </div>
-
           </div>
 
-          {/* SECCIÓN 2: Guatecompras & Presupuesto (Seguido de lo anterior con Fecha de Publicación y Cierre) */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+          {/* SECCIÓN 3: GUATECOMPRAS, DICTAMEN TÉCNICO Y ESTATUS DEL EVENTO (ORDEN ESPECÍFICO) */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3.5">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <Hash className="w-3.5 h-3.5 text-blue-600" />
-                Guatecompras & Presupuesto (GTQ)
+                Guatecompras, Dictamen Técnico & Estatus del Evento
               </span>
               <span className="text-[10px] text-slate-400">Portal Guatecompras</span>
             </div>
 
-            {/* NOG, Presupuesto y Ofertas */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              
-              {/* NOG (Numérico 8 dígitos) */}
-              <div>
-                <label htmlFor="input-purchase-nog" className="block text-xs font-bold text-slate-800 mb-1">
-                  NOG (8 Dígitos) <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  id="input-purchase-nog"
-                  type="text"
-                  maxLength={8}
-                  value={nog}
-                  onChange={(e) => setNog(e.target.value.replace(/\D/g, ''))}
-                  placeholder="21948201"
-                  className={`w-full p-2 text-xs font-mono font-bold tracking-wider border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                    errors.nog ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 text-slate-900'
-                  }`}
-                />
-                {errors.nog ? (
-                  <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.nog}</p>
-                ) : (
-                  <p className="text-[10px] text-slate-400 mt-0.5">8 dígitos exactos</p>
-                )}
-              </div>
-
-              {/* Monto (Presupuesto en Quetzales) */}
-              <div>
-                <label htmlFor="input-purchase-monto" className="block text-xs font-bold text-slate-800 mb-1">
-                  Presupuesto / Monto (Q) <span className="text-rose-600">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-600 font-black text-xs">
-                    Q
-                  </div>
-                  <input
-                    id="input-purchase-monto"
-                    type="text"
-                    inputMode="numeric"
-                    dir="rtl"
-                    value={montoInput}
-                    onChange={handleMontoChange}
-                    onPaste={handleMontoPaste}
-                    onBlur={handleMontoBlur}
-                    placeholder="0.00"
-                    className={`w-full pl-8 pr-3 py-2 text-right text-xs font-black font-mono border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] ${
-                      errors.monto ? 'border-rose-400 bg-rose-50/20 text-rose-950' : 'border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-                {errors.monto ? (
-                  <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.monto}</p>
-                ) : (
-                  <div className="flex items-center justify-between text-[10px] mt-0.5">
-                    <span className="text-emerald-700 font-semibold font-mono">
-                      {monto !== '' ? formatQuetzales(Number(monto)) : 'Q. 0.00'}
-                    </span>
-                    <span className="text-slate-400 text-[9px]">
-                      Decimales automáticos
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Cantidad de Ofertas */}
-              <div>
-                <label htmlFor="input-purchase-cantidad-ofertas" className="block text-xs font-bold text-slate-800 mb-1">
-                  Cantidad de Ofertas
-                </label>
-                <input
-                  id="input-purchase-cantidad-ofertas"
-                  type="number"
-                  min="0"
-                  value={cantidadOfertas}
-                  onChange={(e) => setCantidadOfertas(parseInt(e.target.value) || 0)}
-                  className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-                <p className="text-[10px] text-slate-400 mt-0.5">Postores participantes</p>
-              </div>
-
+            {/* 1. NOG (8 Dígitos) */}
+            <div>
+              <label htmlFor="input-purchase-nog" className="block text-xs font-bold text-slate-800 mb-1">
+                NOG (8 Dígitos) <span className="text-rose-600">*</span>
+              </label>
+              <input
+                id="input-purchase-nog"
+                type="text"
+                maxLength={8}
+                value={nog}
+                onChange={(e) => setNog(e.target.value.replace(/\D/g, ''))}
+                placeholder="21948201"
+                className={`w-full p-2 text-xs font-mono font-bold tracking-wider border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                  errors.nog ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 text-slate-900'
+                }`}
+              />
+              {errors.nog ? (
+                <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.nog}</p>
+              ) : (
+                <p className="text-[10px] text-slate-400 mt-0.5">8 dígitos exactos de Guatecompras</p>
+              )}
             </div>
 
-            {/* Fechas de Guatecompras: Fecha de Publicación y Fecha de Cierre de Ofertas */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200">
+            {/* 2. FECHA PUBLICACIÓN y 3. FECHA CIERRE OFERTAS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
               
-              {/* Fecha Publicación */}
+              {/* 2. FECHA PUBLICACIÓN */}
               <div>
                 <label htmlFor="input-purchase-fecha-publicacion" className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Fecha de Publicación</span>
+                  <span>Fecha Publicación</span>
                 </label>
                 <input
                   id="input-purchase-fecha-publicacion"
@@ -823,11 +770,11 @@ export const PurchaseFormModal: React.FC = () => {
                 <p className="text-[10px] text-slate-400 mt-0.5">Publicación oficial del concurso en Guatecompras</p>
               </div>
 
-              {/* Fecha de Cierre de Ofertas */}
+              {/* 3. FECHA CIERRE OFERTAS */}
               <div>
                 <label htmlFor="input-purchase-fecha-ofertas" className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Fecha de Cierre de Ofertas</span>
+                  <span>Fecha Cierre Ofertas</span>
                 </label>
                 <input
                   id="input-purchase-fecha-ofertas"
@@ -836,106 +783,190 @@ export const PurchaseFormModal: React.FC = () => {
                   onChange={(e) => setFechaOfertas(e.target.value)}
                   className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">Fecha y hora límite de recepción de posturas</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Fecha y hora límite de recepción de plicas</p>
               </div>
 
             </div>
 
-          </div>
-
-          {/* SECCIÓN 3: Dictamen Técnico GIT y Estatus */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                Dictamen Técnico y Estado
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              
-              {/* Evaluado GIT */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Evaluado por la GIT <span className="text-rose-600">*</span>
-                </label>
-                <select
-                  id="select-purchase-evaluado-git"
-                  value={evaluadoGIT}
-                  onChange={(e) => setEvaluadoGIT(e.target.value as EvaluacionGIT)}
-                  className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                >
-                  <option value="Sí">Sí - Con Dictamen Técnico GIT</option>
-                  <option value="No">No - Sin Dictamen Técnico</option>
-                </select>
-              </div>
-
-              {/* Fecha en que se realizó el dictamen técnico por la GIT */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-[#1c39bb]" />
-                    <span>Fecha de Dictamen Técnico GIT</span>
-                  </span>
-                  {evaluadoGIT === 'Sí' && <span className="text-rose-600 font-bold">*</span>}
-                </label>
+            {/* 4. MONTO (PRESUPUESTO EN QUETZALES) - UBICADO DESPUÉS DE FECHA CIERRE OFERTAS */}
+            <div className="pt-2 border-t border-slate-200">
+              <label htmlFor="input-purchase-monto" className="block text-xs font-bold text-slate-800 mb-1">
+                Presupuesto / Monto (Q) <span className="text-rose-600">*</span>
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-600 font-black text-xs">
+                  Q
+                </div>
                 <input
-                  id="input-purchase-fecha-dictamen-git"
-                  type="date"
-                  value={fechaDictamenGIT}
-                  onChange={(e) => setFechaDictamenGIT(e.target.value)}
-                  disabled={evaluadoGIT === 'No'}
-                  className={`w-full p-2 text-xs font-semibold border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] ${
-                    evaluadoGIT === 'No' ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' :
-                    errors.fechaDictamenGIT ? 'border-rose-400 bg-rose-50/20 text-rose-900' : 'border-slate-300 bg-white text-slate-900'
+                  id="input-purchase-monto"
+                  type="text"
+                  inputMode="numeric"
+                  dir="rtl"
+                  value={montoInput}
+                  onChange={handleMontoChange}
+                  onPaste={handleMontoPaste}
+                  onBlur={handleMontoBlur}
+                  placeholder="0.00"
+                  className={`w-full pl-8 pr-3 py-2 text-right text-xs font-black font-mono border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] ${
+                    errors.monto ? 'border-rose-400 bg-rose-50/20 text-rose-950' : 'border-slate-300 text-slate-900'
                   }`}
                 />
-                {errors.fechaDictamenGIT ? (
-                  <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaDictamenGIT}</p>
-                ) : (
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {evaluadoGIT === 'Sí' ? 'Fecha de emisión del informe técnico por la GIT' : 'No aplica (Sin Dictamen)'}
-                  </p>
-                )}
               </div>
-
-              {/* Estatus del Evento */}
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Estatus del Evento <span className="text-rose-600">*</span>
-                </label>
-                <select
-                  id="select-purchase-estatus-evento"
-                  value={estatusEvento}
-                  onChange={(e) => setEstatusEvento(e.target.value)}
-                  className="w-full p-2 text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800"
-                >
-                  {statusOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+              {errors.monto ? (
+                <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.monto}</p>
+              ) : (
+                <div className="flex items-center justify-between text-[10px] mt-0.5">
+                  <span className="text-emerald-700 font-semibold font-mono">
+                    {monto !== '' ? formatQuetzales(Number(monto)) : 'Q. 0.00'}
+                  </span>
+                  <span className="text-slate-400 text-[9px]">
+                    Decimales automáticos
+                  </span>
+                </div>
+              )}
             </div>
 
-            {/* Proveedor Adjudicado */}
+            {/* 4. CANTIDAD DE OFERTAS */}
+            <div className="pt-2 border-t border-slate-200">
+              <label htmlFor="input-purchase-cantidad-ofertas" className="block text-xs font-bold text-slate-800 mb-1">
+                Cantidad de Ofertas
+              </label>
+              <input
+                id="input-purchase-cantidad-ofertas"
+                type="number"
+                min="0"
+                value={cantidadOfertas}
+                onChange={(e) => setCantidadOfertas(parseInt(e.target.value) || 0)}
+                className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+              <p className="text-[10px] text-slate-400 mt-0.5">Número de postores que presentaron ofertas</p>
+            </div>
+
+            {/* 5. DICTAMEN TÉCNICO */}
+            <div className="pt-2 border-t border-slate-200">
+              <div className="mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  Dictamen Técnico
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Evaluado por la GIT */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Evaluado por la GIT <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    id="select-purchase-evaluado-git"
+                    value={evaluadoGIT}
+                    onChange={(e) => setEvaluadoGIT(e.target.value as EvaluacionGIT)}
+                    className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="Sí">Sí - Con Dictamen Técnico GIT</option>
+                    <option value="No">No - Sin Dictamen Técnico</option>
+                  </select>
+                </div>
+
+                {/* Fecha Dictamen Técnico GIT */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-[#1c39bb]" />
+                      <span>Fecha Dictamen Técnico GIT</span>
+                    </span>
+                    {evaluadoGIT === 'Sí' && <span className="text-rose-600 font-bold">*</span>}
+                  </label>
+                  <input
+                    id="input-purchase-fecha-dictamen-git"
+                    type="date"
+                    value={fechaDictamenGIT}
+                    onChange={(e) => setFechaDictamenGIT(e.target.value)}
+                    disabled={evaluadoGIT === 'No'}
+                    className={`w-full p-2 text-xs font-semibold border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] ${
+                      evaluadoGIT === 'No' ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' :
+                      errors.fechaDictamenGIT ? 'border-rose-400 bg-rose-50/20 text-rose-900' : 'border-slate-300 bg-white text-slate-900'
+                    }`}
+                  />
+                  {errors.fechaDictamenGIT ? (
+                    <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaDictamenGIT}</p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {evaluadoGIT === 'Sí' ? 'Fecha de emisión del informe técnico por la GIT' : 'No aplica'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 6. ESTATUS DEL EVENTO */}
+            <div className="pt-2 border-t border-slate-200">
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Estatus del Evento <span className="text-rose-600">*</span>
+              </label>
+              <select
+                id="select-purchase-estatus-evento"
+                value={estatusEvento}
+                onChange={(e) => setEstatusEvento(e.target.value)}
+                className="w-full p-2 text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800"
+              >
+                {statusOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 7. SI EL EVENTO YA SE ADJUDICÓ: FECHA DE ADJUDICACIÓN Y PROVEEDOR */}
             {estatusEvento === 'Adjudicación' && (
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Proveedor / Empresa Adjudicada
-                </label>
-                <input
-                  id="input-purchase-proveedor"
-                  type="text"
-                  value={proveedorAdjudicado}
-                  onChange={(e) => setProveedorAdjudicado(e.target.value)}
-                  placeholder="ej. Tecnologías y Sistemas Corporativos, S.A."
-                  className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
+              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-300 space-y-3">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                  <Award className="w-4 h-4 text-amber-700" />
+                  <span>Datos de Adjudicación</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Fecha de Adjudicación */}
+                  <div>
+                    <label htmlFor="input-purchase-fecha-adjudicacion" className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Fecha de Adjudicación <span className="text-rose-600">*</span></span>
+                    </label>
+                    <input
+                      id="input-purchase-fecha-adjudicacion"
+                      type="date"
+                      value={fechaAdjudicacion}
+                      onChange={(e) => setFechaAdjudicacion(e.target.value)}
+                      className={`w-full p-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white ${
+                        errors.fechaAdjudicacion ? 'border-rose-400 bg-rose-50/20 text-rose-900' : 'border-slate-300'
+                      }`}
+                    />
+                    {errors.fechaAdjudicacion ? (
+                      <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaAdjudicacion}</p>
+                    ) : (
+                      <p className="text-[10px] text-slate-500 mt-0.5">Fecha en que el evento fue adjudicado</p>
+                    )}
+                  </div>
+
+                  {/* Proveedor Adjudicado */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Proveedor / Empresa Adjudicada
+                    </label>
+                    <input
+                      id="input-purchase-proveedor"
+                      type="text"
+                      value={proveedorAdjudicado}
+                      onChange={(e) => setProveedorAdjudicado(e.target.value)}
+                      placeholder="ej. Tecnologías y Sistemas Corporativos, S.A."
+                      className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-0.5">Nombre comercial o razón social</p>
+                  </div>
+                </div>
               </div>
             )}
+
           </div>
 
           {/* Observaciones */}

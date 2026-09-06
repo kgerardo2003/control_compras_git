@@ -107,6 +107,30 @@ export async function savePurchaseToFirestore(purchase: PurchaseRecord): Promise
   }
 }
 
+// Guardado masivo por lotes en Firestore (soporta cargas masivas de 100+ o más registros)
+export async function saveBatchPurchasesToFirestore(purchases: PurchaseRecord[]): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    if (!purchases || purchases.length === 0) return { success: true, count: 0 };
+    
+    // Firestore writeBatch soporta hasta 500 operaciones por batch
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < purchases.length; i += CHUNK_SIZE) {
+      const chunk = purchases.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const p of chunk) {
+        const docRef = doc(db, PURCHASES_COLLECTION, p.id);
+        batch.set(docRef, cleanUndefined(p), { merge: true });
+      }
+      await batch.commit();
+      console.log(`Lote de ${chunk.length} adquisiciones guardado en Firestore (${Math.min(i + CHUNK_SIZE, purchases.length)}/${purchases.length})`);
+    }
+    return { success: true, count: purchases.length };
+  } catch (err: any) {
+    console.error("Error guardando lote masivo de adquisiciones en Firestore:", err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
 export async function removePurchaseFromFirestore(purchaseId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const docRef = doc(db, PURCHASES_COLLECTION, purchaseId);

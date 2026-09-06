@@ -340,12 +340,24 @@ export const PurchaseDetailModal: React.FC = () => {
                 </span>
                 <span className="font-bold text-slate-900">{selectedPurchase.cantidadOfertas} ofertas</span>
               </div>
-              {selectedPurchase.proveedorAdjudicado && (
-                <div className="sm:col-span-2 border-t border-slate-200 pt-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Proveedor Adjudicado:
-                  </span>
-                  <span className="font-bold text-slate-900">{selectedPurchase.proveedorAdjudicado}</span>
+              {(selectedPurchase.estatusEvento === 'Adjudicación' || selectedPurchase.proveedorAdjudicado || selectedPurchase.fechaAdjudicacion) && (
+                <div className="sm:col-span-2 border-t border-slate-200 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-amber-50/50 p-2.5 rounded-lg border border-amber-200">
+                  {selectedPurchase.fechaAdjudicacion && (
+                    <div>
+                      <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block">
+                        Fecha de Adjudicación:
+                      </span>
+                      <span className="font-bold font-mono text-slate-900">{formatDate(selectedPurchase.fechaAdjudicacion)}</span>
+                    </div>
+                  )}
+                  {selectedPurchase.proveedorAdjudicado && (
+                    <div>
+                      <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block">
+                        Proveedor / Empresa Adjudicada:
+                      </span>
+                      <span className="font-bold text-slate-900">{selectedPurchase.proveedorAdjudicado}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

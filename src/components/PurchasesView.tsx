@@ -13,7 +13,8 @@ import {
   CheckCircle2,
   RefreshCw,
   Database,
-  FileText
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV } from '../utils/formatters';
@@ -40,7 +41,8 @@ export const PurchasesView: React.FC = () => {
     themeConfig,
     showToast,
     firestoreStatus,
-    refreshPurchases
+    refreshPurchases,
+    setIsImportModalOpen
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -237,15 +239,28 @@ export const PurchasesView: React.FC = () => {
           </button>
 
           {canCreate && (
-            <button
-              id="btn-register-purchase-top"
-              type="button"
-              onClick={() => { setPurchaseToEdit(null); setIsPurchaseModalOpen(true); }}
-              className={`px-3.5 py-2 rounded-xl ${themeConfig.primaryBtn} text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer`}
-            >
-              <PlusCircle className="w-4 h-4 text-black" />
-              <span>+ Nueva Adquisición</span>
-            </button>
+            <>
+              <button
+                id="btn-import-purchases-excel"
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs border border-emerald-800"
+                title="Carga masiva: importar adquisiciones desde un archivo de Excel (.xlsx, .xls, .csv)"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                <span>Importar Excel</span>
+              </button>
+
+              <button
+                id="btn-register-purchase-top"
+                type="button"
+                onClick={() => { setPurchaseToEdit(null); setIsPurchaseModalOpen(true); }}
+                className={`px-3.5 py-2 rounded-xl ${themeConfig.primaryBtn} text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer`}
+              >
+                <PlusCircle className="w-4 h-4 text-black" />
+                <span>+ Nueva Adquisición</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -401,8 +416,38 @@ export const PurchasesView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredPurchases.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-400">
-                    No se encontraron adquisiciones registradas.
+                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                    <div className="max-w-md mx-auto flex flex-col items-center justify-center space-y-3">
+                      <div className="p-3 bg-slate-100 rounded-full text-slate-400">
+                        <FileSpreadsheet className="w-8 h-8 text-slate-500" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-slate-800">No se encontraron adquisiciones registradas</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Puedes registrar una adquisición individual o realizar una carga masiva desde tu archivo Excel.
+                        </p>
+                      </div>
+                      {canCreate && (
+                        <div className="flex items-center gap-2.5 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsImportModalOpen(true)}
+                            className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                            <span>Importar desde Excel</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setPurchaseToEdit(null); setIsPurchaseModalOpen(true); }}
+                            className={`px-3.5 py-2 rounded-xl ${themeConfig.primaryBtn} text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer`}
+                          >
+                            <PlusCircle className="w-4 h-4 text-black" />
+                            <span>+ Nueva Adquisición</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
