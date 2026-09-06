@@ -20,6 +20,7 @@ import { LoginView } from './components/LoginView';
 import { AdminAccessGate } from './components/AdminAccessGate';
 import { PurchaseFormModal } from './components/PurchaseFormModal';
 import { PurchaseDetailModal } from './components/PurchaseDetailModal';
+import { ToastContainer } from './components/ToastContainer';
 
 const AppContent: React.FC = () => {
   const { activeTab, themeConfig, currentUser } = useApp();
@@ -27,7 +28,12 @@ const AppContent: React.FC = () => {
 
   // PUERTA DE AUTENTICACIÓN: Si el usuario no está autenticado, muestra el Panel de Logueo
   if (!currentUser) {
-    return <LoginView />;
+    return (
+      <>
+        <LoginView />
+        <ToastContainer />
+      </>
+    );
   }
 
   const isAdmin = currentUser.rol === 'administrador';
@@ -121,6 +127,9 @@ const AppContent: React.FC = () => {
       <LoginModal />
       <PurchaseFormModal />
       <PurchaseDetailModal />
+
+      {/* Notificaciones Flotantes (Toasts) */}
+      <ToastContainer />
 
     </div>
   );

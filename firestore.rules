@@ -10,25 +10,24 @@ service cloud.firestore {
     function isValidPurchase(data) {
       return data.id is string
         && data.nog is string
-        && data.descripcion is string
-        && data.monto is number
-        && data.estatusEvento is string;
+        && data.descripcion is string;
     }
 
     function isValidAuditLog(data) {
       return data.id is string
         && data.fecha is string
-        && data.usuario is string
-        && data.accion is string
-        && data.modulo is string
-        && data.detalles is string;
+        && data.usuario is string;
+    }
+
+    // Regla para prueba de conexión
+    match /test/{docId} {
+      allow read, write: if true;
     }
 
     // Reglas para Adquisiciones y Procesos de TI
     match /purchases/{purchaseId} {
       allow read: if true;
-      allow create: if isValidId(purchaseId) && isValidPurchase(request.resource.data);
-      allow update: if isValidId(purchaseId) && isValidPurchase(request.resource.data);
+      allow create, update: if isValidId(purchaseId) && isValidPurchase(request.resource.data);
       allow delete: if isValidId(purchaseId);
     }
 

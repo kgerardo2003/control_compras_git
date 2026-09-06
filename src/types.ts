@@ -125,3 +125,13 @@ export interface CustomLogoConfig {
   title: string;
   subtitle: string;
 }
+
+export type ToastType = 'success' | 'info' | 'warning' | 'error';
+
+export interface ToastItem {
+  id: string;
+  type: ToastType;
+  title: string;
+  message?: string;
+  duration?: number;
+}

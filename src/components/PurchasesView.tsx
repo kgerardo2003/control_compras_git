@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Search, 
@@ -10,10 +10,15 @@ import {
   AlertTriangle, 
   ArrowUpDown,
   Paperclip,
-  CheckCircle2
+  CheckCircle2,
+  RefreshCw,
+  Database,
+  FileText
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV } from '../utils/formatters';
+import { ExportPdfModal } from './ExportPdfModal';
+import { generatePurchasesPDF } from '../utils/pdfExport';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -32,7 +37,10 @@ export const PurchasesView: React.FC = () => {
     deletePurchase,
     currentUser,
     logAudit,
-    themeConfig
+    themeConfig,
+    showToast,
+    firestoreStatus,
+    refreshPurchases
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,6 +50,35 @@ export const PurchasesView: React.FC = () => {
   const [sortBy, setSortBy] = useState<'fecha' | 'monto' | 'nog'>('fecha');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [itemToDelete, setItemToDelete] = useState<PurchaseRecord | null>(null);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfToast, setPdfToast] = useState<string | null>(null);
+
+  // Estados de sincronización en tiempo real con Firestore
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    setLastSyncTime(new Date());
+  }, [purchases]);
+
+  // Forzar sincronización directa omitiendo cualquier caché de navegador
+  const handleForceSync = async () => {
+    setIsSyncing(true);
+    try {
+      await refreshPurchases();
+      setLastSyncTime(new Date());
+      showToast({
+        type: 'info',
+        title: 'Sincronización Completada',
+        message: 'Registros actualizados desde Firestore Cloud.',
+        duration: 3000
+      });
+    } catch (err) {
+      console.error("Error al forzar sincronización desde servidor:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const canEdit = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
   const canDelete = currentUser?.rol === 'administrador';
@@ -53,9 +90,11 @@ export const PurchasesView: React.FC = () => {
   const categoryCatalog = catalogs.find(c => c.codigo === 'CATEGORIA_TECNOLOGICA');
   const categoryOptions = categoryCatalog?.items.map(it => it.valor) || [];
 
-  // Filtrado y Búsqueda
+  // Filtrado y Búsqueda sobre los datos oficiales del contexto
+  const currentPurchases = purchases;
+
   const filteredPurchases = useMemo(() => {
-    return purchases
+    return currentPurchases
       .filter(p => {
         if (searchTerm.trim()) {
           const query = searchTerm.toLowerCase();
@@ -112,6 +151,44 @@ export const PurchasesView: React.FC = () => {
     }));
     exportToCSV(`Adquisiciones_GIT_OJ_${new Date().toISOString().slice(0, 10)}`, rows);
     logAudit('EXPORTAR_DATOS', 'Compras', `Exportación de ${filteredPurchases.length} adquisiciones a CSV.`);
+    showToast({
+      type: 'success',
+      title: 'Exportación a CSV Exitosa',
+      message: `Se descargaron ${filteredPurchases.length} registros de adquisiciones en formato CSV.`,
+      duration: 5000,
+    });
+  };
+
+  const handleDirectExportPDF = () => {
+    try {
+      const filename = generatePurchasesPDF({
+        purchases: filteredPurchases,
+        title: 'REPORTE OFICIAL DE ADQUISICIONES TECNOLÓGICAS',
+        subtitle: 'Control institucional de eventos NOG, formularios F56-e y dictámenes técnicos de TI',
+        filterInfo: {
+          search: searchTerm,
+          status: filterEstatus,
+          category: filterCategory,
+        },
+        currentUser,
+        filenamePrefix: 'Reporte_Adquisiciones_GIT_OJ',
+      });
+      logAudit('EXPORTAR_DATOS', 'Compras', `Exportación oficial de ${filteredPurchases.length} adquisiciones a PDF (${filename}).`);
+      showToast({
+        type: 'success',
+        title: 'Exportación a PDF Exitosa',
+        message: `Se generó el documento oficial "${filename}" con membrete y código de auditoría.`,
+        duration: 6000,
+      });
+    } catch (err) {
+      console.error('Error generando PDF:', err);
+      showToast({
+        type: 'error',
+        title: 'Error en Exportación',
+        message: 'No fue posible generar el documento PDF.',
+        duration: 5000,
+      });
+    }
   };
 
   const confirmDelete = () => {
@@ -136,7 +213,18 @@ export const PurchasesView: React.FC = () => {
         </div>
 
         {/* Botones de Acción */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            id="btn-export-purchases-pdf"
+            type="button"
+            onClick={() => setIsPdfModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-rose-800 text-xs font-bold border border-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+            title="Exportar la tabla actual a formato PDF con cabecera institucional y control de auditoría"
+          >
+            <FileText className="w-3.5 h-3.5 text-rose-600" />
+            <span>Exportar PDF</span>
+          </button>
+
           <button
             id="btn-export-purchases-csv"
             type="button"
@@ -159,6 +247,56 @@ export const PurchasesView: React.FC = () => {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Notificación de exportación PDF exitosa */}
+      {pdfToast && (
+        <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-semibold">{pdfToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPdfToast(null)}
+            className="text-emerald-700 hover:text-emerald-900 cursor-pointer font-bold ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Barra de Sincronización en Tiempo Real Multi-dispositivo */}
+      <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-emerald-950 flex items-center gap-1">
+              <Database className="w-3.5 h-3.5 text-emerald-700" />
+              Listener Firestore Activo (En Vivo)
+            </span>
+            <span className="text-[10px] text-emerald-800 bg-white/90 px-2 py-0.5 rounded-md border border-emerald-200 font-semibold">
+              {firestoreStatus === 'conectado' ? '☁️ Conectado a Servidor Cloud' : firestoreStatus === 'conectando' ? '🔄 Sincronizando...' : '💾 Modo Local / Fuera de línea'}
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">
+              Registros: {currentPurchases.length} • {lastSyncTime.toLocaleTimeString()}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleForceSync}
+          disabled={isSyncing}
+          className="self-end sm:self-auto px-2.5 py-1 text-xs font-semibold text-emerald-900 bg-white hover:bg-emerald-100/60 border border-emerald-300 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-60"
+          title="Fuerza la consulta directa a los servidores de Firestore evitando cualquier caché de navegador"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 ${isSyncing ? 'animate-spin' : ''}`} />
+          <span>{isSyncing ? 'Actualizando...' : 'Forzar Sincronización'}</span>
+        </button>
       </div>
 
       {/* Barra de Búsqueda y Filtros */}
@@ -501,6 +639,28 @@ export const PurchasesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Exportación a PDF Oficial Institucional */}
+      <ExportPdfModal
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        purchases={filteredPurchases}
+        currentUser={currentUser}
+        filterInfo={{
+          search: searchTerm,
+          status: filterEstatus,
+          category: filterCategory,
+        }}
+        onSuccess={(filename) => {
+          logAudit('EXPORTAR_DATOS', 'Compras', `Exportación oficial de ${filteredPurchases.length} adquisiciones a PDF (${filename}).`);
+          showToast({
+            type: 'success',
+            title: 'Exportación a PDF Exitosa',
+            message: `Documento oficial "${filename}" descargado con cabecera y código de auditoría.`,
+            duration: 6000,
+          });
+        }}
+      />
 
     </div>
   );

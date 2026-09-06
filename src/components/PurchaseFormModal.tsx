@@ -196,8 +196,8 @@ export const PurchaseFormModal: React.FC = () => {
 
   const processFile = (file: File) => {
     setFileUploadError(null);
-    if (file.size > 15 * 1024 * 1024) {
-      setFileUploadError('El archivo excede el límite máximo de 15 MB.');
+    if (file.size > 750 * 1024) {
+      setFileUploadError('El archivo excede el límite máximo de 750 KB para almacenamiento en Firestore.');
       return;
     }
     const reader = new FileReader();
@@ -632,7 +632,7 @@ export const PurchaseFormModal: React.FC = () => {
                       Haga clic aquí o arrastre el documento de la F56 física
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      Formatos soportados: PDF, Word (.docx), JPG, PNG (Hasta 15 MB)
+                      Formatos soportados: PDF, Word (.docx), JPG, PNG (Hasta 750 KB)
                     </p>
                   </div>
                 </div>
@@ -682,17 +682,9 @@ export const PurchaseFormModal: React.FC = () => {
 
               {/* Campo 11: Monto (Quetzales) con ingreso de derecha a izquierda y decimales automáticos */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="input-purchase-monto" className="block text-xs font-bold text-slate-800">
-                    Monto (Q) <span className="text-rose-600">*</span>
-                  </label>
-                  <span 
-                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200 font-bold"
-                    title="Ingreso de derecha a izquierda con decimales automáticos"
-                  >
-                    Entrada Der. a Izq. (0.00)
-                  </span>
-                </div>
+                <label htmlFor="input-purchase-monto" className="block text-xs font-bold text-slate-800 mb-1">
+                  Monto (Q) <span className="text-rose-600">*</span>
+                </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-600 font-black text-xs">
                     Q
@@ -745,12 +737,98 @@ export const PurchaseFormModal: React.FC = () => {
             </div>
           </div>
 
-          {/* SECCIÓN 3: Dictamen GIT y Estatus */}
+          {/* SECCIÓN 3: Cronología de Fechas */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                Cronología de Fechas
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              
+              {/* Fecha Solicitud */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Fecha Solicitud <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  id="input-purchase-fecha-solicitud"
+                  type="date"
+                  value={fechaSolicitud}
+                  onChange={(e) => setFechaSolicitud(e.target.value)}
+                  className={`w-full p-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                    errors.fechaSolicitud ? 'border-rose-400' : 'border-slate-300'
+                  }`}
+                />
+              </div>
+
+              {/* Fecha Vo.Bo. */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Fecha Vo.Bo.
+                </label>
+                <input
+                  id="input-purchase-fecha-vobo"
+                  type="date"
+                  value={fechaVoBo}
+                  onChange={(e) => setFechaVoBo(e.target.value)}
+                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              {/* Fecha Autorizado */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Fecha Autorizado
+                </label>
+                <input
+                  id="input-purchase-fecha-autorizado"
+                  type="date"
+                  value={fechaAutorizado}
+                  onChange={(e) => setFechaAutorizado(e.target.value)}
+                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              {/* Fecha Publicación */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Fecha Publicación
+                </label>
+                <input
+                  id="input-purchase-fecha-publicacion"
+                  type="date"
+                  value={fechaPublicacion}
+                  onChange={(e) => setFechaPublicacion(e.target.value)}
+                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              {/* Fecha Ofertas */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Fecha Cierre Ofertas
+                </label>
+                <input
+                  id="input-purchase-fecha-ofertas"
+                  type="date"
+                  value={fechaOfertas}
+                  onChange={(e) => setFechaOfertas(e.target.value)}
+                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+            </div>
+          </div>
+
+          {/* SECCIÓN 4: Dictamen Técnico GIT y Estatus */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                Dictamen y Estado
+                Dictamen Técnico y Estado
               </span>
             </div>
 
@@ -838,92 +916,6 @@ export const PurchaseFormModal: React.FC = () => {
                 />
               </div>
             )}
-          </div>
-
-          {/* SECCIÓN 4: Cronología de Fechas */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                Cronología de Fechas
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              
-              {/* Fecha Solicitud */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Solicitud <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  id="input-purchase-fecha-solicitud"
-                  type="date"
-                  value={fechaSolicitud}
-                  onChange={(e) => setFechaSolicitud(e.target.value)}
-                  className={`w-full p-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                    errors.fechaSolicitud ? 'border-rose-400' : 'border-slate-300'
-                  }`}
-                />
-              </div>
-
-              {/* Fecha Vo.Bo. */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Vo.Bo.
-                </label>
-                <input
-                  id="input-purchase-fecha-vobo"
-                  type="date"
-                  value={fechaVoBo}
-                  onChange={(e) => setFechaVoBo(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
-              {/* Fecha Autorizado */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Autorizado
-                </label>
-                <input
-                  id="input-purchase-fecha-autorizado"
-                  type="date"
-                  value={fechaAutorizado}
-                  onChange={(e) => setFechaAutorizado(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
-              {/* Fecha Publicación */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Publicación
-                </label>
-                <input
-                  id="input-purchase-fecha-publicacion"
-                  type="date"
-                  value={fechaPublicacion}
-                  onChange={(e) => setFechaPublicacion(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
-              {/* Fecha Ofertas */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Cierre Ofertas
-                </label>
-                <input
-                  id="input-purchase-fecha-ofertas"
-                  type="date"
-                  value={fechaOfertas}
-                  onChange={(e) => setFechaOfertas(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
-            </div>
           </div>
 
           {/* Observaciones */}

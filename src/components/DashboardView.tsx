@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { 
-  Calendar, 
-  Download, 
-  PlusCircle, 
-  Eye, 
+import {
+  Calendar,
+  Download,
+  PlusCircle,
+  Eye,
   CheckCircle2,
   ShieldCheck,
   Clock,
@@ -14,9 +14,173 @@ import {
   ArrowRight,
   User,
   ExternalLink,
-  Filter
+  Filter,
+  BarChart3,
+  PieChart as PieChartIcon,
+  Building2,
+  DollarSign,
+  TrendingUp,
+  Layers,
+  Briefcase
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+  CartesianGrid
+} from 'recharts';
 import { formatQuetzales, formatDate, exportToCSV, formatDateTime } from '../utils/formatters';
+
+// Formateador institucional para el eje Y de valores monetarios
+const formatYAxisCurrency = (val: number): string => {
+  if (val >= 1000000) return `Q ${(val / 1000000).toFixed(1)}M`;
+  if (val >= 1000) return `Q ${(val / 1000).toFixed(0)}k`;
+  return `Q ${val}`;
+};
+
+// Abreviación de nombres de dependencias para etiquetas legibles en eje X
+const getShortDeptName = (name: string): string => {
+  if (!name) return 'General';
+  if (name.includes('Servicios Informáticos')) return 'Serv. Informáticos';
+  if (name.includes('Redes y Telecomunicaciones')) return 'Redes y Telecom.';
+  if (name.includes('Desarrollo y Administración')) return 'Desarrollo Sist.';
+  if (name.includes('Seguridad Informática')) return 'Seguridad Inf.';
+  if (name.includes('Soporte Técnico')) return 'Soporte Técnico';
+  if (name.includes('Centro de Cómputo')) return 'Centro Cómputo';
+  if (name.includes('Gestión de Adquisiciones')) return 'Gestión Adq.';
+  if (name.length > 18) return name.slice(0, 16) + '…';
+  return name;
+};
+
+// Paleta institucional de colores diferenciados para cada departamento
+const DEPARTMENT_COLORS: Record<string, string> = {
+  'Dirección de Servicios Informáticos': '#1c39bb', // Azul institucional OJ
+  'Departamento de Redes y Telecomunicaciones': '#0284c7', // Cyan / Celeste
+  'Departamento de Desarrollo y Administración de Sistemas': '#059669', // Verde esmeralda
+  'Departamento de Seguridad Informática': '#7c3aed', // Violeta / Púrpura
+  'Departamento de Soporte Técnico': '#d97706', // Ámbar / Dorado
+  'Departamento de Centro de Cómputo': '#0d9488', // Teal / Verde azulado
+  'Departamento de Gestión de Adquisiciones TIC': '#e11d48', // Carmesí / Rose
+  'Gerencia de Informática': '#2563eb', // Azul real
+  'Otras Dependencias': '#64748b', // Pizarra
+};
+
+const PALETTE_FALLBACK = [
+  '#1c39bb', '#0284c7', '#059669', '#7c3aed',
+  '#d97706', '#0d9488', '#e11d48', '#2563eb',
+  '#ea580c', '#0891b2', '#16a34a', '#9333ea',
+  '#c026d3', '#b45309', '#0369a1', '#15803d'
+];
+
+const getDepartmentColor = (name: string, index: number): string => {
+  if (DEPARTMENT_COLORS[name]) return DEPARTMENT_COLORS[name];
+  const normalized = name.toLowerCase();
+  for (const [key, color] of Object.entries(DEPARTMENT_COLORS)) {
+    if (normalized.includes(key.toLowerCase()) || key.toLowerCase().includes(normalized)) {
+      return color;
+    }
+  }
+  return PALETTE_FALLBACK[index % PALETTE_FALLBACK.length];
+};
+
+// Tooltip estilizado para la gráfica de barras de compras por departamento
+interface BarTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    payload: {
+      departamento: string;
+      nombreCorto: string;
+      monto: number;
+      cantidad: number;
+      adjudicado: number;
+      enEvaluacion: number;
+      color: string;
+    };
+  }>;
+}
+
+const CustomBarTooltip: React.FC<BarTooltipProps> = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-xl border border-slate-700 text-xs max-w-xs z-50">
+        <p className="font-bold text-white mb-2 flex items-center gap-1.5 border-b border-slate-700 pb-1.5">
+          <span className="w-3 h-3 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: data.color }} />
+          <span className="truncate">{data.departamento}</span>
+        </p>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Presupuesto Total:</span>
+            <span className="font-mono font-bold text-emerald-400">{formatQuetzales(data.monto)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Total Adquisiciones:</span>
+            <span className="font-bold text-slate-100">{data.cantidad} evento(s)</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Monto Adjudicado:</span>
+            <span className="font-mono text-cyan-300">{formatQuetzales(data.adjudicado)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">En Evaluación:</span>
+            <span className="font-mono text-amber-300">{formatQuetzales(data.enEvaluacion)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+// Tooltip estilizado para la gráfica circular de estado presupuestario
+interface PieTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    payload: {
+      name: string;
+      monto: number;
+      percentage: string;
+      count: number;
+      color: string;
+    };
+  }>;
+}
+
+const CustomPieTooltip: React.FC<PieTooltipProps> = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-xl border border-slate-700 text-xs max-w-xs z-50">
+        <div className="flex items-center gap-2 mb-2 border-b border-slate-700 pb-1.5">
+          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: data.color }} />
+          <span className="font-bold text-white text-sm">{data.name}</span>
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Monto Total:</span>
+            <span className="font-mono font-bold text-emerald-400">{formatQuetzales(data.monto)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Participación Presupuestaria:</span>
+            <span className="font-bold text-amber-300">{data.percentage}%</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Eventos NOG:</span>
+            <span className="font-bold text-slate-100">{data.count} proceso(s)</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -41,11 +205,11 @@ const ACTION_BADGE_STYLES: Record<string, { bg: string; text: string; border: st
 };
 
 export const DashboardView: React.FC = () => {
-  const { 
-    purchases, 
-    catalogs, 
-    setActiveTab, 
-    setIsPurchaseModalOpen, 
+  const {
+    purchases,
+    catalogs,
+    setActiveTab,
+    setIsPurchaseModalOpen,
     setPurchaseToEdit,
     setSelectedPurchase,
     currentUser,
@@ -58,6 +222,7 @@ export const DashboardView: React.FC = () => {
   const [filterGIT, setFilterGIT] = useState<string>('todos');
   const [auditSearch, setAuditSearch] = useState<string>('');
   const [auditActionFilter, setAuditActionFilter] = useState<string>('todos');
+  const [barMetric, setBarMetric] = useState<'monto' | 'cantidad'>('monto');
 
   // Filtrado reactivo de compras
   const filteredPurchases = useMemo(() => {
@@ -107,6 +272,86 @@ export const DashboardView: React.FC = () => {
       enEvaluacionMonto,
       enEvaluacionPorcentaje,
     };
+  }, [filteredPurchases]);
+
+  // Datos calculados para Gráfica de Barras: Compras y Presupuesto por Departamento
+  const departmentChartData = useMemo(() => {
+    const deptMap: Record<string, { 
+      departamento: string; 
+      nombreCorto: string; 
+      monto: number; 
+      cantidad: number; 
+      adjudicado: number; 
+      enEvaluacion: number 
+    }> = {};
+
+    filteredPurchases.forEach(p => {
+      const deptName = p.areaSolicitante || p.dependenciaSolicitante || 'Otras Dependencias';
+      if (!deptMap[deptName]) {
+        deptMap[deptName] = {
+          departamento: deptName,
+          nombreCorto: getShortDeptName(deptName),
+          monto: 0,
+          cantidad: 0,
+          adjudicado: 0,
+          enEvaluacion: 0,
+        };
+      }
+      deptMap[deptName].monto += (p.monto || 0);
+      deptMap[deptName].cantidad += 1;
+      if (p.estatusEvento === 'Adjudicación') {
+        deptMap[deptName].adjudicado += (p.monto || 0);
+      } else if (p.estatusEvento === 'Evaluación') {
+        deptMap[deptName].enEvaluacion += (p.monto || 0);
+      }
+    });
+
+    return Object.values(deptMap)
+      .sort((a, b) => b.monto - a.monto)
+      .map((dept, index) => ({
+        ...dept,
+        color: getDepartmentColor(dept.departamento, index)
+      }));
+  }, [filteredPurchases]);
+
+  // Datos calculados para Gráfica Circular: Estado Presupuestario
+  const budgetStatusChartData = useMemo(() => {
+    const statusConfig: Record<string, { name: string; color: string }> = {
+      'Adjudicación': { name: 'Adjudicado', color: '#059669' },
+      'Evaluación': { name: 'En Evaluación', color: '#d97706' },
+      'Prescindido': { name: 'Prescindido', color: '#dc2626' },
+      'Desierto': { name: 'Desierto', color: '#64748b' },
+    };
+
+    const statusTotals: Record<string, { name: string; monto: number; count: number; color: string }> = {
+      'Adjudicación': { name: 'Adjudicado', monto: 0, count: 0, color: '#059669' },
+      'Evaluación': { name: 'En Evaluación', monto: 0, count: 0, color: '#d97706' },
+      'Prescindido': { name: 'Prescindido', monto: 0, count: 0, color: '#dc2626' },
+      'Desierto': { name: 'Desierto', monto: 0, count: 0, color: '#64748b' },
+    };
+
+    let totalPresupuesto = 0;
+    filteredPurchases.forEach(p => {
+      const statusKey = p.estatusEvento || 'Evaluación';
+      if (!statusTotals[statusKey]) {
+        statusTotals[statusKey] = {
+          name: statusConfig[statusKey]?.name || statusKey,
+          monto: 0,
+          count: 0,
+          color: statusConfig[statusKey]?.color || '#3b82f6',
+        };
+      }
+      statusTotals[statusKey].monto += (p.monto || 0);
+      statusTotals[statusKey].count += 1;
+      totalPresupuesto += (p.monto || 0);
+    });
+
+    return Object.values(statusTotals)
+      .filter(item => item.count > 0 || item.monto > 0)
+      .map(item => ({
+        ...item,
+        percentage: totalPresupuesto > 0 ? ((item.monto / totalPresupuesto) * 100).toFixed(1) : '0'
+      }));
   }, [filteredPurchases]);
 
   // Filtrado reactivo para la Bitácora de Auditoría en el Dashboard
@@ -159,7 +404,7 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      
+
       {/* Barra Superior con Control de Presupuesto Global, Filtros y Acciones */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -222,7 +467,7 @@ export const DashboardView: React.FC = () => {
 
       {/* 3 Paneles e Indicadores de Avance de Gran Visibilidad y Alto Contraste Profesional */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
+
         {/* PANEL 1: Indicador de NOG Adjudicados */}
         <div className="bg-white p-6 sm:p-7 rounded-2xl border-2 border-emerald-500 shadow-md hover:shadow-xl transition-all flex flex-col justify-between">
           <div>
@@ -444,6 +689,267 @@ export const DashboardView: React.FC = () => {
 
       </div>
 
+      {/* SECCIÓN ANALÍTICA CON RECHARTS: GRÁFICAS DE BARRAS Y CIRCULARES */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* GRÁFICA DE BARRAS: Compras y Presupuesto por Departamento (7 columnas en escritorio) */}
+        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-blue-50 text-[#1c39bb] border border-blue-100">
+                  <BarChart3 className="w-5 h-5 text-[#1c39bb]" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span>Compras por Departamento</span>
+                    <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                      {departmentChartData.length} dependencias
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Distribución presupuestaria y cantidad de adquisiciones por área solicitante
+                  </p>
+                </div>
+              </div>
+
+              {/* Selector de Métrica: Monto (Q) vs Cantidad */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setBarMetric('monto')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    barMetric === 'monto'
+                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Monto (Q)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBarMetric('cantidad')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    barMetric === 'cantidad'
+                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Cantidad
+                </button>
+              </div>
+            </div>
+
+            {/* Contenedor del Gráfico de Barras */}
+            <div className="pt-4">
+              {departmentChartData.length === 0 ? (
+                <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-center">
+                  <Building2 className="w-10 h-10 stroke-1 text-slate-300 mb-2" />
+                  <p className="text-xs font-medium">No se encontraron compras en el período seleccionado.</p>
+                </div>
+              ) : (
+                <div className="w-full h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={departmentChartData}
+                      margin={{ top: 15, right: 15, left: 5, bottom: 45 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis
+                        dataKey="nombreCorto"
+                        tick={{ fill: '#475569', fontSize: 11, fontWeight: 600 }}
+                        interval={0}
+                        angle={-22}
+                        textAnchor="end"
+                        height={55}
+                      />
+                      <YAxis
+                        tickFormatter={barMetric === 'monto' ? formatYAxisCurrency : (val) => `${val}`}
+                        tick={{ fill: '#64748b', fontSize: 11 }}
+                        width={barMetric === 'monto' ? 70 : 35}
+                      />
+                      <Tooltip content={<CustomBarTooltip />} />
+                      <Bar
+                        dataKey={barMetric === 'monto' ? 'monto' : 'cantidad'}
+                        name={barMetric === 'monto' ? 'Presupuesto Solicitado (Q)' : 'Eventos Registrados'}
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={48}
+                      >
+                        {departmentChartData.map((entry, index) => (
+                          <Cell 
+                            key={`bar-cell-${entry.departamento}-${index}`} 
+                            fill={entry.color} 
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Chips de colores por Departamento */}
+            {departmentChartData.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-3 border-t border-slate-100">
+                {departmentChartData.map((dept) => (
+                  <div
+                    key={`legend-chip-${dept.departamento}`}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200/80 text-[11px] text-slate-700"
+                    title={dept.departamento}
+                  >
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" 
+                      style={{ backgroundColor: dept.color }} 
+                    />
+                    <span className="font-semibold text-slate-800">{dept.nombreCorto}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Desglose de Principales Áreas */}
+          {departmentChartData.length > 0 && (
+            <div className="mt-4 pt-3.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {departmentChartData.slice(0, 3).map((dept, idx) => (
+                <div 
+                  key={dept.departamento} 
+                  className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 transition-all hover:bg-slate-100/80"
+                >
+                  <div className="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-600 mb-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span 
+                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" 
+                        style={{ backgroundColor: dept.color }} 
+                      />
+                      <span className="truncate" title={dept.departamento}>#{idx + 1} {dept.nombreCorto}</span>
+                    </div>
+                    <span className="font-mono text-slate-800 shrink-0">{dept.cantidad} ev.</span>
+                  </div>
+                  <div 
+                    className="text-xs font-black font-mono"
+                    style={{ color: dept.color }}
+                  >
+                    {formatQuetzales(dept.monto)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* GRÁFICA CIRCULAR: Estado Presupuestario (5 columnas en escritorio) */}
+        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-50 text-amber-700 border border-amber-100">
+                  <PieChartIcon className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900">
+                    Estado Presupuestario
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Composición financiera por estatus legal y técnico
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total</span>
+                <span className="text-xs sm:text-sm font-black text-slate-900 font-mono">
+                  {formatQuetzales(metrics.totalMonto)}
+                </span>
+              </div>
+            </div>
+
+            {/* Contenedor del Donut Chart con Indicador Central */}
+            <div className="pt-3">
+              {budgetStatusChartData.length === 0 ? (
+                <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-center">
+                  <PieChartIcon className="w-10 h-10 stroke-1 text-slate-300 mb-2" />
+                  <p className="text-xs font-medium">Sin datos presupuestarios para el filtro actual.</p>
+                </div>
+              ) : (
+                <div className="relative w-full h-56 flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={budgetStatusChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={58}
+                        outerRadius={88}
+                        paddingAngle={3}
+                        dataKey="monto"
+                      >
+                        {budgetStatusChartData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${entry.name}-${index}`} 
+                            fill={entry.color} 
+                            stroke="#ffffff" 
+                            strokeWidth={2} 
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomPieTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  {/* Resumen en el Centro del Donut */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Adjudicación</span>
+                    <span className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
+                      {metrics.adjudicadosPorcentaje}%
+                    </span>
+                    <span className="text-[10px] font-extrabold text-emerald-600">
+                      Tasa Efectiva
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Leyenda y Desglose Financiero Institucional */}
+          <div className="mt-3 pt-3.5 border-t border-slate-100 space-y-2">
+            {budgetStatusChartData.map((status) => (
+              <div 
+                key={status.name}
+                className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/70 transition-colors text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span 
+                    className="w-3 h-3 rounded-full shrink-0 shadow-2xs" 
+                    style={{ backgroundColor: status.color }} 
+                  />
+                  <div className="truncate">
+                    <span className="font-bold text-slate-800 block truncate">{status.name}</span>
+                    <span className="text-[10px] font-medium text-slate-500">{status.count} proceso(s)</span>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span className="font-mono font-bold text-slate-900 text-[11px] sm:text-xs">
+                      {formatQuetzales(status.monto)}
+                    </span>
+                    <span 
+                      className="px-1.5 py-0.5 rounded text-[10px] font-black text-white"
+                      style={{ backgroundColor: status.color }}
+                    >
+                      {status.percentage}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+
       {/* Sección 1: Control de Adquisiciones Recientes (Full-Width, Professional Contrast) */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
@@ -522,8 +1028,8 @@ export const DashboardView: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          p.evaluadoGIT === 'Sí' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                          p.evaluadoGIT === 'Sí'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : 'bg-slate-100 text-slate-500'
                         }`}>
                           {p.evaluadoGIT === 'Sí' ? <ShieldCheck className="w-3 h-3 text-emerald-600" /> : null}
@@ -554,7 +1060,7 @@ export const DashboardView: React.FC = () => {
 
       {/* Sección 2: Bitácora y Registro de Auditoría Institucional con Mayor Visibilidad */}
       <div className="bg-white border-2 border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        
+
         {/* Encabezado Principal de Auditoría */}
         <div className="p-4 sm:p-6 bg-slate-900 text-white flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
@@ -665,10 +1171,10 @@ export const DashboardView: React.FC = () => {
                 </tr>
               ) : (
                 filteredDashboardLogs.slice(0, 8).map((log) => {
-                  const actionStyle = ACTION_BADGE_STYLES[log.accion] || { 
-                    bg: 'bg-slate-100', 
-                    text: 'text-slate-800', 
-                    border: 'border-slate-200' 
+                  const actionStyle = ACTION_BADGE_STYLES[log.accion] || {
+                    bg: 'bg-slate-100',
+                    text: 'text-slate-800',
+                    border: 'border-slate-200'
                   };
 
                   return (

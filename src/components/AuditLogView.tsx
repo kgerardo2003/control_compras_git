@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   ShieldCheck, 
@@ -6,10 +6,13 @@ import {
   Eye, 
   User, 
   FileSpreadsheet,
-  X
+  X,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 import { AuditLogEntry } from '../types';
 import { formatDateTime, exportToCSV } from '../utils/formatters';
+import { subscribeToAuditLogs, forceFetchAuditLogsFromServer } from '../lib/firebase';
 
 const ACTION_COLORS: Record<string, { bg: string; text: string }> = {
   'LOGIN': { bg: 'bg-blue-100', text: 'text-blue-800' },
@@ -34,8 +37,61 @@ export const AuditLogView: React.FC = () => {
   const [filterModule, setFilterModule] = useState('todos');
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
 
+  // Estados de sincronización en tiempo real con Firestore
+  const [liveLogs, setLiveLogs] = useState<AuditLogEntry[]>(auditLogs);
+  const [syncStatus, setSyncStatus] = useState<'live' | 'cache' | 'offline'>('live');
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Sincronizar liveLogs cuando auditLogs del contexto cambie
+  useEffect(() => {
+    if (auditLogs && auditLogs.length > 0) {
+      setLiveLogs(auditLogs);
+    }
+  }, [auditLogs]);
+
+  // Listener dedicado en tiempo real a la colección de auditoría
+  useEffect(() => {
+    const unsubscribe = subscribeToAuditLogs(
+      (items, isFromCache) => {
+        if (items && items.length > 0) {
+          setLiveLogs(items);
+        }
+        setSyncStatus(isFromCache ? 'cache' : 'live');
+        setLastSyncTime(new Date());
+      },
+      (error) => {
+        console.warn("AuditLogView Firestore listener error:", error);
+        setSyncStatus('offline');
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Forzar consulta al servidor evitando cualquier caché local
+  const handleForceSync = async () => {
+    setIsSyncing(true);
+    try {
+      const serverLogs = await forceFetchAuditLogsFromServer();
+      if (serverLogs && serverLogs.length > 0) {
+        setLiveLogs(serverLogs);
+      }
+      setSyncStatus('live');
+      setLastSyncTime(new Date());
+    } catch (err) {
+      console.error("Error forzando sincronización de auditoría:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const currentLogs = liveLogs.length > 0 ? liveLogs : auditLogs;
+
   const filteredLogs = useMemo(() => {
-    return auditLogs.filter(log => {
+    return currentLogs.filter(log => {
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
         const matchUser = log.usuario.toLowerCase().includes(q);
@@ -47,7 +103,7 @@ export const AuditLogView: React.FC = () => {
       if (filterModule !== 'todos' && log.modulo !== filterModule) return false;
       return true;
     });
-  }, [auditLogs, searchTerm, filterAction, filterModule]);
+  }, [currentLogs, searchTerm, filterAction, filterModule]);
 
   const handleExportAuditCSV = () => {
     const rows = filteredLogs.map(l => ({
@@ -86,6 +142,39 @@ export const AuditLogView: React.FC = () => {
         >
           <FileSpreadsheet className="w-4 h-4 text-black" />
           <span>Exportar Bitácora CSV</span>
+        </button>
+      </div>
+
+      {/* Barra de Sincronización en Tiempo Real Multi-dispositivo */}
+      <div className="bg-blue-50/80 border border-blue-200 rounded-xl px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+              <Database className="w-3.5 h-3.5 text-blue-700" />
+              Listener de Auditoría Activo (En Vivo)
+            </span>
+            <span className="text-[10px] text-blue-800 bg-white/90 px-2 py-0.5 rounded-md border border-blue-200 font-semibold">
+              {syncStatus === 'live' ? '☁️ Conectado a Servidor Cloud' : syncStatus === 'cache' ? '💾 Datos en Caché Local' : '⚠️ Fuera de línea'}
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">
+              Registros: {currentLogs.length} • {lastSyncTime.toLocaleTimeString()}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleForceSync}
+          disabled={isSyncing}
+          className="self-end sm:self-auto px-2.5 py-1 text-xs font-semibold text-blue-900 bg-white hover:bg-blue-100/60 border border-blue-300 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-60"
+          title="Fuerza la consulta directa a los servidores de Firestore evitando cualquier caché de navegador"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-blue-700 ${isSyncing ? 'animate-spin' : ''}`} />
+          <span>{isSyncing ? 'Actualizando...' : 'Forzar Sincronización'}</span>
         </button>
       </div>
 

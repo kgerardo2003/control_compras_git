@@ -10,7 +10,8 @@ import {
   AuditAction,
   CatalogItem,
   SystemThemeId,
-  CustomLogoConfig
+  CustomLogoConfig,
+  ToastItem
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -33,7 +34,8 @@ import {
   removeCatalogFromFirestore,
   saveUserToFirestore,
   removeUserFromFirestore,
-  seedInitialDataIfEmpty
+  seedInitialDataIfEmpty,
+  forceFetchPurchasesFromServer
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit } from 'firebase/firestore';
 
@@ -57,6 +59,7 @@ interface AppContextType {
   isOnline: boolean;
   isFirestoreConnected: boolean;
   firestoreStatus: 'conectado' | 'conectando' | 'offline';
+  refreshPurchases: () => Promise<void>;
   selectedPurchase: PurchaseRecord | null;
   setSelectedPurchase: (purchase: PurchaseRecord | null) => void;
   isPurchaseModalOpen: boolean;
@@ -113,6 +116,11 @@ interface AppContextType {
   markAllNotificationsRead: () => void;
   addNotification: (notif: Omit<AppNotification, 'id' | 'fecha' | 'leida'>) => void;
   triggerSimulatedNotification: () => void;
+
+  // Sistema de Notificaciones Flotantes (Toasts)
+  toasts: ToastItem[];
+  showToast: (toast: Omit<ToastItem, 'id'>) => string;
+  dismissToast: (id: string) => void;
 
   // Reseteo
   resetToDemoData: () => void;
@@ -274,69 +282,104 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
     // Suscripción reactiva a Adquisiciones (Purchases)
-    const unsubPurchases = onSnapshot(collection(db, PURCHASES_COLLECTION), (snapshot) => {
-      if (!snapshot.empty) {
+    let unsubPurchases: (() => void) | undefined;
+    try {
+      unsubPurchases = onSnapshot(collection(db, PURCHASES_COLLECTION), { includeMetadataChanges: true }, (snapshot) => {
         const remoteItems: PurchaseRecord[] = [];
         snapshot.forEach((doc) => {
           remoteItems.push(doc.data() as PurchaseRecord);
         });
         remoteItems.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
-        setPurchases(remoteItems);
-      }
-      setIsFirestoreConnected(true);
-      setFirestoreStatus('conectado');
-    }, (error) => {
-      console.warn("Firestore Purchases Listener Error:", error);
-      setFirestoreStatus('offline');
-    });
+        if (remoteItems.length > 0 || snapshot.metadata.fromCache === false) {
+          setPurchases(remoteItems);
+        }
+        setIsFirestoreConnected(true);
+        setFirestoreStatus('conectado');
+      }, (error) => {
+        console.warn("Firestore Purchases Listener Error:", error);
+        setFirestoreStatus('offline');
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de compras:", err);
+    }
 
     // Suscripción reactiva a Bitácora Oficial (Audit Logs)
-    const qLogs = query(collection(db, AUDIT_LOGS_COLLECTION), limit(150));
-    const unsubLogs = onSnapshot(qLogs, (snapshot) => {
-      if (!snapshot.empty) {
+    let unsubLogs: (() => void) | undefined;
+    try {
+      const qLogs = query(collection(db, AUDIT_LOGS_COLLECTION), limit(250));
+      unsubLogs = onSnapshot(qLogs, { includeMetadataChanges: true }, (snapshot) => {
         const remoteLogs: AuditLogEntry[] = [];
         snapshot.forEach((doc) => {
           remoteLogs.push(doc.data() as AuditLogEntry);
         });
         remoteLogs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-        setAuditLogs(remoteLogs);
-      }
-    }, (error) => {
-      console.warn("Firestore Logs Listener Error:", error);
-    });
+        if (remoteLogs.length > 0 || snapshot.metadata.fromCache === false) {
+          setAuditLogs(remoteLogs);
+        }
+      }, (error) => {
+        console.warn("Firestore Logs Listener Error:", error);
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de bitácora:", err);
+    }
 
     // Suscripción reactiva a Catálogos Parametrizados
-    const unsubCatalogs = onSnapshot(collection(db, CATALOGS_COLLECTION), (snapshot) => {
-      if (!snapshot.empty) {
-        const remoteCatalogs: Catalog[] = [];
-        snapshot.forEach((doc) => {
-          remoteCatalogs.push(doc.data() as Catalog);
-        });
-        setCatalogs(remoteCatalogs);
-      }
-    }, (error) => {
-      console.warn("Firestore Catalogs Listener Error:", error);
-    });
+    let unsubCatalogs: (() => void) | undefined;
+    try {
+      unsubCatalogs = onSnapshot(collection(db, CATALOGS_COLLECTION), { includeMetadataChanges: true }, (snapshot) => {
+        if (!snapshot.empty) {
+          const remoteCatalogs: Catalog[] = [];
+          snapshot.forEach((doc) => {
+            remoteCatalogs.push(doc.data() as Catalog);
+          });
+          setCatalogs(remoteCatalogs);
+        }
+      }, (error) => {
+        console.warn("Firestore Catalogs Listener Error:", error);
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de catálogos:", err);
+    }
 
     // Suscripción reactiva a Directorio de Usuarios
-    const unsubUsers = onSnapshot(collection(db, USERS_COLLECTION), (snapshot) => {
-      if (!snapshot.empty) {
-        const remoteUsers: User[] = [];
-        snapshot.forEach((doc) => {
-          remoteUsers.push(doc.data() as User);
-        });
-        setUsers(remoteUsers);
-      }
-    }, (error) => {
-      console.warn("Firestore Users Listener Error:", error);
-    });
+    let unsubUsers: (() => void) | undefined;
+    try {
+      unsubUsers = onSnapshot(collection(db, USERS_COLLECTION), { includeMetadataChanges: true }, (snapshot) => {
+        if (!snapshot.empty) {
+          const remoteUsers: User[] = [];
+          snapshot.forEach((doc) => {
+            remoteUsers.push(doc.data() as User);
+          });
+          setUsers(remoteUsers);
+        }
+      }, (error) => {
+        console.warn("Firestore Users Listener Error:", error);
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de usuarios:", err);
+    }
 
     return () => {
-      unsubPurchases();
-      unsubLogs();
-      unsubCatalogs();
-      unsubUsers();
+      if (unsubPurchases) unsubPurchases();
+      if (unsubLogs) unsubLogs();
+      if (unsubCatalogs) unsubCatalogs();
+      if (unsubUsers) unsubUsers();
     };
+  }, []);
+
+  const refreshPurchases = useCallback(async () => {
+    try {
+      setFirestoreStatus('conectando');
+      const serverItems = await forceFetchPurchasesFromServer();
+      if (serverItems && serverItems.length > 0) {
+        setPurchases(serverItems);
+      }
+      setIsFirestoreConnected(true);
+      setFirestoreStatus('conectado');
+    } catch (err) {
+      console.warn("Error refrescando compras desde Firestore:", err);
+      setFirestoreStatus('offline');
+    }
   }, []);
 
   // Tema del sistema
@@ -396,6 +439,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categoria: 'sistema'
     });
   };
+
+  // Sistema de Notificaciones Flotantes (Toast)
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const showToast = useCallback((toast: Omit<ToastItem, 'id'>): string => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newToast: ToastItem = {
+      ...toast,
+      id,
+    };
+    setToasts(prev => [newToast, ...prev.slice(0, 3)]);
+    return id;
+  }, []);
 
   // Guardar en localStorage
   useEffect(() => {
@@ -540,7 +600,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Compras CRUD
   const addPurchase = (data: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>): PurchaseRecord => {
-    const newId = `pur-2026-${String(purchases.length + 1).padStart(3, '0')}`;
+    // Determinar ID único sin colisiones analizando todos los IDs existentes
+    let maxNum = 0;
+    purchases.forEach(p => {
+      const match = p.id.match(/^pur-(\d+)-(\d+)/);
+      if (match) {
+        const n = parseInt(match[2], 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    });
+    let seq = Math.max(maxNum + 1, purchases.length + 1);
+    let candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
+    while (purchases.some(p => p.id === candidateId)) {
+      seq++;
+      candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
+    }
+    const newId = candidateId;
+
     const newRecord: PurchaseRecord = {
       ...data,
       id: newId,
@@ -549,7 +625,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setPurchases(prev => [newRecord, ...prev]);
-    savePurchaseToFirestore(newRecord);
+
+    savePurchaseToFirestore(newRecord).then(res => {
+      if (!res.success) {
+        console.warn("Aviso Firestore al guardar compra:", res.error);
+        showToast({
+          type: 'warning',
+          title: 'Sincronización Cloud',
+          message: `Guardado en dispositivo local. La sincronización en la nube falló: ${res.error || 'Problema de red o permisos'}`,
+          duration: 6000
+        });
+      }
+    });
 
     logAudit(
       'CREAR_COMPRA', 
@@ -568,6 +655,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       enlaceId: newId
     });
 
+    showToast({
+      type: 'success',
+      title: 'Compra Guardada Exitosamente',
+      message: `El evento NOG ${data.nog} (${data.f56e || 'F56-e'}) ha sido registrado con éxito.`,
+      duration: 4500
+    });
+
     return newRecord;
   };
 
@@ -583,7 +677,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setPurchases(prevList => prevList.map(p => p.id === id ? updated : p));
-    savePurchaseToFirestore(updated);
+    
+    savePurchaseToFirestore(updated).then(res => {
+      if (!res.success) {
+        console.warn("Aviso Firestore al actualizar compra:", res.error);
+        showToast({
+          type: 'warning',
+          title: 'Sincronización Cloud',
+          message: `Cambios guardados localmente. Sincronización en la nube no completada: ${res.error || 'Verifique conexión'}`,
+          duration: 6000
+        });
+      }
+    });
 
     // Si cambió el estatus, emitir notificación especial
     if (data.estatusEvento && data.estatusEvento !== prev.estatusEvento) {
@@ -614,6 +719,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         data
       );
     }
+
+    showToast({
+      type: 'success',
+      title: 'Compra Actualizada Exitosamente',
+      message: `Los cambios para el evento NOG ${updated.nog} fueron guardados en el sistema.`,
+      duration: 4500
+    });
   };
 
   const deletePurchase = (id: string) => {
@@ -621,8 +733,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!prev) return;
 
     setPurchases(prevList => prevList.filter(p => p.id !== id));
-    removePurchaseFromFirestore(id);
+    
+    removePurchaseFromFirestore(id).then(res => {
+      if (!res.success) {
+        console.warn("Aviso Firestore al eliminar compra:", res.error);
+      }
+    });
+
     logAudit('ELIMINAR_COMPRA', 'Compras', `Eliminación de evento NOG: ${prev.nog} (${prev.descripcion.slice(0, 40)}...)`, id, prev);
+
+    showToast({
+      type: 'info',
+      title: 'Compra Eliminada',
+      message: `El registro NOG ${prev.nog} ha sido retirado del sistema.`,
+      duration: 4000
+    });
   };
 
   // Catálogos CRUD
@@ -818,6 +943,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isOnline,
         isFirestoreConnected,
         firestoreStatus,
+        refreshPurchases,
         selectedPurchase,
         setSelectedPurchase,
         isPurchaseModalOpen,
@@ -847,6 +973,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markAllNotificationsRead,
         addNotification,
         triggerSimulatedNotification,
+        toasts,
+        showToast,
+        dismissToast,
         resetToDemoData,
         theme,
         setTheme,

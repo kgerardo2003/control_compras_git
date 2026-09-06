@@ -6,14 +6,17 @@ import {
   CheckCircle2, 
   DollarSign, 
   FileCheck2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
 import { formatQuetzales, formatDate, exportToCSV } from '../utils/formatters';
+import { generatePurchasesPDF } from '../utils/pdfExport';
 
 export const ReportsView: React.FC = () => {
-  const { purchases, logAudit } = useApp();
+  const { purchases, logAudit, currentUser, showToast } = useApp();
 
   const [selectedReportType, setSelectedReportType] = useState<'consolidado' | 'git' | 'adjudicados' | 'anual'>('consolidado');
+  const [reportPdfFeedback, setReportPdfFeedback] = useState<string | null>(null);
 
   const totalMonto = purchases.reduce((acc, p) => acc + (p.monto || 0), 0);
   const adjudicados = purchases.filter(p => p.estatusEvento === 'Adjudicación');
@@ -48,6 +51,52 @@ export const ReportsView: React.FC = () => {
     }));
     exportToCSV(`Informe_Consolidado_Adquisiciones_OJ_GIT_${new Date().toISOString().slice(0, 10)}`, rows);
     logAudit('EXPORTAR_DATOS', 'Reportes', 'Generación y exportación de informe consolidado.');
+    showToast({
+      type: 'success',
+      title: 'Reporte CSV Exportado Exitosamente',
+      message: `Se descargaron ${rows.length} registros en formato CSV.`,
+      duration: 5000,
+    });
+  };
+
+  const handleExportReportPDF = () => {
+    let dataset = purchases;
+    let reportName = 'Consolidado General';
+    if (selectedReportType === 'adjudicados') {
+      dataset = adjudicados;
+      reportName = 'Eventos Adjudicados';
+    } else if (selectedReportType === 'git') {
+      dataset = evaluadosGIT;
+      reportName = 'Dictámenes Técnicos GIT';
+    }
+
+    try {
+      const filename = generatePurchasesPDF({
+        purchases: dataset,
+        title: `INFORME INSTITUCIONAL: ${reportName.toUpperCase()}`,
+        subtitle: 'Control y auditoría oficial de contrataciones y adquisiciones tecnológicas',
+        filterInfo: {
+          status: selectedReportType === 'adjudicados' ? 'Adjudicación' : undefined,
+        },
+        currentUser,
+        filenamePrefix: `Informe_Institucional_${selectedReportType}`,
+      });
+      logAudit('EXPORTAR_DATOS', 'Reportes', `Exportación de informe oficial "${reportName}" a PDF (${filename}).`);
+      showToast({
+        type: 'success',
+        title: 'Reporte PDF Exportado Exitosamente',
+        message: `Informe oficial "${reportName}" generado y descargado (${filename}).`,
+        duration: 6000,
+      });
+    } catch (err) {
+      console.error('Error generando PDF de reporte:', err);
+      showToast({
+        type: 'error',
+        title: 'Error al Generar Reporte',
+        message: 'No fue posible exportar el informe en formato PDF.',
+        duration: 5000,
+      });
+    }
   };
 
   return (
@@ -64,7 +113,17 @@ export const ReportsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            id="btn-export-report-pdf"
+            type="button"
+            onClick={handleExportReportPDF}
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-rose-800 border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Exportar informe a formato PDF oficial con cabecera y control de auditoría"
+          >
+            <FileText className="w-4 h-4 text-rose-600" />
+            <span>Exportar PDF</span>
+          </button>
           <button
             id="btn-print-report"
             type="button"
@@ -85,6 +144,22 @@ export const ReportsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {reportPdfFeedback && (
+        <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center justify-between text-xs text-emerald-900 shadow-2xs print:hidden">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-semibold">{reportPdfFeedback}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReportPdfFeedback(null)}
+            className="text-emerald-700 hover:text-emerald-900 cursor-pointer font-bold ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Selector de Tipo de Informe */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 print:hidden">
