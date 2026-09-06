@@ -40,7 +40,8 @@ import {
 import { collection, onSnapshot, query, limit } from 'firebase/firestore';
 
 export const DEFAULT_LOGO_CONFIG: CustomLogoConfig = {
-  type: 'preset',
+  type: 'custom_image',
+  imageUrl: '/organismo_judicial_logo.svg',
   presetId: 'oj_vector',
   title: 'Organismo Judicial',
   subtitle: 'Gerencia de Informática y Telecomunicaciones (GIT)'
@@ -417,7 +418,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(STORAGE_KEYS.LOGO);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed.presetId === 'oj_vector' || (parsed.type === 'preset' && !parsed.imageUrl) || !parsed.imageUrl) {
+          return {
+            ...parsed,
+            type: 'custom_image',
+            imageUrl: '/organismo_judicial_logo.svg',
+            presetId: 'oj_vector'
+          };
+        }
+        return parsed;
       } catch {
         return DEFAULT_LOGO_CONFIG;
       }
@@ -439,7 +449,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification({
       tipo: 'info',
       titulo: 'Logotipo Restablecido',
-      mensaje: 'Se ha restaurado el logotipo vectorial oficial del Organismo Judicial.',
+      mensaje: 'Se ha restaurado el logotipo oficial del Organismo Judicial.',
       categoria: 'sistema'
     });
   };

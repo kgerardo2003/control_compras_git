@@ -119,12 +119,22 @@ export const CustomizationView: React.FC = () => {
 
   // Manejador para seleccionar preset
   const handleSelectPreset = (presetId: 'oj_vector' | 'oj_monogram' | 'escudo_nacional') => {
-    setCustomLogo({
-      type: 'preset',
-      presetId,
-      title: titleInput,
-      subtitle: subtitleInput
-    });
+    if (presetId === 'oj_vector') {
+      setCustomLogo({
+        type: 'custom_image',
+        imageUrl: '/organismo_judicial_logo.svg',
+        presetId: 'oj_vector',
+        title: titleInput,
+        subtitle: subtitleInput
+      });
+    } else {
+      setCustomLogo({
+        type: 'preset',
+        presetId,
+        title: titleInput,
+        subtitle: subtitleInput
+      });
+    }
     logAudit('EDITAR_COMPRA', 'Sistema', `Emblema oficial cambiado a preset: ${presetId}`);
     showFeedback('Emblema oficial aplicado al sistema.');
   };
@@ -545,26 +555,26 @@ export const CustomizationView: React.FC = () => {
               </div>
 
               <div className="space-y-2.5">
-                {/* Preset 1: Balanza Oficial */}
+                {/* Preset 1: Emblema Oficial Organismo Judicial */}
                 <button
                   type="button"
                   onClick={() => handleSelectPreset('oj_vector')}
                   className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                    customLogo.type === 'preset' && customLogo.presetId === 'oj_vector'
+                    (customLogo.presetId === 'oj_vector' || (customLogo.type === 'custom_image' && customLogo.imageUrl?.includes('organismo_judicial_logo')))
                       ? 'border-amber-500 bg-amber-50/40 ring-1 ring-amber-400 font-bold'
                       : 'border-slate-200 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-slate-900 border border-amber-400 p-1 flex items-center justify-center">
-                      <OJLogo size="sm" variant="icon" overrideLogo={{ type: 'preset', presetId: 'oj_vector', title: '', subtitle: '' }} />
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-xs">
+                      <OJLogo size="sm" variant="icon" overrideLogo={{ type: 'custom_image', imageUrl: '/organismo_judicial_logo.svg', presetId: 'oj_vector', title: '', subtitle: '' }} />
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-900">Emblema Oficial Organismo Judicial</p>
-                      <p className="text-[11px] text-slate-500">Escudo Nacional de Guatemala con Quetzal, Fusiles, Espadas y Laureles</p>
+                      <p className="text-[11px] text-slate-500">Escudo Oficial de Armas: Quetzal, Fusiles, Espadas, Laureles y Pergamino C.A.</p>
                     </div>
                   </div>
-                  {customLogo.type === 'preset' && customLogo.presetId === 'oj_vector' && (
+                  {(customLogo.presetId === 'oj_vector' || (customLogo.type === 'custom_image' && customLogo.imageUrl?.includes('organismo_judicial_logo'))) && (
                     <CheckCircle2 className="w-4 h-4 text-amber-600" />
                   )}
                 </button>
