@@ -80,8 +80,9 @@ export const PurchasesView: React.FC = () => {
     }
   };
 
+  const canCreate = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
   const canEdit = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
-  const canDelete = currentUser?.rol === 'administrador';
+  const canDelete = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
 
   // Catálogos
   const statusCatalog = catalogs.find(c => c.codigo === 'ESTATUS_EVENTO');
@@ -235,7 +236,7 @@ export const PurchasesView: React.FC = () => {
             <span>Exportar CSV</span>
           </button>
 
-          {canEdit && (
+          {canCreate && (
             <button
               id="btn-register-purchase-top"
               type="button"
@@ -599,6 +600,15 @@ export const PurchasesView: React.FC = () => {
                     className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-black shadow-2xs cursor-pointer"
                   >
                     Editar
+                  </button>
+                )}
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => setItemToDelete(p)}
+                    className="px-3 py-1.5 bg-white hover:bg-rose-50 border border-rose-200 rounded-lg text-xs font-bold text-rose-600 shadow-2xs cursor-pointer"
+                  >
+                    Eliminar
                   </button>
                 )}
               </div>
