@@ -5,11 +5,13 @@ import { ShieldAlert, ArrowLeft, Lock } from 'lucide-react';
 interface AdminAccessGateProps {
   moduleTitle: string;
   moduleDescription: string;
+  requiredRolesText?: string;
 }
 
 export const AdminAccessGate: React.FC<AdminAccessGateProps> = ({ 
   moduleTitle, 
-  moduleDescription 
+  moduleDescription,
+  requiredRolesText
 }) => {
   const { setActiveTab, currentUser } = useApp();
 
@@ -46,10 +48,10 @@ export const AdminAccessGate: React.FC<AdminAccessGateProps> = ({
           <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-left text-xs text-amber-900 space-y-1.5">
             <div className="flex items-center gap-2 font-bold text-amber-800">
               <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-              <span>Acceso Exclusivo para Administradores</span>
+              <span>{requiredRolesText || 'Acceso Exclusivo para Administradores'}</span>
             </div>
             <p className="text-[11px] leading-relaxed text-amber-700">
-              El acceso a <strong>{moduleTitle}</strong> ({moduleDescription}) requiere privilegios de Administrador del Organismo Judicial.
+              El acceso a <strong>{moduleTitle}</strong> ({moduleDescription}) requiere privilegios de {requiredRolesText ? 'Administrador o Auditor' : 'Administrador'} del Organismo Judicial.
             </p>
           </div>
 

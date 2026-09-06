@@ -4,7 +4,7 @@
  * Organismo Judicial de Guatemala
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -24,8 +24,15 @@ import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { ToastContainer } from './components/ToastContainer';
 
 const AppContent: React.FC = () => {
-  const { activeTab, themeConfig, currentUser } = useApp();
+  const { activeTab, setActiveTab, themeConfig, currentUser } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Redireccionar si un usuario estándar intenta ingresar al módulo de auditoría
+  useEffect(() => {
+    if (currentUser?.rol === 'usuario_estandar' && activeTab === 'auditoria') {
+      setActiveTab('dashboard');
+    }
+  }, [currentUser?.rol, activeTab, setActiveTab]);
 
   // PUERTA DE AUTENTICACIÓN: Si el usuario no está autenticado, muestra el Panel de Logueo
   if (!currentUser) {
@@ -68,8 +75,9 @@ const AppContent: React.FC = () => {
                 <AuditLogView />
               ) : (
                 <AdminAccessGate 
-                  moduleTitle="Registro de Auditoría" 
+                  moduleTitle="Registro y Bitácora de Auditoría" 
                   moduleDescription="Supervisión institucional y bitácora de eventos del sistema" 
+                  requiredRolesText="Acceso Exclusivo para Administrador y Auditoría"
                 />
               )
             )}

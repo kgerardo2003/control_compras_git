@@ -644,22 +644,90 @@ export const PurchaseFormModal: React.FC = () => {
                 </p>
               )}
             </div>
+
+            {/* Fechas de Trámite del Formulario F56 (Abajo de F56-e y F56) */}
+            <div className="mt-3 pt-3 border-t border-slate-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                  Fechas de Gestión F56
+                </span>
+                <span className="text-[10px] text-slate-400">Solicitud, Vo.Bo. y Autorización</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                
+                {/* Fecha Solicitud */}
+                <div>
+                  <label htmlFor="input-purchase-fecha-solicitud" className="block text-xs font-bold text-slate-800 mb-1">
+                    Fecha de Solicitud <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    id="input-purchase-fecha-solicitud"
+                    type="date"
+                    value={fechaSolicitud}
+                    onChange={(e) => setFechaSolicitud(e.target.value)}
+                    className={`w-full p-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                      errors.fechaSolicitud ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
+                    }`}
+                  />
+                  {errors.fechaSolicitud ? (
+                    <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaSolicitud}</p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-0.5">Fecha oficial de ingreso</p>
+                  )}
+                </div>
+
+                {/* Fecha Vo.Bo. */}
+                <div>
+                  <label htmlFor="input-purchase-fecha-vobo" className="block text-xs font-bold text-slate-800 mb-1">
+                    Fecha Vo.Bo.
+                  </label>
+                  <input
+                    id="input-purchase-fecha-vobo"
+                    type="date"
+                    value={fechaVoBo}
+                    onChange={(e) => setFechaVoBo(e.target.value)}
+                    className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-0.5">Visto Bueno de jefatura</p>
+                </div>
+
+                {/* Fecha Autorizado */}
+                <div>
+                  <label htmlFor="input-purchase-fecha-autorizado" className="block text-xs font-bold text-slate-800 mb-1">
+                    Fecha de Autorizado
+                  </label>
+                  <input
+                    id="input-purchase-fecha-autorizado"
+                    type="date"
+                    value={fechaAutorizado}
+                    onChange={(e) => setFechaAutorizado(e.target.value)}
+                    className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-0.5">Aprobación del formulario F56</p>
+                </div>
+
+              </div>
+            </div>
+
           </div>
 
-          {/* SECCIÓN 2: NOG Guatecompras y Valores */}
+          {/* SECCIÓN 2: Guatecompras & Presupuesto (Seguido de lo anterior con Fecha de Publicación y Cierre) */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <Hash className="w-3.5 h-3.5 text-blue-600" />
                 Guatecompras & Presupuesto (GTQ)
               </span>
+              <span className="text-[10px] text-slate-400">Portal Guatecompras</span>
             </div>
 
+            {/* NOG, Presupuesto y Ofertas */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               
-              {/* Campo 7: NOG (Numérico 8 dígitos) */}
+              {/* NOG (Numérico 8 dígitos) */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
+                <label htmlFor="input-purchase-nog" className="block text-xs font-bold text-slate-800 mb-1">
                   NOG (8 Dígitos) <span className="text-rose-600">*</span>
                 </label>
                 <input
@@ -670,7 +738,7 @@ export const PurchaseFormModal: React.FC = () => {
                   onChange={(e) => setNog(e.target.value.replace(/\D/g, ''))}
                   placeholder="21948201"
                   className={`w-full p-2 text-xs font-mono font-bold tracking-wider border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                    errors.nog ? 'border-rose-400' : 'border-slate-300 text-slate-900'
+                    errors.nog ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 text-slate-900'
                   }`}
                 />
                 {errors.nog ? (
@@ -680,10 +748,10 @@ export const PurchaseFormModal: React.FC = () => {
                 )}
               </div>
 
-              {/* Campo 11: Monto (Quetzales) con ingreso de derecha a izquierda y decimales automáticos */}
+              {/* Monto (Presupuesto en Quetzales) */}
               <div>
                 <label htmlFor="input-purchase-monto" className="block text-xs font-bold text-slate-800 mb-1">
-                  Monto (Q) <span className="text-rose-600">*</span>
+                  Presupuesto / Monto (Q) <span className="text-rose-600">*</span>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-600 font-black text-xs">
@@ -712,15 +780,15 @@ export const PurchaseFormModal: React.FC = () => {
                       {monto !== '' ? formatQuetzales(Number(monto)) : 'Q. 0.00'}
                     </span>
                     <span className="text-slate-400 text-[9px]">
-                      Coloca decimales automáticamente
+                      Decimales automáticos
                     </span>
                   </div>
                 )}
               </div>
 
-              {/* Campo 10: Cantidad de Ofertas */}
+              {/* Cantidad de Ofertas */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
+                <label htmlFor="input-purchase-cantidad-ofertas" className="block text-xs font-bold text-slate-800 mb-1">
                   Cantidad de Ofertas
                 </label>
                 <input
@@ -731,99 +799,51 @@ export const PurchaseFormModal: React.FC = () => {
                   onChange={(e) => setCantidadOfertas(parseInt(e.target.value) || 0)}
                   className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">Postores</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Postores participantes</p>
               </div>
 
             </div>
-          </div>
 
-          {/* SECCIÓN 3: Cronología de Fechas */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                Cronología de Fechas
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Fechas de Guatecompras: Fecha de Publicación y Fecha de Cierre de Ofertas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200">
               
-              {/* Fecha Solicitud */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Solicitud <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  id="input-purchase-fecha-solicitud"
-                  type="date"
-                  value={fechaSolicitud}
-                  onChange={(e) => setFechaSolicitud(e.target.value)}
-                  className={`w-full p-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                    errors.fechaSolicitud ? 'border-rose-400' : 'border-slate-300'
-                  }`}
-                />
-              </div>
-
-              {/* Fecha Vo.Bo. */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Vo.Bo.
-                </label>
-                <input
-                  id="input-purchase-fecha-vobo"
-                  type="date"
-                  value={fechaVoBo}
-                  onChange={(e) => setFechaVoBo(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
-              {/* Fecha Autorizado */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Autorizado
-                </label>
-                <input
-                  id="input-purchase-fecha-autorizado"
-                  type="date"
-                  value={fechaAutorizado}
-                  onChange={(e) => setFechaAutorizado(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
               {/* Fecha Publicación */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Publicación
+                <label htmlFor="input-purchase-fecha-publicacion" className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Fecha de Publicación</span>
                 </label>
                 <input
                   id="input-purchase-fecha-publicacion"
                   type="date"
                   value={fechaPublicacion}
                   onChange={(e) => setFechaPublicacion(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
+                <p className="text-[10px] text-slate-400 mt-0.5">Publicación oficial del concurso en Guatecompras</p>
               </div>
 
-              {/* Fecha Ofertas */}
+              {/* Fecha de Cierre de Ofertas */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Fecha Cierre Ofertas
+                <label htmlFor="input-purchase-fecha-ofertas" className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Fecha de Cierre de Ofertas</span>
                 </label>
                 <input
                   id="input-purchase-fecha-ofertas"
                   type="date"
                   value={fechaOfertas}
                   onChange={(e) => setFechaOfertas(e.target.value)}
-                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
+                <p className="text-[10px] text-slate-400 mt-0.5">Fecha y hora límite de recepción de posturas</p>
               </div>
 
             </div>
+
           </div>
 
-          {/* SECCIÓN 4: Dictamen Técnico GIT y Estatus */}
+          {/* SECCIÓN 3: Dictamen Técnico GIT y Estatus */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">

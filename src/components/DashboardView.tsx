@@ -224,6 +224,9 @@ export const DashboardView: React.FC = () => {
   const [auditActionFilter, setAuditActionFilter] = useState<string>('todos');
   const [barMetric, setBarMetric] = useState<'monto' | 'cantidad'>('monto');
 
+  // Control de acceso: solo perfiles Administrador y Auditor pueden ver la bitácora
+  const canViewAudit = currentUser?.rol === 'administrador' || currentUser?.rol === 'auditor';
+
   // Filtrado reactivo de compras
   const filteredPurchases = useMemo(() => {
     return purchases.filter(p => {
@@ -1058,10 +1061,11 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Sección 2: Bitácora y Registro de Auditoría Institucional con Mayor Visibilidad */}
-      <div className="bg-white border-2 border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      {/* Sección 2: Bitácora y Registro de Auditoría Institucional con Mayor Visibilidad (Exclusivo para Administrador y Auditor) */}
+      {canViewAudit && (
+        <div className="bg-white border-2 border-slate-200 rounded-2xl shadow-sm overflow-hidden">
 
-        {/* Encabezado Principal de Auditoría */}
+          {/* Encabezado Principal de Auditoría */}
         <div className="p-4 sm:p-6 bg-slate-900 text-white flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -1251,6 +1255,7 @@ export const DashboardView: React.FC = () => {
         </div>
 
       </div>
+      )}
 
     </div>
   );
