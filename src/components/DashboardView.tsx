@@ -21,7 +21,10 @@ import {
   DollarSign,
   TrendingUp,
   Layers,
-  Briefcase
+  Briefcase,
+  X,
+  FileText,
+  CheckCircle
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -34,9 +37,10 @@ import {
   PieChart,
   Pie,
   Cell,
-  CartesianGrid
+  CartesianGrid,
+  Sector
 } from 'recharts';
-import { formatQuetzales, formatDate, exportToCSV, formatDateTime } from '../utils/formatters';
+import { formatQuetzales, formatDate, exportToCSV, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 
 // Formateador institucional para el eje Y de valores monetarios
 const formatYAxisCurrency = (val: number): string => {
@@ -139,7 +143,7 @@ const CustomBarTooltip: React.FC<BarTooltipProps> = ({ active, payload }) => {
   return null;
 };
 
-// Tooltip estilizado para la gráfica circular de estado presupuestario
+// Tooltip estilizado e interactivo para la gráfica circular de estado presupuestario
 interface PieTooltipProps {
   active?: boolean;
   payload?: Array<{
@@ -147,7 +151,10 @@ interface PieTooltipProps {
       name: string;
       monto: number;
       percentage: string;
+      countPercentage?: string;
       count: number;
+      totalCompras?: number;
+      totalPresupuesto?: number;
       color: string;
     };
   }>;
@@ -156,24 +163,62 @@ interface PieTooltipProps {
 const CustomPieTooltip: React.FC<PieTooltipProps> = ({ active, payload }) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
+    const countPct = data.countPercentage || '0';
+    const budgetPct = data.percentage || '0';
+
     return (
-      <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-xl border border-slate-700 text-xs max-w-xs z-50">
-        <div className="flex items-center gap-2 mb-2 border-b border-slate-700 pb-1.5">
-          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: data.color }} />
-          <span className="font-bold text-white text-sm">{data.name}</span>
+      <div className="bg-slate-900/95 backdrop-blur-md text-white p-3.5 sm:p-4 rounded-xl shadow-2xl border border-slate-700/80 text-xs w-68 sm:w-72 z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center justify-between gap-2 mb-3 border-b border-slate-700 pb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs ring-2 ring-white/20" style={{ backgroundColor: data.color }} />
+            <span className="font-black text-white text-sm truncate">{data.name}</span>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-white/10 text-slate-300 shrink-0">
+            {data.count} {data.count === 1 ? 'proceso' : 'procesos'}
+          </span>
         </div>
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-slate-400">Monto Total:</span>
-            <span className="font-mono font-bold text-emerald-400">{formatQuetzales(data.monto)}</span>
+
+        <div className="space-y-2.5">
+          {/* 1. Número exacto de compras y porcentaje del total */}
+          <div className="bg-slate-800/90 p-2.5 rounded-lg border border-slate-700/60">
+            <div className="flex items-center justify-between text-[11px] mb-1">
+              <span className="text-slate-300 font-semibold">Compras por estado:</span>
+              <span className="font-mono font-bold text-amber-300">
+                {data.count} {data.count === 1 ? 'compra' : 'compras'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5">
+              <span>Porcentaje exacto:</span>
+              <span className="font-bold text-amber-400">{countPct}% de las compras</span>
+            </div>
+            {/* Barra de progreso de porcentaje de compras */}
+            <div className="w-full bg-slate-700/80 h-1.5 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(3, parseFloat(countPct)))}%`, backgroundColor: data.color }}
+              />
+            </div>
           </div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-slate-400">Participación Presupuestaria:</span>
-            <span className="font-bold text-amber-300">{data.percentage}%</span>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-slate-400">Eventos NOG:</span>
-            <span className="font-bold text-slate-100">{data.count} proceso(s)</span>
+
+          {/* 2. Monto financiero y porcentaje del presupuesto */}
+          <div className="bg-slate-800/90 p-2.5 rounded-lg border border-slate-700/60">
+            <div className="flex items-center justify-between text-[11px] mb-0.5">
+              <span className="text-slate-300 font-semibold">Monto acumulado:</span>
+              <span className="font-mono font-bold text-emerald-400">
+                {formatQuetzales(data.monto)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5">
+              <span>Participación presupuestaria:</span>
+              <span className="font-bold text-emerald-300">{budgetPct}% del total</span>
+            </div>
+            {/* Barra de progreso de presupuesto */}
+            <div className="w-full bg-slate-700/80 h-1.5 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-400 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(3, parseFloat(budgetPct)))}%` }}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -223,6 +268,10 @@ export const DashboardView: React.FC = () => {
   const [auditSearch, setAuditSearch] = useState<string>('');
   const [auditActionFilter, setAuditActionFilter] = useState<string>('todos');
   const [barMetric, setBarMetric] = useState<'monto' | 'cantidad'>('monto');
+  // Estado interactivo para seleccionar un departamento al hacer clic en la gráfica de barras
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
+  // Estado para el sector activo en hover de la gráfica de pastel
+  const [activePieIndex, setActivePieIndex] = useState<number | null>(null);
 
   // Control de acceso: solo perfiles Administrador y Auditor pueden ver la bitácora
   const canViewAudit = currentUser?.rol === 'administrador' || currentUser?.rol === 'auditor';
@@ -334,6 +383,8 @@ export const DashboardView: React.FC = () => {
     };
 
     let totalPresupuesto = 0;
+    const totalCompras = filteredPurchases.length;
+
     filteredPurchases.forEach(p => {
       const statusKey = p.estatusEvento || 'Evaluación';
       if (!statusTotals[statusKey]) {
@@ -353,9 +404,98 @@ export const DashboardView: React.FC = () => {
       .filter(item => item.count > 0 || item.monto > 0)
       .map(item => ({
         ...item,
-        percentage: totalPresupuesto > 0 ? ((item.monto / totalPresupuesto) * 100).toFixed(1) : '0'
+        percentage: totalPresupuesto > 0 ? ((item.monto / totalPresupuesto) * 100).toFixed(1) : '0',
+        countPercentage: totalCompras > 0 ? ((item.count / totalCompras) * 100).toFixed(1) : '0',
+        totalCompras,
+        totalPresupuesto,
       }));
   }, [filteredPurchases]);
+
+  // Métricas y desglose exclusivo para la unidad seleccionada al hacer clic en la gráfica de barras
+  const selectedDeptData = useMemo(() => {
+    if (!selectedDepartment) return null;
+
+    const deptPurchases = filteredPurchases.filter(p => {
+      const deptName = p.areaSolicitante || p.dependenciaSolicitante || 'Otras Dependencias';
+      return deptName === selectedDepartment;
+    });
+
+    const totalEventos = deptPurchases.length;
+    const totalMonto = deptPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
+
+    // 1. NOG Adjudicados de esta unidad
+    const adjudicados = deptPurchases.filter(p => p.estatusEvento === 'Adjudicación');
+    const adjudicadosCount = adjudicados.length;
+    const adjudicadosMonto = adjudicados.reduce((acc, p) => acc + (p.monto || 0), 0);
+    const adjudicadosPorcentaje = totalEventos > 0 ? Math.round((adjudicadosCount / totalEventos) * 100) : 0;
+
+    // 2. Dictámenes Técnicos GIT de esta unidad
+    const dictamenesGIT = deptPurchases.filter(p => p.evaluadoGIT === 'Sí');
+    const dictamenesGITCount = dictamenesGIT.length;
+    const dictamenesGITMonto = dictamenesGIT.reduce((acc, p) => acc + (p.monto || 0), 0);
+    const dictamenesGITPorcentaje = totalEventos > 0 ? Math.round((dictamenesGITCount / totalEventos) * 100) : 0;
+
+    // 3. NOG en Evaluación de esta unidad
+    const enEvaluacion = deptPurchases.filter(p => p.estatusEvento === 'Evaluación');
+    const enEvaluacionCount = enEvaluacion.length;
+    const enEvaluacionMonto = enEvaluacion.reduce((acc, p) => acc + (p.monto || 0), 0);
+    const enEvaluacionPorcentaje = totalEventos > 0 ? Math.round((enEvaluacionCount / totalEventos) * 100) : 0;
+
+    // 4. Estados de compra detallados para la gráfica individual de esta unidad
+    const statusDefs: Record<string, { label: string; color: string }> = {
+      'Adjudicación': { label: 'Adjudicado', color: '#059669' },
+      'Evaluación': { label: 'En Evaluación', color: '#d97706' },
+      'Prescindido': { label: 'Prescindido', color: '#dc2626' },
+      'Desierto': { label: 'Desierto', color: '#64748b' },
+    };
+
+    const statusTotals: Record<string, { estado: string; label: string; cantidad: number; monto: number; color: string }> = {
+      'Adjudicación': { estado: 'Adjudicación', label: 'Adjudicado', cantidad: 0, monto: 0, color: '#059669' },
+      'Evaluación': { estado: 'Evaluación', label: 'En Evaluación', cantidad: 0, monto: 0, color: '#d97706' },
+      'Prescindido': { estado: 'Prescindido', label: 'Prescindido', cantidad: 0, monto: 0, color: '#dc2626' },
+      'Desierto': { estado: 'Desierto', label: 'Desierto', cantidad: 0, monto: 0, color: '#64748b' },
+    };
+
+    deptPurchases.forEach(p => {
+      const st = p.estatusEvento || 'Evaluación';
+      if (!statusTotals[st]) {
+        statusTotals[st] = {
+          estado: st,
+          label: statusDefs[st]?.label || st,
+          cantidad: 0,
+          monto: 0,
+          color: statusDefs[st]?.color || '#3b82f6',
+        };
+      }
+      statusTotals[st].cantidad += 1;
+      statusTotals[st].monto += (p.monto || 0);
+    });
+
+    const statusChartData = Object.values(statusTotals).map(item => ({
+      ...item,
+      porcentajeCantidad: totalEventos > 0 ? Math.round((item.cantidad / totalEventos) * 100) : 0,
+      porcentajeMonto: totalMonto > 0 ? ((item.monto / totalMonto) * 100).toFixed(1) : '0',
+    }));
+
+    return {
+      departamento: selectedDepartment,
+      nombreCorto: getShortDeptName(selectedDepartment),
+      color: getDepartmentColor(selectedDepartment, 0),
+      totalEventos,
+      totalMonto,
+      adjudicadosCount,
+      adjudicadosMonto,
+      adjudicadosPorcentaje,
+      dictamenesGITCount,
+      dictamenesGITMonto,
+      dictamenesGITPorcentaje,
+      enEvaluacionCount,
+      enEvaluacionMonto,
+      enEvaluacionPorcentaje,
+      statusChartData,
+      purchases: deptPurchases,
+    };
+  }, [selectedDepartment, filteredPurchases]);
 
   // Filtrado reactivo para la Bitácora de Auditoría en el Dashboard
   const filteredDashboardLogs = useMemo(() => {
@@ -403,6 +543,25 @@ export const DashboardView: React.FC = () => {
     }));
     exportToCSV(`Bitacora_Auditoria_GIT_OJ_${new Date().toISOString().slice(0, 10)}`, rows);
     logAudit('EXPORTAR_DATOS', 'Auditoría', 'Exportación de bitácora de auditoría desde el Panel Principal.');
+  };
+
+  // Renderizador con realce y sombra suave para el sector activo de la gráfica circular
+  const renderActivePieShape = (props: any) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+      <g>
+        <Sector
+          cx={cx}
+          cy={cy}
+          innerRadius={innerRadius - 2}
+          outerRadius={outerRadius + 6}
+          startAngle={startAngle}
+          endAngle={endAngle}
+          fill={fill}
+          style={{ filter: 'drop-shadow(0px 6px 8px rgba(0, 0, 0, 0.35))' }}
+        />
+      </g>
+    );
   };
 
   return (
@@ -704,46 +863,64 @@ export const DashboardView: React.FC = () => {
                   <BarChart3 className="w-5 h-5 text-[#1c39bb]" />
                 </div>
                 <div>
-                  <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2 flex-wrap">
                     <span>Compras por Departamento</span>
                     <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
                       {departmentChartData.length} dependencias
                     </span>
+                    {selectedDepartment && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-[#1c39bb] border border-blue-200 animate-pulse">
+                        Área activa
+                      </span>
+                    )}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Distribución presupuestaria y cantidad de adquisiciones por área solicitante
+                    Haga clic en cualquier barra o etiqueta para ver el análisis individualizado
                   </p>
                 </div>
               </div>
 
-              {/* Selector de Métrica: Monto (Q) vs Cantidad */}
-              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setBarMetric('monto')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    barMetric === 'monto'
-                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Monto (Q)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBarMetric('cantidad')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    barMetric === 'cantidad'
-                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Cantidad
-                </button>
+              {/* Selector de Métrica: Monto (Q) vs Cantidad & Botón Limpiar Selección */}
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                {selectedDepartment && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDepartment(null)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all flex items-center gap-1 cursor-pointer"
+                    title="Restablecer vista general"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Ver Todas</span>
+                  </button>
+                )}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setBarMetric('monto')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      barMetric === 'monto'
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Monto (Q)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBarMetric('cantidad')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      barMetric === 'cantidad'
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Cantidad
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Contenedor del Gráfico de Barras */}
+            {/* Contenedor del Gráfico de Barras con Evento onClick interactivo */}
             <div className="pt-4">
               {departmentChartData.length === 0 ? (
                 <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-center">
@@ -756,6 +933,12 @@ export const DashboardView: React.FC = () => {
                     <BarChart
                       data={departmentChartData}
                       margin={{ top: 15, right: 15, left: 5, bottom: 45 }}
+                      onClick={(state: any) => {
+                        if (state && state.activePayload && state.activePayload.length) {
+                          const clickedDept = state.activePayload[0].payload.departamento;
+                          setSelectedDepartment(prev => prev === clickedDept ? null : clickedDept);
+                        }
+                      }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                       <XAxis
@@ -777,13 +960,26 @@ export const DashboardView: React.FC = () => {
                         name={barMetric === 'monto' ? 'Presupuesto Solicitado (Q)' : 'Eventos Registrados'}
                         radius={[6, 6, 0, 0]}
                         maxBarSize={48}
+                        cursor="pointer"
                       >
-                        {departmentChartData.map((entry, index) => (
-                          <Cell 
-                            key={`bar-cell-${entry.departamento}-${index}`} 
-                            fill={entry.color} 
-                          />
-                        ))}
+                        {departmentChartData.map((entry, index) => {
+                          const isSelected = selectedDepartment === entry.departamento;
+                          const hasSelection = Boolean(selectedDepartment);
+                          return (
+                            <Cell 
+                              key={`bar-cell-${entry.departamento}-${index}`} 
+                              fill={entry.color}
+                              opacity={hasSelection ? (isSelected ? 1 : 0.35) : 1}
+                              stroke={isSelected ? '#0f172a' : 'transparent'}
+                              strokeWidth={isSelected ? 3 : 0}
+                              className="cursor-pointer transition-all duration-200"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDepartment(prev => prev === entry.departamento ? null : entry.departamento);
+                              }}
+                            />
+                          );
+                        })}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -791,52 +987,74 @@ export const DashboardView: React.FC = () => {
               )}
             </div>
 
-            {/* Chips de colores por Departamento */}
+            {/* Chips interactivos de colores por Departamento */}
             {departmentChartData.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 pt-3 border-t border-slate-100">
-                {departmentChartData.map((dept) => (
-                  <div
-                    key={`legend-chip-${dept.departamento}`}
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200/80 text-[11px] text-slate-700"
-                    title={dept.departamento}
-                  >
-                    <span 
-                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" 
-                      style={{ backgroundColor: dept.color }} 
-                    />
-                    <span className="font-semibold text-slate-800">{dept.nombreCorto}</span>
-                  </div>
-                ))}
+                {departmentChartData.map((dept) => {
+                  const isSelected = selectedDepartment === dept.departamento;
+                  return (
+                    <button
+                      type="button"
+                      key={`legend-chip-${dept.departamento}`}
+                      onClick={() => setSelectedDepartment(prev => prev === dept.departamento ? null : dept.departamento)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-slate-900 text-white shadow-sm ring-2 ring-blue-500 font-bold'
+                          : 'bg-slate-50 border border-slate-200/80 text-slate-700 hover:bg-slate-100'
+                      }`}
+                      title={`Haga clic para ver el análisis individual de ${dept.departamento}`}
+                    >
+                      <span 
+                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" 
+                        style={{ backgroundColor: dept.color }} 
+                      />
+                      <span className="truncate max-w-[130px] sm:max-w-none">{dept.nombreCorto}</span>
+                      {isSelected && (
+                        <span className="ml-0.5 text-[10px] text-blue-300">✕</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* Desglose de Principales Áreas */}
+          {/* Desglose de Principales Áreas (interactivas al hacer clic) */}
           {departmentChartData.length > 0 && (
             <div className="mt-4 pt-3.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {departmentChartData.slice(0, 3).map((dept, idx) => (
-                <div 
-                  key={dept.departamento} 
-                  className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 transition-all hover:bg-slate-100/80"
-                >
-                  <div className="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-600 mb-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span 
-                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" 
-                        style={{ backgroundColor: dept.color }} 
-                      />
-                      <span className="truncate" title={dept.departamento}>#{idx + 1} {dept.nombreCorto}</span>
-                    </div>
-                    <span className="font-mono text-slate-800 shrink-0">{dept.cantidad} ev.</span>
-                  </div>
-                  <div 
-                    className="text-xs font-black font-mono"
-                    style={{ color: dept.color }}
+              {departmentChartData.slice(0, 3).map((dept, idx) => {
+                const isSelected = selectedDepartment === dept.departamento;
+                return (
+                  <button 
+                    type="button"
+                    key={dept.departamento}
+                    onClick={() => setSelectedDepartment(prev => prev === dept.departamento ? null : dept.departamento)}
+                    className={`text-left rounded-xl p-2.5 transition-all cursor-pointer border ${
+                      isSelected
+                        ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-400/40 shadow-xs'
+                        : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/80'
+                    }`}
+                    title={`Ver análisis de ${dept.departamento}`}
                   >
-                    {formatQuetzales(dept.monto)}
-                  </div>
-                </div>
-              ))}
+                    <div className="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-600 mb-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" 
+                          style={{ backgroundColor: dept.color }} 
+                        />
+                        <span className="truncate" title={dept.departamento}>#{idx + 1} {dept.nombreCorto}</span>
+                      </div>
+                      <span className="font-mono text-slate-800 shrink-0">{dept.cantidad} ev.</span>
+                    </div>
+                    <div 
+                      className="text-xs font-black font-mono"
+                      style={{ color: dept.color }}
+                    >
+                      {formatQuetzales(dept.monto)}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -854,7 +1072,7 @@ export const DashboardView: React.FC = () => {
                     Estado Presupuestario
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Composición financiera por estatus legal y técnico
+                    Pase el ratón sobre cada sector para ver porcentaje exacto y compras
                   </p>
                 </div>
               </div>
@@ -867,7 +1085,7 @@ export const DashboardView: React.FC = () => {
               </div>
             </div>
 
-            {/* Contenedor del Donut Chart con Indicador Central */}
+            {/* Contenedor del Donut Chart con Indicador Central y Realce Interactivo */}
             <div className="pt-3">
               {budgetStatusChartData.length === 0 ? (
                 <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-center">
@@ -886,6 +1104,11 @@ export const DashboardView: React.FC = () => {
                         outerRadius={88}
                         paddingAngle={3}
                         dataKey="monto"
+                        activeIndex={activePieIndex !== null ? activePieIndex : undefined}
+                        activeShape={renderActivePieShape}
+                        onMouseEnter={(_, index) => setActivePieIndex(index)}
+                        onMouseLeave={() => setActivePieIndex(null)}
+                        cursor="pointer"
                       >
                         {budgetStatusChartData.map((entry, index) => (
                           <Cell 
@@ -896,7 +1119,7 @@ export const DashboardView: React.FC = () => {
                           />
                         ))}
                       </Pie>
-                      <Tooltip content={<CustomPieTooltip />} />
+                      <Tooltip content={<CustomPieTooltip />} wrapperStyle={{ outline: 'none', zIndex: 100 }} />
                     </PieChart>
                   </ResponsiveContainer>
 
@@ -917,41 +1140,530 @@ export const DashboardView: React.FC = () => {
 
           {/* Leyenda y Desglose Financiero Institucional */}
           <div className="mt-3 pt-3.5 border-t border-slate-100 space-y-2">
-            {budgetStatusChartData.map((status) => (
-              <div 
-                key={status.name}
-                className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/70 transition-colors text-xs"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span 
-                    className="w-3 h-3 rounded-full shrink-0 shadow-2xs" 
-                    style={{ backgroundColor: status.color }} 
-                  />
-                  <div className="truncate">
-                    <span className="font-bold text-slate-800 block truncate">{status.name}</span>
-                    <span className="text-[10px] font-medium text-slate-500">{status.count} proceso(s)</span>
-                  </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span className="font-mono font-bold text-slate-900 text-[11px] sm:text-xs">
-                      {formatQuetzales(status.monto)}
-                    </span>
+            {budgetStatusChartData.map((status, index) => {
+              const isHovered = activePieIndex === index;
+              return (
+                <div 
+                  key={status.name}
+                  onMouseEnter={() => setActivePieIndex(index)}
+                  onMouseLeave={() => setActivePieIndex(null)}
+                  className={`flex items-center justify-between p-2 rounded-xl border transition-all text-xs cursor-pointer ${
+                    isHovered 
+                      ? 'bg-slate-100 border-slate-300 shadow-2xs' 
+                      : 'bg-slate-50 border-slate-100 hover:bg-slate-100/70'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
                     <span 
-                      className="px-1.5 py-0.5 rounded text-[10px] font-black text-white"
-                      style={{ backgroundColor: status.color }}
-                    >
-                      {status.percentage}%
-                    </span>
+                      className="w-3 h-3 rounded-full shrink-0 shadow-2xs" 
+                      style={{ backgroundColor: status.color }} 
+                    />
+                    <div className="truncate">
+                      <span className="font-bold text-slate-800 block truncate">{status.name}</span>
+                      <span className="text-[10px] font-medium text-slate-500">
+                        {status.count} proceso(s) · {status.countPercentage}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="font-mono font-bold text-slate-900 text-[11px] sm:text-xs">
+                        {formatQuetzales(status.monto)}
+                      </span>
+                      <span 
+                        className="px-1.5 py-0.5 rounded text-[10px] font-black text-white"
+                        style={{ backgroundColor: status.color }}
+                      >
+                        {status.percentage}%
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
       </div>
+
+      {/* PANEL DE ANÁLISIS INDIVIDUAL POR UNIDAD SOLICITANTE */}
+      {selectedDeptData && (
+        <div id="panel-analisis-unidad" className="bg-white border-2 border-[#1c39bb]/70 rounded-2xl p-5 sm:p-7 shadow-lg space-y-6 animate-in fade-in slide-in-from-top-3 duration-250">
+          
+          {/* Encabezado del Panel Individual con Identidad del Área y Acciones */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+            <div className="flex items-start sm:items-center gap-3">
+              <div 
+                className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0"
+                style={{ backgroundColor: selectedDeptData.color }}
+              >
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-100 text-[#1c39bb] border border-blue-200">
+                    Análisis Individual por Dependencia
+                  </span>
+                  <span 
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold text-white shadow-2xs"
+                    style={{ backgroundColor: selectedDeptData.color }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                    {selectedDeptData.nombreCorto}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 mt-1">
+                  {selectedDeptData.departamento}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Desglose de estados y métricas de desempeño técnico exclusivo para esta unidad solicitante
+                </p>
+              </div>
+            </div>
+
+            {/* Resumen Global de la Unidad y Botón para Cerrar */}
+            <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Presupuesto del Área
+                </span>
+                <span className="text-xs sm:text-sm font-black text-slate-900 font-mono">
+                  {formatQuetzales(selectedDeptData.totalMonto)}
+                </span>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Total Eventos
+                </span>
+                <span className="text-xs sm:text-sm font-black text-slate-900 font-mono">
+                  {selectedDeptData.totalEventos}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedDepartment(null)}
+                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-300"
+                title="Cerrar vista individual y volver a la vista general"
+              >
+                <X className="w-4 h-4" />
+                <span className="hidden sm:inline">Cerrar Análisis</span>
+              </button>
+            </div>
+          </div>
+
+          {/* LAS 3 GRÁFICAS / PANELES DE LA UNIDAD — FORMATO IDÉNTICO A LOS 3 PANELES PRINCIPALES */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+            {/* PANEL INDIVIDUAL 1: NOG Adjudicados en la Unidad */}
+            <div className="bg-white p-6 rounded-2xl border-2 border-emerald-500 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-700" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-wider text-emerald-950 block">
+                        NOG Adjudicados
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        {selectedDeptData.nombreCorto}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-700 text-white shadow-xs">
+                    {selectedDeptData.adjudicadosPorcentaje}% del Área
+                  </span>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-5xl font-black text-slate-950 tracking-tight font-mono">
+                        {selectedDeptData.adjudicadosCount}
+                      </span>
+                      <span className="text-base font-bold text-slate-500">
+                        / {selectedDeptData.totalEventos}
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug">
+                      Eventos adjudicados en esta área
+                    </p>
+                  </div>
+
+                  {/* Medidor Circular de Alto Contraste */}
+                  <div className="relative w-22 h-22 flex-shrink-0">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        className="stroke-slate-200 fill-none"
+                        strokeWidth="3.8"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                      <path
+                        className="stroke-emerald-600 fill-none transition-all duration-700"
+                        strokeDasharray={`${selectedDeptData.adjudicadosPorcentaje}, 100`}
+                        strokeWidth="3.8"
+                        strokeLinecap="round"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xl font-black text-emerald-950 font-mono">
+                        {selectedDeptData.adjudicadosPorcentaje}%
+                      </span>
+                      <span className="text-[9px] font-black text-emerald-800 uppercase tracking-tighter">
+                        Tasa Éxito
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Monto Adjudicado</span>
+                <span className="text-sm font-black font-mono text-emerald-400">
+                  {formatQuetzales(selectedDeptData.adjudicadosMonto)}
+                </span>
+              </div>
+            </div>
+
+            {/* PANEL INDIVIDUAL 2: Dictámenes Técnicos GIT en la Unidad */}
+            <div className="bg-white p-6 rounded-2xl border-2 border-[#1c39bb] shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-blue-100 text-[#1c39bb] border border-blue-300">
+                      <ShieldCheck className="w-5 h-5 text-[#1c39bb]" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-wider text-blue-950 block">
+                        Dictámenes GIT
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        {selectedDeptData.nombreCorto}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#1c39bb] text-white shadow-xs">
+                    {selectedDeptData.dictamenesGITPorcentaje}% Cobertura
+                  </span>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-5xl font-black text-slate-950 tracking-tight font-mono">
+                        {selectedDeptData.dictamenesGITCount}
+                      </span>
+                      <span className="text-base font-bold text-slate-500">
+                        / {selectedDeptData.totalEventos}
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug">
+                      Dictámenes emitidos para esta área
+                    </p>
+                  </div>
+
+                  {/* Medidor Circular de Alto Contraste */}
+                  <div className="relative w-22 h-22 flex-shrink-0">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        className="stroke-slate-200 fill-none"
+                        strokeWidth="3.8"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                      <path
+                        className="stroke-[#1c39bb] fill-none transition-all duration-700"
+                        strokeDasharray={`${selectedDeptData.dictamenesGITPorcentaje}, 100`}
+                        strokeWidth="3.8"
+                        strokeLinecap="round"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xl font-black text-blue-950 font-mono">
+                        {selectedDeptData.dictamenesGITPorcentaje}%
+                      </span>
+                      <span className="text-[9px] font-black text-blue-800 uppercase tracking-tighter">
+                        Con Dictamen
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Monto Dictaminado</span>
+                <span className="text-sm font-black font-mono text-cyan-300">
+                  {formatQuetzales(selectedDeptData.dictamenesGITMonto)}
+                </span>
+              </div>
+            </div>
+
+            {/* PANEL INDIVIDUAL 3: NOG en Evaluación en la Unidad */}
+            <div className="bg-white p-6 rounded-2xl border-2 border-amber-500 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-300">
+                      <Clock className="w-5 h-5 text-amber-700" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-wider text-amber-950 block">
+                        NOG en Evaluación
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        {selectedDeptData.nombreCorto}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-600 text-white shadow-xs">
+                    {selectedDeptData.enEvaluacionPorcentaje}% en Trámite
+                  </span>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-5xl font-black text-slate-950 tracking-tight font-mono">
+                        {selectedDeptData.enEvaluacionCount}
+                      </span>
+                      <span className="text-base font-bold text-slate-500">
+                        / {selectedDeptData.totalEventos}
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug">
+                      Ofertas en análisis técnico activo
+                    </p>
+                  </div>
+
+                  {/* Medidor Circular de Alto Contraste */}
+                  <div className="relative w-22 h-22 flex-shrink-0">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        className="stroke-slate-200 fill-none"
+                        strokeWidth="3.8"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                      <path
+                        className="stroke-amber-600 fill-none transition-all duration-700"
+                        strokeDasharray={`${selectedDeptData.enEvaluacionPorcentaje}, 100`}
+                        strokeWidth="3.8"
+                        strokeLinecap="round"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xl font-black text-amber-950 font-mono">
+                        {selectedDeptData.enEvaluacionPorcentaje}%
+                      </span>
+                      <span className="text-[9px] font-black text-amber-800 uppercase tracking-tighter">
+                        En Trámite
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Monto en Trámite</span>
+                <span className="text-sm font-black font-mono text-amber-400">
+                  {formatQuetzales(selectedDeptData.enEvaluacionMonto)}
+                </span>
+              </div>
+            </div>
+
+          </div>
+
+          {/* GRÁFICA DE ESTADOS EN QUE SE ENCUENTRAN LAS COMPRAS DE ESTA UNIDAD */}
+          <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-blue-100 text-[#1c39bb]">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Estados de las Adquisiciones en {selectedDeptData.nombreCorto}
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Distribución de procesos por estatus legal y técnico con montos asociados
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-medium">
+                  {selectedDeptData.purchases.length} compras encontradas
+                </span>
+              </div>
+            </div>
+
+            {/* Tarjetas de Resumen de los Estados de esta Unidad */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              {selectedDeptData.statusChartData.map((st) => (
+                <div 
+                  key={st.estado}
+                  className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-xs font-bold text-slate-700">{st.label}</span>
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: st.color }} 
+                    />
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-black font-mono text-slate-900">
+                      {st.cantidad}
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">
+                      ({st.porcentajeCantidad}%)
+                    </span>
+                  </div>
+                  <div className="text-xs font-mono font-bold mt-1" style={{ color: st.color }}>
+                    {formatQuetzales(st.monto)}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Gráfica de Barras de Estados para la Unidad */}
+            <div className="mt-4 pt-3 border-t border-slate-200">
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={selectedDeptData.statusChartData}
+                    margin={{ top: 10, right: 15, left: 5, bottom: 25 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: '#334155', fontSize: 11, fontWeight: 700 }}
+                    />
+                    <YAxis
+                      tickFormatter={formatYAxisCurrency}
+                      tick={{ fill: '#64748b', fontSize: 11 }}
+                      width={65}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const d = payload[0].payload;
+                          return (
+                            <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl border border-slate-700 text-xs">
+                              <p className="font-bold mb-1 flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
+                                <span>{d.label}</span>
+                              </p>
+                              <div className="space-y-1">
+                                <div className="flex justify-between gap-3 text-slate-300">
+                                  <span>Cantidad:</span>
+                                  <span className="font-bold text-white">{d.cantidad} proceso(s) ({d.porcentajeCantidad}%)</span>
+                                </div>
+                                <div className="flex justify-between gap-3 text-slate-300">
+                                  <span>Monto:</span>
+                                  <span className="font-mono font-bold text-emerald-400">{formatQuetzales(d.monto)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar
+                      dataKey="monto"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={55}
+                    >
+                      {selectedDeptData.statusChartData.map((entry) => (
+                        <Cell key={`cell-unit-status-${entry.estado}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Tabla Compacta de las Compras de esta Unidad con acceso a la Ficha Oficial */}
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <h5 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-slate-500" />
+                <span>Listado de Procesos Registrados en {selectedDeptData.nombreCorto}</span>
+              </h5>
+              <div className="overflow-x-auto max-h-64 rounded-xl border border-slate-200 bg-white">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
+                    <tr>
+                      <th className="p-2.5">NOG / F56-e</th>
+                      <th className="p-2.5">Descripción</th>
+                      <th className="p-2.5">Modalidad LCE</th>
+                      <th className="p-2.5">Dictamen GIT</th>
+                      <th className="p-2.5">Estatus</th>
+                      <th className="p-2.5 text-right">Monto</th>
+                      <th className="p-2.5 text-center">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedDeptData.purchases.map((p) => {
+                      const mod = getModalidadCompraByMonto(p.monto);
+                      return (
+                        <tr key={p.id} className="hover:bg-blue-50/40 transition-colors">
+                          <td className="p-2.5 whitespace-nowrap">
+                            <span className="font-mono font-bold text-slate-900 block">{p.nog}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">F56-e: {p.f56e}</span>
+                          </td>
+                          <td className="p-2.5 max-w-xs truncate text-slate-700" title={p.descripcion}>
+                            {p.descripcion}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${mod.badgeClass}`}>
+                              {mod.nombre}
+                            </span>
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap">
+                            {p.evaluadoGIT === 'Sí' ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700">
+                                <ShieldCheck className="w-3.5 h-3.5 text-[#1c39bb]" /> Sí
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">No</span>
+                            )}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              STATUS_BADGE_CLASSES[p.estatusEvento] || 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {p.estatusEvento}
+                            </span>
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap text-right font-mono font-bold text-slate-900">
+                            {formatQuetzales(p.monto)}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPurchase(p)}
+                              className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#1c39bb] font-bold text-[11px] inline-flex items-center gap-1 transition-all cursor-pointer border border-blue-200"
+                              title="Ver ficha oficial de adquisición"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Ficha</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
       {/* Sección 1: Control de Adquisiciones Recientes (Full-Width, Professional Contrast) */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">

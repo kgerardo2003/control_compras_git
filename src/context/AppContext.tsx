@@ -31,6 +31,7 @@ import {
   savePurchaseToFirestore,
   saveBatchPurchasesToFirestore,
   removePurchaseFromFirestore,
+  removeBatchPurchasesFromFirestore,
   saveAuditLogToFirestore,
   saveCatalogToFirestore,
   removeCatalogFromFirestore,
@@ -95,6 +96,7 @@ interface AppContextType {
   importPurchases: (records: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>[], replaceAll?: boolean) => Promise<{ count: number }>;
   updatePurchase: (id: string, data: Partial<PurchaseRecord>) => void;
   deletePurchase: (id: string) => void;
+  deletePurchases: (ids: string[]) => Promise<{ count: number }>;
 
   // Catálogos CRUD
   addCatalog: (data: Omit<Catalog, 'id' | 'esSistema'>) => Catalog;
@@ -964,6 +966,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const deletePurchases = async (ids: string[]): Promise<{ count: number }> => {
+    if (!ids || ids.length === 0) return { count: 0 };
+    const idSet = new Set(ids);
+    const removedPurchases = purchases.filter(p => idSet.has(p.id));
+    const count = removedPurchases.length;
+    if (count === 0) return { count: 0 };
+
+    // Actualizar estado local inmediatamente
+    setPurchases(prevList => prevList.filter(p => !idSet.has(p.id)));
+
+    // Eliminar masivamente en Firestore por lotes atómicos
+    removeBatchPurchasesFromFirestore(ids).then(res => {
+      if (!res.success) {
+        console.warn("Aviso Firestore al eliminar compras por lote:", res.error);
+      }
+    }).catch(err => {
+      console.warn("Error eliminando compras masivas en Firestore:", err);
+    });
+
+    const totalMontoEliminado = removedPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
+    const nogSample = removedPurchases.slice(0, 4).map(p => p.nog).join(', ') + (count > 4 ? ` y ${count - 4} más...` : '');
+
+    logAudit(
+      'ELIMINAR_COMPRA',
+      'Compras',
+      `Eliminación masiva de ${count} adquisiciones por un monto total de Q${totalMontoEliminado.toLocaleString('es-GT', { minimumFractionDigits: 2 })}. NOGs: ${nogSample}`,
+      undefined,
+      { cantidadEliminada: count, totalMonto: totalMontoEliminado, nogs: removedPurchases.map(p => p.nog) }
+    );
+
+    addNotification({
+      tipo: 'advertencia',
+      titulo: 'Eliminación Masiva de Adquisiciones',
+      mensaje: `Se eliminaron ${count} adquisiciones del sistema permanentemente.`,
+      categoria: 'sistema'
+    });
+
+    showToast({
+      type: 'info',
+      title: 'Adquisiciones Eliminadas',
+      message: `Se eliminaron ${count} adquisiciones del sistema exitosamente.`,
+      duration: 5000
+    });
+
+    return { count };
+  };
+
   // Catálogos CRUD
   const addCatalog = (data: Omit<Catalog, 'id' | 'esSistema'>): Catalog => {
     const newCat: Catalog = {
@@ -1178,6 +1227,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         importPurchases,
         updatePurchase,
         deletePurchase,
+        deletePurchases,
         addCatalog,
         updateCatalog,
         deleteCatalog,

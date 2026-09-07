@@ -143,6 +143,29 @@ export async function removePurchaseFromFirestore(purchaseId: string): Promise<{
   }
 }
 
+export async function removeBatchPurchasesFromFirestore(purchaseIds: string[]): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    if (!purchaseIds || purchaseIds.length === 0) {
+      return { success: true, count: 0 };
+    }
+    const CHUNK_SIZE = 450;
+    for (let i = 0; i < purchaseIds.length; i += CHUNK_SIZE) {
+      const chunk = purchaseIds.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const id of chunk) {
+        const docRef = doc(db, PURCHASES_COLLECTION, id);
+        batch.delete(docRef);
+      }
+      await batch.commit();
+      console.log(`Lote de ${chunk.length} adquisiciones eliminado de Firestore (${Math.min(i + CHUNK_SIZE, purchaseIds.length)}/${purchaseIds.length})`);
+    }
+    return { success: true, count: purchaseIds.length };
+  } catch (err: any) {
+    console.error("Error eliminando lote de adquisiciones en Firestore:", err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
 export async function saveAuditLogToFirestore(log: AuditLogEntry): Promise<void> {
   try {
     const docRef = doc(db, AUDIT_LOGS_COLLECTION, log.id);
