@@ -207,14 +207,13 @@ export const EmailConfigView: React.FC = () => {
   };
 
   const envSample = `# Variables de Entorno para Vercel y GitHub
-# Configura estas variables en Vercel: Project Settings -> Environment Variables
-GMAIL_USER="${formData.userEmail || 'git@monroy.gt'}"
-GMAIL_APP_PASSWORD="${formData.appPassword ? '••••••••••••••••' : 'tu_contraseña_de_aplicacion_16_caracteres'}"
+# Configura estas variables en: Vercel Dashboard -> Project Settings -> Environment Variables
+GMAIL_USER="${formData.userEmail || 'kgerardo2003@gmail.com'}"
+GMAIL_APP_PASSWORD="${formData.appPassword ? formData.appPassword : 'pwwv bgmb wgak bvdn'}"
 SMTP_HOST="${formData.smtpHost || 'smtp.gmail.com'}"
 SMTP_PORT="${formData.smtpPort || 465}"
 SMTP_SECURE="${formData.secure ? 'true' : 'false'}"
-NOTIFICATION_EMAILS="${formData.recipientEmails.join(',')}"
-NEXT_PUBLIC_APP_URL="https://tu-proyecto.vercel.app"`;
+NOTIFICATION_EMAILS="${formData.recipientEmails.join(',')}"`;
 
   const handleCopyEnv = () => {
     navigator.clipboard.writeText(envSample);
@@ -227,40 +226,30 @@ NEXT_PUBLIC_APP_URL="https://tu-proyecto.vercel.app"`;
     });
   };
 
-  const vercelFunctionCode = `// api/send-email.ts (Vercel Serverless Function con Nodemailer)
+  const vercelFunctionCode = `// api/email/test.ts (Vercel Serverless Function con Nodemailer)
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import nodemailer from 'nodemailer';
+import { createGmailTransporter, normalizeEmail, setCorsHeaders } from '../_mailer';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return res.status(455).json({ error: 'Método no permitido. Use POST.' });
-  }
-
-  const { asunto, destinatarios, htmlContenido, nog } = req.body;
-
-  // Configuración del transporte seguro de Gmail con Contraseña de Aplicación
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT) || 465,
-    secure: process.env.SMTP_SECURE !== 'false', // true para 465, false para 587
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD, // Contraseña de aplicación de 16 caracteres
-    },
-  });
+  setCorsHeaders(res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Se requiere POST' });
 
   try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const recipient = normalizeEmail(body.testRecipient || body.userEmail);
+    const { transporter, user } = createGmailTransporter(body);
+
     const info = await transporter.sendMail({
-      from: \`"Sistema de Compras GIT - OJ" <\${process.env.GMAIL_USER}>\`,
-      to: destinatarios || process.env.NOTIFICATION_EMAILS,
-      subject: asunto || \`[GIT-OJ] Notificación de Compra NOG \${nog || ''}\`,
-      html: htmlContenido,
+      from: \`"Sistema de Compras GIT - OJ" <\${user}>\`,
+      to: recipient,
+      subject: '[PRUEBA VERCEL] Sistema de Control de Compras - GIT OJ',
+      text: 'Verificación exitosa de servicio SMTP en Vercel Serverless.',
     });
 
-    return res.status(200).json({ success: true, messageId: info.messageId });
+    return res.status(200).json({ success: true, messageId: info.messageId, user });
   } catch (error: any) {
-    console.error('Error enviando correo con Gmail:', error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(400).json({ success: false, message: error.message });
   }
 }`;
 
@@ -825,20 +814,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-blue-400 text-xs font-bold mb-2">
                   <Server className="w-4 h-4" />
-                  <span>2. Vercel Serverless Function</span>
+                  <span>2. Vercel Serverless Functions (/api)</span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  En Vercel, el envío se ejecuta a través del endpoint <code className="text-blue-300 bg-slate-900 px-1 py-0.5 rounded">/api/send-email</code> con Node.js y Nodemailer bajo demanda en la nube.
+                  Ya están creadas las funciones en la carpeta <code className="text-blue-300 bg-slate-900 px-1 py-0.5 rounded">/api/email/test.ts</code> y <code className="text-blue-300 bg-slate-900 px-1 py-0.5 rounded">/api/email/send.ts</code>, configuradas con <code className="text-blue-300 bg-slate-900 px-1 py-0.5 rounded">vercel.json</code> para responder con JSON válido en Vercel.
                 </p>
               </div>
 
               <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold mb-2">
                   <Code2 className="w-4 h-4" />
-                  <span>3. GitHub Secrets (CI/CD)</span>
+                  <span>3. GitHub y Despliegue Directo</span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  En GitHub Actions, configura las variables en <em>Repository Settings &gt; Secrets &gt; Actions</em> para despliegues automatizados y auditoría continua.
+                  Al sincronizar tu repositorio con GitHub, Vercel detecta automáticamente la carpeta <code className="text-emerald-300 bg-slate-900 px-1 py-0.5 rounded">/api</code> y los despliega como Serverless Functions sin requerir configuración manual.
                 </p>
               </div>
             </div>

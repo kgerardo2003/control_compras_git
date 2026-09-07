@@ -566,9 +566,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
 
-      if (res.ok && data.success) {
+      if (res.ok && data?.success) {
         const updated: GmailConfig = {
           ...active,
           lastTestDate: new Date().toISOString(),
@@ -582,7 +588,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           message: data.message || `Prueba de conexión con Gmail exitosa. Se ha despachado el correo de prueba a ${recipient}.` 
         };
       } else {
-        const errorMsg = data.message || 'Error al autenticar o conectar con el servidor SMTP de Gmail.';
+        let errorMsg = data?.message;
+        if (!errorMsg) {
+          if (res.status === 405) {
+            errorMsg = 'Error HTTP 405 (Método no permitido). Verifique que la función /api/email/test esté disponible en Vercel.';
+          } else if (res.status === 404) {
+            errorMsg = 'Error HTTP 404: El endpoint /api/email/test no fue encontrado en el servidor.';
+          } else if (rawText && (rawText.includes('<!DOCTYPE') || rawText.includes('<html'))) {
+            errorMsg = `El servidor devolvió una página HTML en lugar de JSON (HTTP ${res.status}). En Vercel verifique que la carpeta /api esté en su repositorio de GitHub.`;
+          } else {
+            errorMsg = `Error del servidor de correo (${res.status}): ${rawText ? rawText.slice(0, 150) : 'Sin respuesta'}`;
+          }
+        }
+
         const updated: GmailConfig = {
           ...active,
           lastTestDate: new Date().toISOString(),
@@ -630,8 +648,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           text: params.text,
         }),
       });
-      const data = await res.json();
-      return { success: res.ok && data.success, message: data.message };
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
+      return { 
+        success: res.ok && Boolean(data?.success), 
+        message: data?.message || (res.ok ? 'Notificación enviada' : `Error en servidor (${res.status})`) 
+      };
     } catch (err: any) {
       return { success: false, message: err?.message || 'Error de conexión' };
     }
