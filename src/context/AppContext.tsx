@@ -139,7 +139,8 @@ interface AppContextType {
   // Configuración de Correo Electrónico (Gmail)
   gmailConfig: GmailConfig;
   updateGmailConfig: (config: Partial<GmailConfig>) => void;
-  testGmailConnection: (testRecipient: string) => Promise<{ success: boolean; message: string }>;
+  testGmailConnection: (testRecipient: string, overrideConfig?: Partial<GmailConfig>) => Promise<{ success: boolean; message: string }>;
+  sendEmailNotification: (params: { to?: string[]; subject: string; html?: string; text?: string }) => Promise<{ success: boolean; message?: string }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -157,13 +158,13 @@ const STORAGE_KEYS = {
 };
 
 export const DEFAULT_GMAIL_CONFIG: GmailConfig = {
-  userEmail: 'git@monroy.gt',
+  userEmail: 'kgerardo2003@gmail.com',
   senderName: 'Sistema de Control de Compras - GIT OJ',
-  appPassword: '',
+  appPassword: 'pwwv bgmb wgak bvdn',
   smtpHost: 'smtp.gmail.com',
   smtpPort: 465,
   secure: true,
-  recipientEmails: ['git@monroy.gt', 'klopez@oj.gob.gt'],
+  recipientEmails: ['kgerardo2003@gmail.com', 'klopez@oj.gob.gt'],
   notifyOnNewPurchase: true,
   notifyOnAdjudication: true,
   notifyOnDeadlineWarning: true,
@@ -488,7 +489,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(STORAGE_KEYS.GMAIL);
     if (saved) {
       try {
-        return { ...DEFAULT_GMAIL_CONFIG, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        // Autocorrección de email sin .com o contraseñas vacías previas
+        if (parsed.userEmail && (parsed.userEmail.endsWith('@gmail') || parsed.userEmail === 'kgerardo2003@gmail')) {
+          parsed.userEmail = 'kgerardo2003@gmail.com';
+        }
+        if (!parsed.appPassword || parsed.appPassword === '') {
+          parsed.appPassword = 'pwwv bgmb wgak bvdn';
+        }
+        return { ...DEFAULT_GMAIL_CONFIG, ...parsed };
       } catch {
         return DEFAULT_GMAIL_CONFIG;
       }
@@ -499,34 +508,133 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateGmailConfig = useCallback((newConfig: Partial<GmailConfig>) => {
     setGmailConfig(prev => {
       const updated = { ...prev, ...newConfig };
+      if (updated.userEmail && (updated.userEmail.endsWith('@gmail') || updated.userEmail.endsWith('@gmail.'))) {
+        updated.userEmail = updated.userEmail.replace(/@gmail\.?$/, '@gmail.com');
+      }
+      if (updated.appPassword) {
+        updated.appPassword = updated.appPassword.replace(/["']/g, '').trim();
+      }
       localStorage.setItem(STORAGE_KEYS.GMAIL, JSON.stringify(updated));
       return updated;
     });
   }, []);
 
-  const testGmailConnection = useCallback(async (testRecipient: string): Promise<{ success: boolean; message: string }> => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    if (!gmailConfig.userEmail || !gmailConfig.userEmail.includes('@')) {
-      return { success: false, message: 'La cuenta de correo remitente de Gmail no es válida.' };
+  const testGmailConnection = useCallback(async (
+    testRecipient: string,
+    overrideConfig?: Partial<GmailConfig>
+  ): Promise<{ success: boolean; message: string }> => {
+    const active = { ...gmailConfig, ...overrideConfig };
+    
+    // Normalizar correo y contraseña
+    if (active.userEmail && (active.userEmail.endsWith('@gmail') || active.userEmail.endsWith('@gmail.'))) {
+      active.userEmail = active.userEmail.replace(/@gmail\.?$/, '@gmail.com');
     }
-    if (!gmailConfig.appPassword || gmailConfig.appPassword.trim().length < 8) {
+    if (active.appPassword) {
+      active.appPassword = active.appPassword.replace(/["']/g, '').trim();
+    }
+
+    if (!active.userEmail || !active.userEmail.includes('@')) {
+      return { 
+        success: false, 
+        message: 'La cuenta de correo remitente de Gmail no es válida. Verifique que incluya "@gmail.com".' 
+      };
+    }
+    if (!active.appPassword || active.appPassword.trim().length < 8) {
       return { 
         success: false, 
         message: 'Debe ingresar una Contraseña de Aplicación de Google válida (16 caracteres).' 
       };
     }
-    const updated: GmailConfig = {
-      ...gmailConfig,
-      lastTestDate: new Date().toISOString(),
-      lastTestStatus: 'success',
-      lastTestError: undefined,
-    };
-    setGmailConfig(updated);
-    localStorage.setItem(STORAGE_KEYS.GMAIL, JSON.stringify(updated));
-    return { 
-      success: true, 
-      message: `Prueba de conexión con ${gmailConfig.smtpHost}:${gmailConfig.smtpPort} exitosa. Se ha despachado el correo de prueba a ${testRecipient}.` 
-    };
+
+    let recipient = testRecipient.trim();
+    if (recipient.endsWith('@gmail') || recipient.endsWith('@gmail.')) {
+      recipient = recipient.replace(/@gmail\.?$/, '@gmail.com');
+    }
+
+    try {
+      const res = await fetch('/api/email/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userEmail: active.userEmail,
+          appPassword: active.appPassword,
+          smtpHost: active.smtpHost,
+          smtpPort: active.smtpPort,
+          secure: active.secure,
+          senderName: active.senderName,
+          testRecipient: recipient,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        const updated: GmailConfig = {
+          ...active,
+          lastTestDate: new Date().toISOString(),
+          lastTestStatus: 'success',
+          lastTestError: undefined,
+        };
+        setGmailConfig(updated);
+        localStorage.setItem(STORAGE_KEYS.GMAIL, JSON.stringify(updated));
+        return { 
+          success: true, 
+          message: data.message || `Prueba de conexión con Gmail exitosa. Se ha despachado el correo de prueba a ${recipient}.` 
+        };
+      } else {
+        const errorMsg = data.message || 'Error al autenticar o conectar con el servidor SMTP de Gmail.';
+        const updated: GmailConfig = {
+          ...active,
+          lastTestDate: new Date().toISOString(),
+          lastTestStatus: 'error',
+          lastTestError: errorMsg,
+        };
+        setGmailConfig(updated);
+        localStorage.setItem(STORAGE_KEYS.GMAIL, JSON.stringify(updated));
+        return { success: false, message: errorMsg };
+      }
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Error de conexión con el backend de correo.';
+      return { success: false, message: errorMsg };
+    }
+  }, [gmailConfig]);
+
+  const sendEmailNotification = useCallback(async (params: {
+    to?: string[];
+    subject: string;
+    html?: string;
+    text?: string;
+  }): Promise<{ success: boolean; message?: string }> => {
+    const recipients = params.to && params.to.length > 0 ? params.to : gmailConfig.recipientEmails;
+    if (!recipients || recipients.length === 0) {
+      return { success: false, message: 'No hay destinatarios de correo configurados.' };
+    }
+    if (!gmailConfig.userEmail || !gmailConfig.appPassword) {
+      return { success: false, message: 'Credenciales de Gmail incompletas.' };
+    }
+
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userEmail: gmailConfig.userEmail,
+          appPassword: gmailConfig.appPassword,
+          smtpHost: gmailConfig.smtpHost,
+          smtpPort: gmailConfig.smtpPort,
+          secure: gmailConfig.secure,
+          senderName: gmailConfig.senderName,
+          to: recipients,
+          subject: params.subject,
+          html: params.html,
+          text: params.text,
+        }),
+      });
+      const data = await res.json();
+      return { success: res.ok && data.success, message: data.message };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Error de conexión' };
+    }
   }, [gmailConfig]);
 
   // Sistema de Notificaciones Flotantes (Toast)
@@ -1256,6 +1364,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         gmailConfig,
         updateGmailConfig,
         testGmailConnection,
+        sendEmailNotification,
       }}
     >
       {children}

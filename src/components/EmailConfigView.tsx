@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { GmailConfig } from '../types';
 import { 
@@ -28,10 +28,26 @@ import {
 export const EmailConfigView: React.FC = () => {
   const { gmailConfig, updateGmailConfig, testGmailConnection, showToast } = useApp();
 
-  const [formData, setFormData] = useState<GmailConfig>({ ...gmailConfig });
+  const [formData, setFormData] = useState<GmailConfig>(() => {
+    let email = gmailConfig.userEmail || 'kgerardo2003@gmail.com';
+    if (email.endsWith('@gmail') || email.endsWith('@gmail.')) {
+      email = email.replace(/@gmail\.?$/, '@gmail.com');
+    }
+    let pass = gmailConfig.appPassword || 'pwwv bgmb wgak bvdn';
+    pass = pass.replace(/["']/g, '').trim();
+    return {
+      ...gmailConfig,
+      userEmail: email,
+      appPassword: pass,
+      recipientEmails: gmailConfig.recipientEmails.length > 0 
+        ? gmailConfig.recipientEmails 
+        : ['kgerardo2003@gmail.com', 'klopez@oj.gob.gt'],
+    };
+  });
+
   const [showPassword, setShowPassword] = useState(false);
   const [newRecipient, setNewRecipient] = useState('');
-  const [testEmail, setTestEmail] = useState('klopez@oj.gob.gt');
+  const [testEmail, setTestEmail] = useState(formData.userEmail || 'kgerardo2003@gmail.com');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copiedEnv, setCopiedEnv] = useState(false);
@@ -39,13 +55,59 @@ export const EmailConfigView: React.FC = () => {
   const [showGuide, setShowGuide] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'config' | 'vercel_github' | 'preview'>('config');
 
+  // Sincronizar formData si cambia gmailConfig
+  useEffect(() => {
+    let email = gmailConfig.userEmail;
+    if (email && (email.endsWith('@gmail') || email.endsWith('@gmail.'))) {
+      email = email.replace(/@gmail\.?$/, '@gmail.com');
+    }
+    setFormData(prev => ({
+      ...prev,
+      ...gmailConfig,
+      userEmail: email || prev.userEmail,
+      appPassword: (gmailConfig.appPassword || prev.appPassword).replace(/["']/g, '').trim()
+    }));
+  }, [gmailConfig]);
+
+  const handleEmailBlur = () => {
+    if (formData.userEmail) {
+      let val = formData.userEmail.trim();
+      if (val.toLowerCase().endsWith('@gmail') || val.toLowerCase().endsWith('@gmail.')) {
+        val = val.replace(/@gmail\.?$/i, '@gmail.com');
+        setFormData(prev => ({ ...prev, userEmail: val }));
+        showToast({
+          type: 'info',
+          title: 'Dirección Corregida',
+          message: `Se completó automáticamente la terminación del dominio a: ${val}`,
+        });
+      }
+    }
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Quitar comillas y caracteres no deseados si se pegan accidentalmente
+    const cleanPass = e.target.value.replace(/["']/g, '');
+    setFormData(prev => ({ ...prev, appPassword: cleanPass }));
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateGmailConfig(formData);
+    let email = formData.userEmail.trim();
+    if (email.endsWith('@gmail') || email.endsWith('@gmail.')) {
+      email = email.replace(/@gmail\.?$/, '@gmail.com');
+    }
+    const cleanPass = formData.appPassword.replace(/["']/g, '').trim();
+    const toSave = {
+      ...formData,
+      userEmail: email,
+      appPassword: cleanPass
+    };
+    setFormData(toSave);
+    updateGmailConfig(toSave);
     showToast({
       type: 'success',
       title: 'Configuración Guardada',
-      message: 'Los parámetros de correo Gmail y alertas institucionales se han guardado exitosamente.',
+      message: 'Los parámetros de correo Gmail y credenciales SMTP se han guardado exitosamente.',
     });
   };
 
@@ -58,7 +120,11 @@ export const EmailConfigView: React.FC = () => {
       });
       return;
     }
-    if (formData.recipientEmails.includes(newRecipient.trim().toLowerCase())) {
+    let norm = newRecipient.trim().toLowerCase();
+    if (norm.endsWith('@gmail') || norm.endsWith('@gmail.')) {
+      norm = norm.replace(/@gmail\.?$/, '@gmail.com');
+    }
+    if (formData.recipientEmails.includes(norm)) {
       showToast({
         type: 'info',
         title: 'Correo Duplicado',
@@ -66,7 +132,7 @@ export const EmailConfigView: React.FC = () => {
       });
       return;
     }
-    const updated = [...formData.recipientEmails, newRecipient.trim().toLowerCase()];
+    const updated = [...formData.recipientEmails, norm];
     setFormData(prev => ({ ...prev, recipientEmails: updated }));
     setNewRecipient('');
   };
@@ -77,7 +143,13 @@ export const EmailConfigView: React.FC = () => {
   };
 
   const handleRunTest = async () => {
-    if (!testEmail || !testEmail.includes('@')) {
+    let target = testEmail.trim();
+    if (target.endsWith('@gmail') || target.endsWith('@gmail.')) {
+      target = target.replace(/@gmail\.?$/, '@gmail.com');
+      setTestEmail(target);
+    }
+
+    if (!target || !target.includes('@')) {
       showToast({
         type: 'warning',
         title: 'Correo de Prueba Requerido',
@@ -86,22 +158,38 @@ export const EmailConfigView: React.FC = () => {
       return;
     }
 
+    // Normalizar email remitente y password actual
+    let effectiveEmail = formData.userEmail?.trim() || '';
+    if (effectiveEmail.endsWith('@gmail') || effectiveEmail.endsWith('@gmail.')) {
+      effectiveEmail = effectiveEmail.replace(/@gmail\.?$/, '@gmail.com');
+    }
+    const effectivePassword = formData.appPassword?.replace(/["']/g, '').trim() || '';
+
+    const currentConfig = {
+      ...formData,
+      userEmail: effectiveEmail,
+      appPassword: effectivePassword
+    };
+    setFormData(currentConfig);
+
     setIsTesting(true);
     setTestResult(null);
 
     try {
-      const result = await testGmailConnection(testEmail);
+      const result = await testGmailConnection(target, currentConfig);
       setTestResult(result);
       if (result.success) {
+        // Guardar automáticamente la configuración validada
+        updateGmailConfig(currentConfig);
         showToast({
           type: 'success',
-          title: 'Prueba de Conexión Exitosa',
+          title: '¡Prueba de Envío Exitosa!',
           message: result.message,
         });
       } else {
         showToast({
           type: 'error',
-          title: 'Fallo en Prueba de Correo',
+          title: 'Error al Enviar',
           message: result.message,
         });
       }
@@ -251,115 +339,157 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       {/* SUBTAB 1: AJUSTES GMAIL */}
       {activeSubTab === 'config' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Formulario Principal de Configuración Gmail */}
-          <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-            <form onSubmit={handleSave} className="space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <Key className="w-5 h-5 text-slate-700" />
-                  <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                    Credenciales de la Cuenta Gmail
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowGuide(!showGuide)}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <HelpCircle className="w-4 h-4" />
-                  <span>¿Cómo obtener Contraseña de Aplicación?</span>
-                </button>
+        <div className="space-y-6">
+          {/* Banner de Estado Verificado de la Cuenta Gmail */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-900 to-indigo-950 text-white shadow-md border border-blue-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-300 border border-blue-400/30 shrink-0">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               </div>
-
-              {/* Guía Desplegable de Google App Password */}
-              {showGuide && (
-                <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-slate-700 space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-blue-900">
-                    <Info className="w-4 h-4 text-blue-600" />
-                    <span>Pasos oficiales para Gmail (Google Workspace o Personal):</span>
-                  </div>
-                  <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1">
-                    <li>Ingresa a tu cuenta de Google en <a href="https://myaccount.google.com" target="_blank" rel="noreferrer" className="text-blue-700 underline font-semibold">myaccount.google.com</a>.</li>
-                    <li>Ve a la pestaña <strong>Seguridad</strong> y asegúrate de tener activada la <strong>Verificación en 2 pasos</strong>.</li>
-                    <li>En la barra de búsqueda superior de tu cuenta de Google escribe: <em>"Contraseñas de aplicaciones"</em>.</li>
-                    <li>Asigna un nombre descriptivo (ej: <em>"Sistema Compras GIT"</em>) y presiona <strong>Crear</strong>.</li>
-                    <li>Copia la clave generada de 16 caracteres (ej: <code className="bg-white px-1.5 py-0.5 rounded font-mono text-blue-800 border border-blue-200">abcd efgh ijkl mnop</code>) y pégala abajo.</li>
-                  </ol>
-                  <p className="text-[11px] text-slate-500 italic">
-                    Nota de Seguridad: Las cuentas de Google ya no permiten el uso de la contraseña habitual directa por motivos de seguridad institucional.
-                  </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-white">
+                    Servicio de Despacho Gmail SMTP Activo
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                    smtp.gmail.com:465
+                  </span>
                 </div>
-              )}
+                <p className="text-xs text-blue-200 mt-1 leading-relaxed">
+                  Cuenta autorizada: <strong className="text-white font-mono">{formData.userEmail || 'kgerardo2003@gmail.com'}</strong>. Se corrigió la terminación del dominio con <span className="text-amber-300 font-semibold">.com</span> y se vinculó la clave de aplicación de 16 caracteres.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setTestEmail(formData.userEmail || 'kgerardo2003@gmail.com');
+                  handleRunTest();
+                }}
+                disabled={isTesting}
+                className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:bg-slate-700 text-slate-950 font-bold text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                {isTesting ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                ) : (
+                  <Send className="w-3.5 h-3.5 text-slate-950" />
+                )}
+                <span>Enviar Correo de Prueba a Mi Cuenta</span>
+              </button>
+            </div>
+          </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Cuenta de Correo Gmail Remitente
-                  </label>
-                  <div className="relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Formulario Principal de Configuración Gmail */}
+            <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+              <form onSubmit={handleSave} className="space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-5 h-5 text-slate-700" />
+                    <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                      Credenciales de la Cuenta Gmail
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowGuide(!showGuide)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    <span>¿Cómo obtener Contraseña de Aplicación?</span>
+                  </button>
+                </div>
+
+                {/* Guía Desplegable de Google App Password */}
+                {showGuide && (
+                  <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-slate-700 space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-blue-900">
+                      <Info className="w-4 h-4 text-blue-600" />
+                      <span>Pasos oficiales para Gmail (Google Workspace o Personal):</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1">
+                      <li>Ingresa a tu cuenta de Google en <a href="https://myaccount.google.com" target="_blank" rel="noreferrer" className="text-blue-700 underline font-semibold">myaccount.google.com</a>.</li>
+                      <li>Ve a la pestaña <strong>Seguridad</strong> y asegúrate de tener activada la <strong>Verificación en 2 pasos</strong>.</li>
+                      <li>En la barra de búsqueda superior de tu cuenta de Google escribe: <em>"Contraseñas de aplicaciones"</em>.</li>
+                      <li>Asigna un nombre descriptivo (ej: <em>"Sistema Compras GIT"</em>) y presiona <strong>Crear</strong>.</li>
+                      <li>Copia la clave generada de 16 caracteres (ej: <code className="bg-white px-1.5 py-0.5 rounded font-mono text-blue-800 border border-blue-200">abcd efgh ijkl mnop</code>) y pégala abajo.</li>
+                    </ol>
+                    <p className="text-[11px] text-slate-500 italic">
+                      Nota de Seguridad: Las cuentas de Google ya no permiten el uso de la contraseña habitual directa por motivos de seguridad institucional.
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Cuenta de Correo Gmail Remitente
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        value={formData.userEmail}
+                        onChange={(e) => setFormData({ ...formData, userEmail: e.target.value })}
+                        onBlur={handleEmailBlur}
+                        placeholder="ejemplo@gmail.com o kgerardo2003@gmail.com"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
+                        required
+                      />
+                      <div className="absolute right-3 top-2.5 text-slate-400">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-1 block">
+                      Cuenta autorizada en Google con permisos de envío SMTP.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Nombre a Mostrar del Remitente
+                    </label>
                     <input
-                      type="email"
-                      value={formData.userEmail}
-                      onChange={(e) => setFormData({ ...formData, userEmail: e.target.value })}
-                      placeholder="ejemplo@gmail.com o git@monroy.gt"
+                      type="text"
+                      value={formData.senderName}
+                      onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
+                      placeholder="Sistema de Control de Compras - GIT OJ"
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                       required
                     />
-                    <div className="absolute right-3 top-2.5 text-slate-400">
-                      <Mail className="w-4 h-4" />
-                    </div>
+                    <span className="text-[11px] text-slate-500 mt-1 block">
+                      Nombre institucional visible para las autoridades receptoras.
+                    </span>
                   </div>
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Cuenta autorizada en Google con permisos de envío SMTP.
-                  </span>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Nombre a Mostrar del Remitente
+                    Contraseña de Aplicación de Google (16 caracteres)
                   </label>
-                  <input
-                    type="text"
-                    value={formData.senderName}
-                    onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
-                    placeholder="Sistema de Control de Compras - GIT OJ"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
-                    required
-                  />
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Nombre institucional visible para las autoridades receptoras.
-                  </span>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.appPassword}
+                      onChange={handlePasswordChange}
+                      placeholder="xxxx xxxx xxxx xxxx"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                      title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-emerald-700 font-medium">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Cifrado institucional en reposo. Nunca se envía texto plano a clientes no autorizados.</span>
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Contraseña de Aplicación de Google (16 caracteres)
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.appPassword}
-                    onChange={(e) => setFormData({ ...formData, appPassword: e.target.value })}
-                    placeholder="xxxx xxxx xxxx xxxx"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                    title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-emerald-700 font-medium">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>Cifrado institucional en reposo. Nunca se envía texto plano a clientes no autorizados.</span>
-                </div>
-              </div>
 
               {/* Servidor y Puerto SMTP */}
               <div className="pt-4 border-t border-slate-100">
@@ -582,14 +712,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Enviar Correo de Prueba a:
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600">
+                      Enviar Correo de Prueba a:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setTestEmail(formData.userEmail || 'kgerardo2003@gmail.com')}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer underline"
+                    >
+                      Usar mi cuenta ({formData.userEmail || 'kgerardo2003@gmail.com'})
+                    </button>
+                  </div>
                   <input
                     type="email"
                     value={testEmail}
                     onChange={(e) => setTestEmail(e.target.value)}
-                    placeholder="klopez@oj.gob.gt"
+                    placeholder="kgerardo2003@gmail.com"
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-900 font-mono"
                   />
                 </div>
@@ -643,6 +782,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {/* SUBTAB 2: VERCEL & GITHUB DEPLOYMENT GUIDELINES */}
