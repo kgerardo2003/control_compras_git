@@ -1,5 +1,29 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createGmailTransporter, normalizeEmail, setCorsHeaders } from '../_mailer';
+import nodemailer from 'nodemailer';
+
+function normalizeEmail(email?: string): string {
+  if (!email) return '';
+  let cleaned = String(email).trim();
+  if (cleaned.toLowerCase().endsWith('@gmail') || cleaned.toLowerCase().endsWith('@gmail.')) {
+    cleaned = cleaned.replace(/@gmail\.?$/i, '@gmail.com');
+  }
+  return cleaned;
+}
+
+function normalizeAppPassword(pass?: string): string {
+  if (!pass) return '';
+  return String(pass).replace(/["']/g, '').trim();
+}
+
+function setCorsHeaders(res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(res);
@@ -16,7 +40,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+    body = body || {};
+
     const { to, subject, html, text, senderName } = body;
     let recipientsList: string[] = [];
 
@@ -33,8 +66,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const { transporter, user } = createGmailTransporter(body);
-    const fromDisplayName = senderName || 'Sistema de Control de Compras - GIT OJ';
+    const user = normalizeEmail(body.userEmail || process.env.GMAIL_USER || 'kgerardo2003@gmail.com');
+    const pass = normalizeAppPassword(body.appPassword || process.env.GMAIL_APP_PASSWORD || 'pwwv bgmb wgak bvdn');
+    const host = body.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
+    const port = Number(body.smtpPort || process.env.SMTP_PORT || 465);
+    const secure = body.secure !== undefined ? Boolean(body.secure) : (port === 465);
+    const fromDisplayName = senderName || body.senderName || 'Sistema de Control de Compras - GIT OJ';
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
 
     const info = await transporter.sendMail({
       from: `"${fromDisplayName}" <${user}>`,
