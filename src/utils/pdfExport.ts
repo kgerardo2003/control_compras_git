@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PurchaseRecord } from '../types';
-import { formatQuetzales, formatDate } from './formatters';
+import { formatQuetzales, formatDate, getModalidadCompraByMonto } from './formatters';
 
 export interface ExportPurchasesPDFOptions {
   purchases: PurchaseRecord[];
@@ -240,7 +240,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
       p.areaSolicitante || 'Soporte técnico',
       dictamenText,
       p.estatusEvento || 'Evaluación',
-      formatQuetzales(p.monto || 0),
+      `${formatQuetzales(p.monto || 0)}\n(${getModalidadCompraByMonto(p.monto).nombre})`,
       p.proveedorAdjudicado || (p.estatusEvento === 'Adjudicación' ? 'Sin registrar' : 'N/A'),
     ];
   });

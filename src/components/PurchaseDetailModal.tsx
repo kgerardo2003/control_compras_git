@@ -12,7 +12,7 @@ import {
   Trash2,
   AlertTriangle
 } from 'lucide-react';
-import { formatQuetzales, formatDate, formatDateTime } from '../utils/formatters';
+import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { InstitutionalReportModal } from './InstitutionalReportModal';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
@@ -60,6 +60,7 @@ export const PurchaseDetailModal: React.FC = () => {
   };
 
   const badgeClass = STATUS_BADGE_CLASSES[selectedPurchase.estatusEvento] || 'bg-slate-100 text-slate-700';
+  const modalidadLCE = getModalidadCompraByMonto(selectedPurchase.monto);
 
   return (
     <>
@@ -120,6 +121,16 @@ export const PurchaseDetailModal: React.FC = () => {
                 <span className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
                   {formatQuetzales(selectedPurchase.monto)}
                 </span>
+                {/* Modalidad de Compra Oficial (LCE) calculada según el monto */}
+                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-bold border ${modalidadLCE.badgeClass}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${modalidadLCE.badgeDotColor}`} />
+                    Modalidad: {modalidadLCE.nombre}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    ({modalidadLCE.descripcionRango})
+                  </span>
+                </div>
               </div>
 
               <div className="flex items-center gap-3">
@@ -328,11 +339,20 @@ export const PurchaseDetailModal: React.FC = () => {
                 </span>
                 <span className="font-semibold text-slate-800">{selectedPurchase.dependenciaSolicitante || 'Gerencia de Informática'}</span>
               </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Modalidad de Contratación:
+              <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Modalidad de Compra (LCE):
                 </span>
-                <span className="font-semibold text-slate-800">{selectedPurchase.modalidadCompra || 'Cotización'}</span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold border ${modalidadLCE.badgeClass}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${modalidadLCE.badgeDotColor}`} />
+                    {modalidadLCE.nombre}
+                  </span>
+                </div>
+                <div className="mt-1 text-[10px] text-slate-600">
+                  <span className="font-semibold text-slate-700">{modalidadLCE.descripcionRango}</span>
+                  <span className="block text-slate-500 italic mt-0.5">{modalidadLCE.fundamentoLegal}</span>
+                </div>
               </div>
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">

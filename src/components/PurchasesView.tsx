@@ -17,7 +17,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
-import { formatQuetzales, formatDate, exportToCSV } from '../utils/formatters';
+import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
 import { ExportPdfModal } from './ExportPdfModal';
 import { generatePurchasesPDF } from '../utils/pdfExport';
 
@@ -149,7 +149,7 @@ export const PurchasesView: React.FC = () => {
       'Estatus del Evento': p.estatusEvento,
       'Categoría Tecnológica': p.categoriaTecnologica || 'N/A',
       'Dependencia Solicitante': p.dependenciaSolicitante || 'N/A',
-      'Modalidad de Compra': p.modalidadCompra || 'N/A',
+      'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre,
       'Proveedor Adjudicado': p.proveedorAdjudicado || 'N/A',
     }));
     exportToCSV(`Adquisiciones_GIT_OJ_${new Date().toISOString().slice(0, 10)}`, rows);

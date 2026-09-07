@@ -1,6 +1,6 @@
 import React from 'react';
 import { PurchaseRecord } from '../types';
-import { formatQuetzales, formatDate, formatDateTime } from '../utils/formatters';
+import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { Printer, X } from 'lucide-react';
 import { OJLogo } from './OJLogo';
 
@@ -10,6 +10,8 @@ interface InstitutionalReportModalProps {
 }
 
 export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> = ({ purchase, onClose }) => {
+  const modalidadLCE = getModalidadCompraByMonto(purchase.monto);
+
   const handlePrint = () => {
     window.print();
   };
@@ -101,6 +103,17 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
                     {purchase.evaluadoGIT === 'Sí' 
                       ? `SÍ (Dictamen Favorable${purchase.fechaDictamenGIT ? ` - Fecha: ${formatDate(purchase.fechaDictamenGIT)}` : ''})` 
                       : 'NO'}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Modalidad de Compra (LCE):</td>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-900" colSpan={3}>
+                    <span className="bg-slate-100 border border-slate-300 px-2 py-0.5 rounded font-bold mr-2 text-slate-900">
+                      {modalidadLCE.nombre}
+                    </span>
+                    <span className="text-slate-700 font-normal">
+                      ({modalidadLCE.descripcionRango} — {modalidadLCE.fundamentoLegal})
+                    </span>
                   </td>
                 </tr>
                 <tr>

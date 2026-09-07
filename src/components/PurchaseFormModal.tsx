@@ -17,7 +17,7 @@ import {
   Award 
 } from 'lucide-react';
 import { EvaluacionGIT, AttachedDocument } from '../types';
-import { formatQuetzales } from '../utils/formatters';
+import { formatQuetzales, getModalidadCompraByMonto } from '../utils/formatters';
 
 // Función para campo F56e tipo texto de 10 posiciones
 const formatF56eInput = (raw: string): string => {
@@ -384,7 +384,7 @@ export const PurchaseFormModal: React.FC = () => {
       areaSolicitante,
       categoriaTecnologica,
       dependenciaSolicitante,
-      modalidadCompra,
+      modalidadCompra: getModalidadCompraByMonto(monto).nombre,
       proveedorAdjudicado: proveedorAdjudicado.trim() || undefined,
       observaciones: observaciones.trim() || undefined,
     };
@@ -824,6 +824,23 @@ export const PurchaseFormModal: React.FC = () => {
                   </span>
                 </div>
               )}
+
+              {/* Modalidad asignada automáticamente según Ley de Contrataciones */}
+              <div className="mt-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Modalidad LCE:
+                  </span>
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold border ${getModalidadCompraByMonto(monto).badgeClass}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${getModalidadCompraByMonto(monto).badgeDotColor}`} />
+                    {getModalidadCompraByMonto(monto).nombre}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500 sm:text-right">
+                  <span className="font-semibold text-slate-700">{getModalidadCompraByMonto(monto).descripcionRango}</span>
+                  <span className="block text-[9px] text-slate-400 italic">{getModalidadCompraByMonto(monto).fundamentoLegal}</span>
+                </div>
+              </div>
             </div>
 
             {/* 4. CANTIDAD DE OFERTAS */}

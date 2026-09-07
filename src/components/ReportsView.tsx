@@ -9,7 +9,7 @@ import {
   FileSpreadsheet,
   Download
 } from 'lucide-react';
-import { formatQuetzales, formatDate, exportToCSV } from '../utils/formatters';
+import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
 import { generatePurchasesPDF } from '../utils/pdfExport';
 
 export const ReportsView: React.FC = () => {
@@ -46,7 +46,7 @@ export const ReportsView: React.FC = () => {
       'Estatus': p.estatusEvento,
       'Categoría': p.categoriaTecnologica || 'N/A',
       'Dependencia': p.dependenciaSolicitante || 'N/A',
-      'Modalidad': p.modalidadCompra || 'N/A',
+      'Modalidad': p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre,
       'Proveedor': p.proveedorAdjudicado || 'N/A',
     }));
     exportToCSV(`Informe_Consolidado_Adquisiciones_OJ_GIT_${new Date().toISOString().slice(0, 10)}`, rows);

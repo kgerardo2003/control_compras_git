@@ -96,3 +96,77 @@ export function exportToCSV(filename: string, rows: Record<string, any>[]) {
   link.click();
   document.body.removeChild(link);
 }
+
+/**
+ * Modalidad de compra oficial según la Ley de Contrataciones del Estado de Guatemala
+ * según rangos de monto presupuestado / adjudicado:
+ * - Hasta Q 25,000.00: "Baja Cuantía"
+ * - De Q 25,000.01 hasta Q 90,000.00: "Compra Directa"
+ * - Excede Q 90,000.00 hasta Q 900,000.00: "Cotización"
+ * - Supera Q 900,000.00: "Licitación"
+ */
+export type ModalidadCompraLCE = 'Baja Cuantía' | 'Compra Directa' | 'Cotización' | 'Licitación';
+
+export interface ModalidadInfo {
+  nombre: ModalidadCompraLCE;
+  descripcionRango: string;
+  badgeClass: string;
+  badgeBorderClass: string;
+  badgeDotColor: string;
+  fundamentoLegal: string;
+  limiteInferior: number;
+  limiteSuperior?: number;
+}
+
+export function getModalidadCompraByMonto(monto: number | string | undefined | null): ModalidadInfo {
+  const num = typeof monto === 'string' ? parseFloat(monto) : Number(monto);
+  
+  if (isNaN(num) || num <= 25000) {
+    return {
+      nombre: 'Baja Cuantía',
+      descripcionRango: 'Hasta Q25,000.00',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+      badgeBorderClass: 'border-emerald-300 bg-emerald-50/70',
+      badgeDotColor: 'bg-emerald-500',
+      fundamentoLegal: 'Art. 43 literal a) Ley de Contrataciones del Estado',
+      limiteInferior: 0,
+      limiteSuperior: 25000,
+    };
+  }
+
+  if (num <= 90000) {
+    return {
+      nombre: 'Compra Directa',
+      descripcionRango: 'De Q25,000.01 hasta Q90,000.00',
+      badgeClass: 'bg-blue-50 text-blue-800 border-blue-300',
+      badgeBorderClass: 'border-blue-300 bg-blue-50/70',
+      badgeDotColor: 'bg-blue-500',
+      fundamentoLegal: 'Art. 43 literal b) Ley de Contrataciones del Estado',
+      limiteInferior: 25000.01,
+      limiteSuperior: 90000,
+    };
+  }
+
+  if (num <= 900000) {
+    return {
+      nombre: 'Cotización',
+      descripcionRango: 'Excede Q90,000.00 hasta Q900,000.00',
+      badgeClass: 'bg-amber-50 text-amber-800 border-amber-300',
+      badgeBorderClass: 'border-amber-300 bg-amber-50/70',
+      badgeDotColor: 'bg-amber-500',
+      fundamentoLegal: 'Art. 38 Ley de Contrataciones del Estado',
+      limiteInferior: 90000.01,
+      limiteSuperior: 900000,
+    };
+  }
+
+  return {
+    nombre: 'Licitación',
+    descripcionRango: 'Supera los Q900,000.00',
+    badgeClass: 'bg-purple-50 text-purple-800 border-purple-300',
+    badgeBorderClass: 'border-purple-300 bg-purple-50/70',
+    badgeDotColor: 'bg-purple-500',
+    fundamentoLegal: 'Art. 17 Ley de Contrataciones del Estado',
+    limiteInferior: 900000.01,
+  };
+}
