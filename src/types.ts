@@ -42,6 +42,7 @@ export interface PurchaseRecord {
   monto: number;            // Quetzales (GTQ)
   evaluadoGIT: EvaluacionGIT; // Sí | No
   fechaDictamenGIT?: string; // Fecha en que se realizó el dictamen técnico por la GIT (YYYY-MM-DD)
+  fechaElaboracionOficioGIT?: string; // Fecha en que la Gerencia de Informática elaboró el oficio hacia compras (YYYY-MM-DD)
   estatusEvento: string;    // Evaluación | Adjudicación | Prescindido | Desierto or custom
   fechaAdjudicacion?: string; // Fecha en que se adjudicó el evento (YYYY-MM-DD)
   areaSolicitante?: string;

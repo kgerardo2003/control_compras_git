@@ -14,10 +14,13 @@ import {
   Download, 
   CheckCircle2, 
   AlertCircle, 
-  Award 
+  Award,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { EvaluacionGIT, AttachedDocument } from '../types';
 import { formatQuetzales, getModalidadCompraByMonto } from '../utils/formatters';
+import { DocumentPreview } from './DocumentPreview';
 
 // Función para campo F56e tipo texto de 10 posiciones
 const formatF56eInput = (raw: string): string => {
@@ -79,6 +82,8 @@ export const PurchaseFormModal: React.FC = () => {
   const [montoInput, setMontoInput] = useState<string>('');
   const [evaluadoGIT, setEvaluadoGIT] = useState<EvaluacionGIT>('Sí');
   const [fechaDictamenGIT, setFechaDictamenGIT] = useState<string>('');
+  const [fechaElaboracionOficioGIT, setFechaElaboracionOficioGIT] = useState<string>('');
+  const [showDocumentPreview, setShowDocumentPreview] = useState<boolean>(true);
   const [estatusEvento, setEstatusEvento] = useState<string>('Evaluación');
   const [fechaAdjudicacion, setFechaAdjudicacion] = useState<string>('');
   const [areaSolicitante, setAreaSolicitante] = useState('Soporte técnico');
@@ -150,6 +155,8 @@ export const PurchaseFormModal: React.FC = () => {
       setMontoInput(purchaseToEdit.monto !== undefined && purchaseToEdit.monto !== null && purchaseToEdit.monto !== '' ? formatMontoMask(purchaseToEdit.monto) : '');
       setEvaluadoGIT(purchaseToEdit.evaluadoGIT || 'Sí');
       setFechaDictamenGIT(purchaseToEdit.fechaDictamenGIT || '');
+      setFechaElaboracionOficioGIT(purchaseToEdit.fechaElaboracionOficioGIT || '');
+      setShowDocumentPreview(true);
       setEstatusEvento(purchaseToEdit.estatusEvento || 'Evaluación');
       setFechaAdjudicacion(purchaseToEdit.fechaAdjudicacion || '');
       setAreaSolicitante(purchaseToEdit.areaSolicitante || areaOptions[0] || 'Soporte técnico');
@@ -174,6 +181,8 @@ export const PurchaseFormModal: React.FC = () => {
       setMonto('');
       setEvaluadoGIT('Sí');
       setFechaDictamenGIT('');
+      setFechaElaboracionOficioGIT('');
+      setShowDocumentPreview(true);
       setEstatusEvento('Evaluación');
       setFechaAdjudicacion('');
       setAreaSolicitante(areaOptions[0] || 'Soporte técnico');
@@ -210,6 +219,7 @@ export const PurchaseFormModal: React.FC = () => {
         fechaSubida: new Date().toISOString(),
         dataUrl,
       });
+      setShowDocumentPreview(true);
     };
     reader.onerror = () => {
       setFileUploadError('Error al procesar el archivo. Por favor intente nuevamente.');
@@ -379,6 +389,7 @@ export const PurchaseFormModal: React.FC = () => {
       monto: Number(monto),
       evaluadoGIT,
       fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
+      fechaElaboracionOficioGIT: evaluadoGIT === 'Sí' ? fechaElaboracionOficioGIT : '',
       estatusEvento,
       fechaAdjudicacion: estatusEvento === 'Adjudicación' ? fechaAdjudicacion : undefined,
       areaSolicitante,
@@ -635,55 +646,76 @@ export const PurchaseFormModal: React.FC = () => {
               />
 
               {f56Documento ? (
-                <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-900 truncate" title={f56Documento.nombre}>
-                        {f56Documento.nombre}
-                      </p>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                        <span>{formatFileSize(f56Documento.tamano)}</span>
-                        <span>•</span>
-                        <span>{f56Documento.fechaSubida ? new Date(f56Documento.fechaSubida).toLocaleDateString() : 'Cargado'}</span>
+                <div className="space-y-2">
+                  <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate" title={f56Documento.nombre}>
+                          {f56Documento.nombre}
+                        </p>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                          <span>{formatFileSize(f56Documento.tamano)}</span>
+                          <span>•</span>
+                          <span>{f56Documento.fechaSubida ? new Date(f56Documento.fechaSubida).toLocaleDateString() : 'Cargado'}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0 w-full sm:w-auto justify-end">
-                    {f56Documento.dataUrl && (
-                      <a
-                        href={f56Documento.dataUrl}
-                        download={f56Documento.nombre}
-                        className="px-2.5 py-1.5 text-slate-700 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 border border-slate-200"
-                        title="Descargar documento F56e adjunto"
+                    <div className="flex items-center gap-1.5 shrink-0 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowDocumentPreview(!showDocumentPreview)}
+                        className="px-2.5 py-1.5 text-blue-700 hover:text-blue-800 hover:bg-blue-50 bg-blue-50/60 rounded-lg transition-colors text-xs font-bold flex items-center gap-1.5 border border-blue-200 cursor-pointer"
+                        title={showDocumentPreview ? 'Ocultar vista previa del documento' : 'Ver vista previa del documento'}
                       >
-                        <Download className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Ver / Descargar</span>
-                      </a>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-2.5 py-1.5 text-slate-700 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 border border-slate-200 cursor-pointer"
-                      title="Reemplazar documento F56e"
-                    >
-                      <UploadCloud className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Reemplazar</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setF56Documento(null);
-                        if (fileInputRef.current) fileInputRef.current.value = '';
-                      }}
-                      className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors text-xs font-semibold border border-rose-200 cursor-pointer"
-                      title="Eliminar documento adjunto"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                        {showDocumentPreview ? <EyeOff className="w-3.5 h-3.5 text-blue-600" /> : <Eye className="w-3.5 h-3.5 text-blue-600" />}
+                        <span>{showDocumentPreview ? 'Ocultar Vista' : 'Vista Previa'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-2.5 py-1.5 text-slate-700 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 border border-slate-200 cursor-pointer"
+                        title="Reemplazar documento F56e"
+                      >
+                        <UploadCloud className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Reemplazar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setF56Documento(null);
+                          setShowDocumentPreview(false);
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                        }}
+                        className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors text-xs font-semibold border border-rose-200 cursor-pointer"
+                        title="Eliminar documento adjunto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Vista previa integrada del documento (Totalmente compatible con Google Chrome) */}
+                  {showDocumentPreview && f56Documento && (
+                    <DocumentPreview
+                      document={f56Documento}
+                      purchase={{
+                        f56e,
+                        f56,
+                        descripcion,
+                        monto: Number(monto) || 0,
+                        areaSolicitante,
+                        dependenciaSolicitante,
+                        proveedorAdjudicado,
+                        fechaDictamenGIT,
+                        fechaElaboracionOficioGIT
+                      }}
+                      title="Vista Previa de Documento F56-e"
+                      onClose={() => setShowDocumentPreview(false)}
+                    />
+                  )}
                 </div>
               ) : (
                 <div
@@ -859,37 +891,44 @@ export const PurchaseFormModal: React.FC = () => {
               <p className="text-[10px] text-slate-400 mt-0.5">Número de postores que presentaron ofertas</p>
             </div>
 
-            {/* 5. DICTAMEN TÉCNICO */}
+            {/* 5. DICTAMEN TÉCNICO Y EVALUACIÓN */}
             <div className="pt-2 border-t border-slate-200">
               <div className="mb-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Dictamen Técnico
+                  Dictamen Técnico y Área Correspondiente
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Evaluado por la GIT */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Evaluado por el Área Técnica Correspondiente */}
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">
-                    Evaluado por la GIT <span className="text-rose-600">*</span>
+                    Evaluado por el Área Técnica Correspondiente <span className="text-rose-600">*</span>
                   </label>
                   <select
                     id="select-purchase-evaluado-git"
                     value={evaluadoGIT}
-                    onChange={(e) => setEvaluadoGIT(e.target.value as EvaluacionGIT)}
+                    onChange={(e) => {
+                      const val = e.target.value as EvaluacionGIT;
+                      setEvaluadoGIT(val);
+                      if (val === 'No') {
+                        setFechaDictamenGIT('');
+                        setFechaElaboracionOficioGIT('');
+                      }
+                    }}
                     className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
-                    <option value="Sí">Sí - Con Dictamen Técnico GIT</option>
+                    <option value="Sí">Sí - Con Dictamen Técnico</option>
                     <option value="No">No - Sin Dictamen Técnico</option>
                   </select>
                 </div>
 
-                {/* Fecha Dictamen Técnico GIT */}
+                {/* Fecha Dictamen Técnico */}
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center justify-between">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-[#1c39bb]" />
-                      <span>Fecha Dictamen Técnico GIT</span>
+                      <span>Fecha Dictamen Técnico</span>
                     </span>
                     {evaluadoGIT === 'Sí' && <span className="text-rose-600 font-bold">*</span>}
                   </label>
@@ -908,9 +947,32 @@ export const PurchaseFormModal: React.FC = () => {
                     <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.fechaDictamenGIT}</p>
                   ) : (
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      {evaluadoGIT === 'Sí' ? 'Fecha de emisión del informe técnico por la GIT' : 'No aplica'}
+                      {evaluadoGIT === 'Sí' ? 'Fecha de emisión del dictamen técnico' : 'No aplica'}
                     </p>
                   )}
+                </div>
+
+                {/* Elaboración Oficio GIT */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Elaboración Oficio GIT</span>
+                    </span>
+                  </label>
+                  <input
+                    id="input-purchase-fecha-oficio-git"
+                    type="date"
+                    value={fechaElaboracionOficioGIT}
+                    onChange={(e) => setFechaElaboracionOficioGIT(e.target.value)}
+                    disabled={evaluadoGIT === 'No'}
+                    className={`w-full p-2 text-xs font-semibold border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4682b4] ${
+                      evaluadoGIT === 'No' ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'border-slate-300 bg-white text-slate-900'
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {evaluadoGIT === 'Sí' ? 'Fecha que la Gerencia de Informática elaboró el oficio hacia compras' : 'No aplica'}
+                  </p>
                 </div>
               </div>
             </div>

@@ -1,4 +1,5 @@
 import { PurchaseRecord, User, Catalog, AuditLogEntry, AppNotification } from '../types';
+import { generateOfficialF56PdfDataUrl } from '../utils/documentUtils';
 
 export const INITIAL_USERS: User[] = [
   {
@@ -152,7 +153,16 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
       tamano: 245760,
       tipo: 'application/pdf',
       fechaSubida: '2026-01-16T11:20:00Z',
-      dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbMyAwIFJdCi9Db3VudCAxCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9QYWdlCi9QYXJlbnQgMiAwIFIKL01lZGlhQm94IFswIDAgNjEyIDc5Ml0KL0NvbnRlbnRzIDQgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9MZW5ndGggNzgKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihGb3JtdWxhcmlvIEY1NiBPZmljaWFsIC0gT3JnYW5pc21vIEp1ZGljaWFsIGRlIEd1YXRlbWFsYSkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA2OCAwMDAwMCBuIAowMDAwMDAwMTI1IDAwMDAwIG4gCjAwMDAwMDAyMjEgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA1Ci9Sb290IDEgMCBSCj4+CnN0YXJ0eHJlZgoxMzU2CiUlRU9G'
+      dataUrl: generateOfficialF56PdfDataUrl({
+        f56e: '000001-2026',
+        f56: '000001',
+        descripcion: 'Adquisición de servidores en rack de alta disponibilidad para el Sistema de Gestión de Tribunales (SGT) en el Data Center Central.',
+        monto: 845000,
+        dependenciaSolicitante: 'Centro de Cómputo Principal Torre de Tribunales',
+        proveedorAdjudicado: 'Tecnologías y Sistemas Corporativos, S.A.',
+        fechaDictamenGIT: '2026-02-18',
+        fechaElaboracionOficioGIT: '2026-02-20'
+      }, 'F56_Oficial_Servidores_SGT_000001.pdf')
     },
     fechaSolicitud: '2026-01-15',
     fechaVoBo: '2026-01-22',
@@ -164,6 +174,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     monto: 845000.00,
     evaluadoGIT: 'Sí',
     fechaDictamenGIT: '2026-02-18',
+    fechaElaboracionOficioGIT: '2026-02-20',
     estatusEvento: 'Adjudicación',
     areaSolicitante: 'Departamento de Servicios Informáticos',
     categoriaTecnologica: 'Servidores y Almacenamiento',
@@ -184,7 +195,16 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
       tamano: 189440,
       tipo: 'application/pdf',
       fechaSubida: '2026-02-02T14:10:00Z',
-      dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbMyAwIFJdCi9Db3VudCAxCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9MZW5ndGggNzYKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihGb3JtdWxhcmlvIEY1NiAtIExpY2VuY2lhbWllbnRvIEJhc2VzIGRlIERhdG9zIE9KKSBUagpFVAplbmRzdHJlYW0KZW5kb2Jq'
+      dataUrl: generateOfficialF56PdfDataUrl({
+        f56e: '000012-2026',
+        f56: '000012',
+        descripcion: 'Renovación de licenciamiento anual de motor de bases de datos Enterprise y soporte técnico especializado para registros judiciales.',
+        monto: 1250000,
+        dependenciaSolicitante: 'Subgerencia de Desarrollo de Sistemas GIT',
+        proveedorAdjudicado: 'Oracle Corporation / Distribuidor Autorizado',
+        fechaDictamenGIT: '2026-02-25',
+        fechaElaboracionOficioGIT: '2026-02-27'
+      }, 'Dictamen_F56_Licenciamiento_000012.pdf')
     },
     fechaSolicitud: '2026-02-01',
     fechaVoBo: '2026-02-08',
@@ -196,6 +216,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     monto: 1250000.00,
     evaluadoGIT: 'Sí',
     fechaDictamenGIT: '2026-02-25',
+    fechaElaboracionOficioGIT: '2026-02-27',
     estatusEvento: 'Evaluación',
     areaSolicitante: 'Desarrollo y Administración de Sistemas',
     categoriaTecnologica: 'Licenciamiento y Software Judicial',
@@ -220,6 +241,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     monto: 690000.00,
     evaluadoGIT: 'Sí',
     fechaDictamenGIT: '2026-02-15',
+    fechaElaboracionOficioGIT: '2026-02-17',
     estatusEvento: 'Adjudicación',
     areaSolicitante: 'Soporte técnico',
     categoriaTecnologica: 'Estaciones de Trabajo y Periféricos',
@@ -264,7 +286,16 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
       tamano: 312000,
       tipo: 'application/pdf',
       fechaSubida: '2026-01-11T09:00:00Z',
-      dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9MZW5ndGggNzYKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihGb3JtdWxhcmlvIEY1NiAtIFNlZ3VyaWRhZCBQZXJpbWV0cmFsIEZpcmV3YWxsKSBUagpFVAplbmRzdHJlYW0KZW5kb2Jq'
+      dataUrl: generateOfficialF56PdfDataUrl({
+        f56e: '000044-2026',
+        f56: '000044',
+        descripcion: 'Implementación de sistema perimetral Firewall Next-Gen y módulo de prevención de intrusiones para protección de expedientes judiciales.',
+        monto: 480000,
+        dependenciaSolicitante: 'Unidad de Seguridad de la Información',
+        proveedorAdjudicado: 'Fortinet Security Systems, S.A.',
+        fechaDictamenGIT: '2026-01-28',
+        fechaElaboracionOficioGIT: '2026-01-30'
+      }, 'F56_Aprobada_Firewall_Perimetral_000044.pdf')
     },
     fechaSolicitud: '2026-01-10',
     fechaVoBo: '2026-01-18',

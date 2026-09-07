@@ -10,10 +10,14 @@ import {
   Paperclip,
   CheckCircle2,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { InstitutionalReportModal } from './InstitutionalReportModal';
+import { DocumentPreview } from './DocumentPreview';
+import { downloadDocumentFile } from '../utils/documentUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -41,6 +45,7 @@ export const PurchaseDetailModal: React.FC = () => {
 
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [showDocumentPreview, setShowDocumentPreview] = useState(true);
 
   if (!selectedPurchase) return null;
 
@@ -145,7 +150,7 @@ export const PurchaseDetailModal: React.FC = () => {
                 </div>
                 <div className="text-right border-l border-slate-200 pl-3">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Evaluado por la GIT
+                    Evaluado por el Área Técnica
                   </span>
                   <span className={`inline-flex items-center gap-1 mt-0.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
                     selectedPurchase.evaluadoGIT === 'Sí' 
@@ -155,10 +160,10 @@ export const PurchaseDetailModal: React.FC = () => {
                     {selectedPurchase.evaluadoGIT === 'Sí' ? (
                       <>
                         <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Evaluado por la GIT (Sí)
+                        Evaluado por el Área Técnica (Sí)
                       </>
                     ) : (
-                      'No evaluado por la GIT (No)'
+                      'Sin evaluar (No)'
                     )}
                   </span>
                 </div>
@@ -217,29 +222,49 @@ export const PurchaseDetailModal: React.FC = () => {
                 </div>
 
                 {selectedPurchase.f56Documento ? (
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-200">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700">
-                        <FileText className="w-5 h-5" />
+                  <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-200">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate" title={selectedPurchase.f56Documento.nombre}>
+                            {selectedPurchase.f56Documento.nombre}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {formatFileSize(selectedPurchase.f56Documento.tamano)} • Subido: {selectedPurchase.f56Documento.fechaSubida ? new Date(selectedPurchase.f56Documento.fechaSubida).toLocaleDateString() : 'Registrado'}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-900 truncate" title={selectedPurchase.f56Documento.nombre}>
-                          {selectedPurchase.f56Documento.nombre}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          {formatFileSize(selectedPurchase.f56Documento.tamano)} • Subido: {selectedPurchase.f56Documento.fechaSubida ? new Date(selectedPurchase.f56Documento.fechaSubida).toLocaleDateString() : 'Registrado'}
-                        </p>
+                      <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setShowDocumentPreview(!showDocumentPreview)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          {showDocumentPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          {showDocumentPreview ? 'Ocultar Vista' : 'Vista Previa'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => downloadDocumentFile(selectedPurchase.f56Documento!, selectedPurchase)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors shadow-2xs shrink-0 cursor-pointer"
+                          title="Descargar documento oficial"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          Descargar
+                        </button>
                       </div>
                     </div>
-                    {selectedPurchase.f56Documento.dataUrl && (
-                      <a
-                        href={selectedPurchase.f56Documento.dataUrl}
-                        download={selectedPurchase.f56Documento.nombre}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors shadow-2xs shrink-0"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Descargar Documento F56
-                      </a>
+
+                    {showDocumentPreview && (
+                      <DocumentPreview
+                        document={selectedPurchase.f56Documento}
+                        purchase={selectedPurchase}
+                        title="Documento Oficial F56-e"
+                        onClose={() => setShowDocumentPreview(false)}
+                      />
                     )}
                   </div>
                 ) : (
@@ -304,7 +329,7 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Evaluado por la GIT:
+                  Evaluado por el Área Técnica Correspondiente:
                 </span>
                 <div className="mt-0.5">
                   <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-bold ${
@@ -312,11 +337,16 @@ export const PurchaseDetailModal: React.FC = () => {
                       ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' 
                       : 'text-slate-600 bg-slate-100 border border-slate-200'
                   }`}>
-                    {selectedPurchase.evaluadoGIT === 'Sí' ? 'Sí (Evaluado por la GIT)' : 'No (No evaluado por la GIT)'}
+                    {selectedPurchase.evaluadoGIT === 'Sí' ? 'Sí (Evaluado por el Área Técnica)' : 'No (No evaluado)'}
                   </span>
                   {selectedPurchase.evaluadoGIT === 'Sí' && selectedPurchase.fechaDictamenGIT && (
                     <span className="block text-[11px] font-semibold text-slate-600 mt-1">
                       Fecha de Dictamen: <strong className="text-slate-900 font-mono">{formatDate(selectedPurchase.fechaDictamenGIT)}</strong>
+                    </span>
+                  )}
+                  {selectedPurchase.evaluadoGIT === 'Sí' && selectedPurchase.fechaElaboracionOficioGIT && (
+                    <span className="block text-[11px] font-semibold text-slate-600 mt-1">
+                      Elaboración Oficio GIT: <strong className="text-slate-900 font-mono">{formatDate(selectedPurchase.fechaElaboracionOficioGIT)}</strong>
                     </span>
                   )}
                 </div>

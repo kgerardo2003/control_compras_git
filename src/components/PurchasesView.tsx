@@ -25,6 +25,7 @@ import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
 import { ExportPdfModal } from './ExportPdfModal';
 import { generatePurchasesPDF } from '../utils/pdfExport';
+import { downloadDocumentFile } from '../utils/documentUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -153,10 +154,11 @@ export const PurchasesView: React.FC = () => {
       'Fecha Autorizado': p.fechaAutorizado || 'N/A',
       'Fecha Publicación': p.fechaPublicacion || 'N/A',
       'Fecha Cierre Ofertas': p.fechaOfertas || 'N/A',
-      'Fecha Dictamen GIT': p.fechaDictamenGIT || 'N/A',
+      'Fecha Dictamen Técnico': p.fechaDictamenGIT || 'N/A',
+      'Fecha Oficio GIT': p.fechaElaboracionOficioGIT || 'N/A',
       'Cantidad de Ofertas': p.cantidadOfertas,
       'Monto (GTQ)': p.monto,
-      'Evaluado por la GIT': p.evaluadoGIT,
+      'Evaluado por el Área Técnica Correspondiente': p.evaluadoGIT,
       'Estatus del Evento': p.estatusEvento,
       'Categoría Tecnológica': p.categoriaTecnologica || 'N/A',
       'Dependencia Solicitante': p.dependenciaSolicitante || 'N/A',
@@ -598,7 +600,7 @@ export const PurchasesView: React.FC = () => {
                 <th className="px-3 py-3">Fecha Solicitud</th>
                 <th className="px-3 py-3 text-right">Monto (Q)</th>
                 <th className="px-3 py-3 text-center">Ofertas</th>
-                <th className="px-3 py-3 text-center whitespace-nowrap">Evaluado por la GIT</th>
+                <th className="px-3 py-3 text-center whitespace-nowrap">Evaluado por el Área Técnica</th>
                 <th className="px-3 py-3 text-center whitespace-nowrap">Estatus del Evento</th>
                 <th className="px-4 py-3 text-center">Acciones</th>
               </tr>
@@ -674,22 +676,18 @@ export const PurchasesView: React.FC = () => {
                         <span className="font-bold text-slate-800 block">{p.f56e}</span>
                         <span className="text-[10px] text-slate-400 block">{p.f56}</span>
                         {p.f56Documento && (
-                          <span
+                          <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (p.f56Documento?.dataUrl) {
-                                const link = document.createElement('a');
-                                link.href = p.f56Documento.dataUrl;
-                                link.download = p.f56Documento.nombre;
-                                link.click();
-                              }
+                              downloadDocumentFile(p.f56Documento!, p);
                             }}
-                            title={`Documento F56 adjunto: ${p.f56Documento.nombre} (${p.f56Documento.tamano ? (p.f56Documento.tamano / 1024).toFixed(0) + ' KB' : ''})`}
+                            title={`Descargar Documento F56: ${p.f56Documento.nombre}`}
                             className="inline-flex items-center gap-1 mt-1 text-[9px] font-sans font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
                           >
                             <Paperclip className="w-2.5 h-2.5 text-amber-600" />
                             Doc F56
-                          </span>
+                          </button>
                         )}
                       </td>
 
@@ -720,17 +718,22 @@ export const PurchasesView: React.FC = () => {
                         {p.cantidadOfertas}
                       </td>
 
-                      {/* Evaluado por la GIT */}
+                      {/* Evaluado por el Área Técnica Correspondiente */}
                       <td className="px-3 py-3 text-center whitespace-nowrap">
                         {p.evaluadoGIT === 'Sí' ? (
                           <div className="inline-flex flex-col items-center">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              Evaluado por la GIT
+                              Evaluado por Área Técnica
                             </span>
                             {p.fechaDictamenGIT && (
                               <span className="text-[9px] text-slate-500 font-mono mt-0.5">
                                 Dictamen: {formatDate(p.fechaDictamenGIT)}
+                              </span>
+                            )}
+                            {p.fechaElaboracionOficioGIT && (
+                              <span className="text-[9px] text-amber-700 font-mono">
+                                Oficio GIT: {formatDate(p.fechaElaboracionOficioGIT)}
                               </span>
                             )}
                           </div>

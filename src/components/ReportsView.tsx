@@ -39,10 +39,11 @@ export const ReportsView: React.FC = () => {
       'Fecha Autorizado': p.fechaAutorizado,
       'Fecha Publicación': p.fechaPublicacion,
       'Fecha Ofertas': p.fechaOfertas,
-      'Fecha Dictamen GIT': p.fechaDictamenGIT || 'N/A',
+      'Fecha Dictamen Técnico': p.fechaDictamenGIT || 'N/A',
+      'Fecha Oficio GIT': p.fechaElaboracionOficioGIT || 'N/A',
       'Cantidad Ofertas': p.cantidadOfertas,
       'Monto (GTQ)': p.monto,
-      'Evaluado por GIT': p.evaluadoGIT,
+      'Evaluado por el Área Técnica Correspondiente': p.evaluadoGIT,
       'Estatus': p.estatusEvento,
       'Categoría': p.categoriaTecnologica || 'N/A',
       'Dependencia': p.dependenciaSolicitante || 'N/A',
@@ -294,7 +295,7 @@ export const ReportsView: React.FC = () => {
                 <th className="border border-slate-200 p-2">Descripción del Requerimiento</th>
                 <th className="border border-slate-200 p-2">Fecha Sol.</th>
                 <th className="border border-slate-200 p-2 text-right">Monto (GTQ)</th>
-                <th className="border border-slate-200 p-2 text-center whitespace-nowrap">Evaluado por la GIT</th>
+                <th className="border border-slate-200 p-2 text-center whitespace-nowrap">Evaluado por el Área Técnica</th>
                 <th className="border border-slate-200 p-2 text-center whitespace-nowrap">Estatus del Evento</th>
               </tr>
             </thead>

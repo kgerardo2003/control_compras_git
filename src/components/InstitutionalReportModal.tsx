@@ -98,10 +98,10 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
                 <tr className="bg-slate-50">
                   <td className="border border-slate-300 p-2 font-bold text-slate-700">Monto Estimado / Adjudicado:</td>
                   <td className="border border-slate-300 p-2 font-bold text-slate-900 font-mono text-sm">{formatQuetzales(purchase.monto)}</td>
-                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Evaluado por la GIT:</td>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Evaluado por el Área Técnica Correspondiente:</td>
                   <td className="border border-slate-300 p-2 font-bold">
                     {purchase.evaluadoGIT === 'Sí' 
-                      ? `SÍ (Dictamen Favorable${purchase.fechaDictamenGIT ? ` - Fecha: ${formatDate(purchase.fechaDictamenGIT)}` : ''})` 
+                      ? `SÍ (Dictamen Favorable${purchase.fechaDictamenGIT ? ` - Fecha: ${formatDate(purchase.fechaDictamenGIT)}` : ''}${purchase.fechaElaboracionOficioGIT ? ` - Oficio GIT: ${formatDate(purchase.fechaElaboracionOficioGIT)}` : ''})` 
                       : 'NO'}
                   </td>
                 </tr>

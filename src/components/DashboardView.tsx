@@ -521,7 +521,7 @@ export const DashboardView: React.FC = () => {
       'Descripción': p.descripcion,
       'Fecha Solicitud': p.fechaSolicitud,
       'Monto (GTQ)': p.monto,
-      'Evaluado por la GIT': p.evaluadoGIT,
+      'Evaluado por el Área Técnica Correspondiente': p.evaluadoGIT,
       'Estatus': p.estatusEvento,
       'Categoría': p.categoriaTecnologica || 'N/A',
     }));

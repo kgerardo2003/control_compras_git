@@ -195,15 +195,16 @@ app.post('/api/email/test', async (req, res) => {
 });
 
 // 4. Enviar notificación institucional automática
-app.post('/api/email/send', async (req, res) => {
+app.post(['/api/email/send', '/api/send-email'], async (req, res) => {
   try {
-    const { to, subject, html, text, senderName } = req.body;
+    const { to, destinatarios, subject, asunto, html, htmlContenido, text, senderName } = req.body;
+    const targetRecipients = to || destinatarios;
     let recipientsList: string[] = [];
 
-    if (Array.isArray(to)) {
-      recipientsList = to.map(normalizeEmail).filter(Boolean);
-    } else if (typeof to === 'string') {
-      recipientsList = to.split(',').map(normalizeEmail).filter(Boolean);
+    if (Array.isArray(targetRecipients)) {
+      recipientsList = targetRecipients.map(normalizeEmail).filter(Boolean);
+    } else if (typeof targetRecipients === 'string') {
+      recipientsList = targetRecipients.split(',').map(normalizeEmail).filter(Boolean);
     }
 
     if (recipientsList.length === 0) {
@@ -216,12 +217,15 @@ app.post('/api/email/send', async (req, res) => {
     const { transporter, user } = createGmailTransporter(req.body);
     const fromDisplayName = senderName || 'Sistema de Control de Compras - GIT OJ';
 
+    const finalHtml = html || htmlContenido || `<p>${text || 'Notificación oficial generada por el Sistema de Control de Compras GIT OJ.'}</p>`;
+    const finalSubject = subject || asunto || '[NOTIFICACIÓN] Sistema de Compras - GIT OJ';
+
     const info = await transporter.sendMail({
       from: `"${fromDisplayName}" <${user}>`,
       to: recipientsList.join(', '),
-      subject: subject || '[NOTIFICACIÓN] Sistema de Compras - GIT OJ',
+      subject: finalSubject,
       text: text || 'Notificación oficial generada por el Sistema de Control de Compras GIT OJ.',
-      html: html || `<p>${text}</p>`
+      html: finalHtml
     });
 
     return res.json({

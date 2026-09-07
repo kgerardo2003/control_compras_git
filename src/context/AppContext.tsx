@@ -22,6 +22,7 @@ import {
   INITIAL_NOTIFICATIONS 
 } from '../data/initialData';
 import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
+import { ensureValidDocument } from '../utils/documentUtils';
 import { 
   db,
   PURCHASES_COLLECTION, 
@@ -205,14 +206,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed: PurchaseRecord[] = JSON.parse(saved);
         return parsed.map(p => {
-          if (!p.areaSolicitante) {
-            const initialMatch = INITIAL_PURCHASES.find(ip => ip.id === p.id);
-            return {
-              ...p,
-              areaSolicitante: initialMatch?.areaSolicitante || 'Soporte técnico'
-            };
+          let rec = { ...p };
+          if (!rec.areaSolicitante) {
+            const initialMatch = INITIAL_PURCHASES.find(ip => ip.id === rec.id);
+            rec.areaSolicitante = initialMatch?.areaSolicitante || 'Soporte técnico';
           }
-          return p;
+          if (rec.f56Documento) {
+            rec.f56Documento = ensureValidDocument(rec.f56Documento, rec);
+          }
+          return rec;
         });
       } catch {
         return INITIAL_PURCHASES;
@@ -322,7 +324,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubPurchases = onSnapshot(collection(db, PURCHASES_COLLECTION), { includeMetadataChanges: true }, (snapshot) => {
         const remoteItems: PurchaseRecord[] = [];
         snapshot.forEach((doc) => {
-          remoteItems.push(doc.data() as PurchaseRecord);
+          const item = doc.data() as PurchaseRecord;
+          if (item.f56Documento) {
+            item.f56Documento = ensureValidDocument(item.f56Documento, item);
+          }
+          remoteItems.push(item);
         });
         remoteItems.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
         if (remoteItems.length > 0 || snapshot.metadata.fromCache === false) {
