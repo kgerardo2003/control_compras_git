@@ -26,6 +26,23 @@ export interface AttachedDocument {
   dataUrl?: string; // Archivo base64 / blob URL para descarga y visualización
 }
 
+export type TimelineEventState = 'completado' | 'en_proceso' | 'pendiente' | 'alerta';
+
+export interface StatusTimelineEvent {
+  id: string;
+  titulo: string; // ej: "Llegó para Dictamen Técnico", "Remitido por GIT a Compras", "Disponibilidad Presupuestaria"
+  fase?: string; // ej: "Dictamen Técnico", "Compras", "Presupuesto", "Publicación", "Adjudicación"
+  fecha: string; // YYYY-MM-DD
+  hora?: string; // HH:mm:ss
+  responsable?: string; // ej: "Gerencia de Informática - GIT", "Dirección de Compras", "DAF / Presupuesto"
+  observaciones?: string; // Observaciones, notas de seguimiento, etc.
+  documentoReferencia?: string; // ej: "Oficio No. GIT-2026-115", "Dictamen Técnico No. DT-2026-03"
+  estado: TimelineEventState;
+  registradoPor?: string;
+  fechaRegistro?: string; // Timestamp ISO exacto de grabación en el sistema
+  automatico?: boolean; // Flag de registro automático sellado por el sistema
+}
+
 export interface PurchaseRecord {
   id: string;
   descripcion: string; // Max 200
@@ -55,6 +72,7 @@ export interface PurchaseRecord {
   modificadoPor?: string;
   fechaModificacion?: string;
   observaciones?: string;
+  historialEstatus?: StatusTimelineEvent[]; // Línea de tiempo de tracking y cambios de estatus del evento
 }
 
 export interface CatalogItem {

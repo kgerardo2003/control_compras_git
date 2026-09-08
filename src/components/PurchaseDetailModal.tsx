@@ -12,12 +12,16 @@ import {
   Trash2,
   AlertTriangle,
   Eye,
-  EyeOff
+  EyeOff,
+  Clock,
+  LayoutGrid
 } from 'lucide-react';
 import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { InstitutionalReportModal } from './InstitutionalReportModal';
 import { DocumentPreview } from './DocumentPreview';
 import { downloadDocumentFile } from '../utils/documentUtils';
+import { PurchaseStatusTimeline } from './PurchaseStatusTimeline';
+import { getPurchaseTimeline } from '../utils/timelineUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -46,8 +50,11 @@ export const PurchaseDetailModal: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [showDocumentPreview, setShowDocumentPreview] = useState(true);
+  const [activeTab, setActiveTab] = useState<'general' | 'timeline' | 'documento'>('general');
 
   if (!selectedPurchase) return null;
+
+  const timelineEvents = getPurchaseTimeline(selectedPurchase);
 
   const canEdit = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
   const canDelete = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
@@ -117,6 +124,56 @@ export const PurchaseDetailModal: React.FC = () => {
           {/* Cuerpo de la Ficha */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-slate-800 text-xs sm:text-sm">
             
+            {/* Pestañas de Navegación de la Ficha */}
+            <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2.5 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setActiveTab('general')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                  activeTab === 'general'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Ficha General y Detalles</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('timeline')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                  activeTab === 'timeline'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>Línea de Tiempo del Estatus</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  activeTab === 'timeline' ? 'bg-slate-900 text-white' : 'bg-amber-100 text-amber-900'
+                }`}>
+                  {timelineEvents.length}
+                </span>
+              </button>
+
+              {selectedPurchase.f56Documento && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('documento')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    activeTab === 'documento'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                  <span>Documento Adjunto (F56)</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                </button>
+              )}
+            </div>
+
             {/* Banner de Estado y Monto */}
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -170,16 +227,54 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Descripción Completa */}
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
-                <FileText className="w-3.5 h-3.5 text-amber-600" />
-                Descripción del Requerimiento
-              </h3>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-800 leading-relaxed font-medium text-xs">
-                {selectedPurchase.descripcion}
+            {/* Vista 1: Solo Línea de Tiempo / Tracking */}
+            {activeTab === 'timeline' && (
+              <div className="space-y-4 pt-1">
+                <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <div>
+                      <span className="font-bold text-amber-950 block">
+                        Tracking Activo del Evento: NOG {selectedPurchase.nog} • Formulario F56-e: {selectedPurchase.f56e}
+                      </span>
+                      <span className="text-[11px] text-amber-800">
+                        {selectedPurchase.descripcion.length > 100 ? `${selectedPurchase.descripcion.slice(0, 100)}...` : selectedPurchase.descripcion}
+                      </span>
+                    </div>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${badgeClass} shrink-0`}>
+                    {selectedPurchase.estatusEvento}
+                  </span>
+                </div>
+                <PurchaseStatusTimeline purchase={selectedPurchase} canEdit={canEdit} />
               </div>
-            </div>
+            )}
+
+            {/* Vista 2: Solo Documento F56 */}
+            {activeTab === 'documento' && selectedPurchase.f56Documento && (
+              <div className="space-y-3 pt-1">
+                <DocumentPreview
+                  document={selectedPurchase.f56Documento}
+                  purchase={selectedPurchase}
+                  title="Documento Oficial F56-e"
+                  onClose={() => setActiveTab('general')}
+                />
+              </div>
+            )}
+
+            {/* Vista 3: Ficha General Completa */}
+            {activeTab === 'general' && (
+              <>
+                {/* Descripción Completa */}
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5 text-amber-600" />
+                    Descripción del Requerimiento
+                  </h3>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-800 leading-relaxed font-medium text-xs">
+                    {selectedPurchase.descripcion}
+                  </div>
+                </div>
 
             {/* SECCIÓN DE IDENTIFICADORES Y DOCUMENTO DE LA F56 */}
             <div className="space-y-3">
@@ -420,7 +515,14 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             )}
 
-            {/* Metadatos */}
+            {/* Línea de Tiempo del Historial del Estatus del Evento (Tracking) */}
+            <div className="pt-2">
+              <PurchaseStatusTimeline purchase={selectedPurchase} canEdit={canEdit} />
+            </div>
+          </>
+        )}
+
+        {/* Metadatos */}
             <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between text-[10px] text-slate-400 gap-2">
               <div>
                 <strong>Registrado por:</strong> {selectedPurchase.creadoPor} ({formatDateTime(selectedPurchase.fechaCreacion)})

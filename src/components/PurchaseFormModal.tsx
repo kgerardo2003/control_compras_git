@@ -398,6 +398,7 @@ export const PurchaseFormModal: React.FC = () => {
       modalidadCompra: getModalidadCompraByMonto(monto).nombre,
       proveedorAdjudicado: proveedorAdjudicado.trim() || undefined,
       observaciones: observaciones.trim() || undefined,
+      historialEstatus: purchaseToEdit?.historialEstatus,
     };
 
     setTimeout(() => {

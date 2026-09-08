@@ -12,7 +12,9 @@ import {
   SystemThemeId,
   CustomLogoConfig,
   ToastItem,
-  GmailConfig
+  GmailConfig,
+  StatusTimelineEvent,
+  TimelineEventState
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -24,6 +26,11 @@ import {
 import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
 import { ensureValidDocument } from '../utils/documentUtils';
 import { buildUserWelcomeEmail } from '../utils/userEmailTemplate';
+import { 
+  createAutomaticTimelineEvent, 
+  detectAutomaticEventsOnUpdate, 
+  getPurchaseTimeline 
+} from '../utils/timelineUtils';
 import { 
   db,
   PURCHASES_COLLECTION, 
@@ -97,6 +104,19 @@ interface AppContextType {
   addPurchase: (data: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>) => PurchaseRecord;
   importPurchases: (records: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>[], replaceAll?: boolean) => Promise<{ count: number }>;
   updatePurchase: (id: string, data: Partial<PurchaseRecord>) => void;
+  recordPurchaseMilestone: (
+    purchaseId: string, 
+    milestone: {
+      titulo: string;
+      fase?: string;
+      responsable?: string;
+      observaciones?: string;
+      documentoReferencia?: string;
+      estado?: TimelineEventState;
+      nuevoEstatus?: string;
+      additionalFields?: Partial<PurchaseRecord>;
+    }
+  ) => void;
   deletePurchase: (id: string) => void;
   deletePurchases: (ids: string[]) => Promise<{ count: number }>;
 
@@ -948,12 +968,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
     }
     const newId = candidateId;
+    const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const currentFecha = nowIso.slice(0, 10);
+    const currentHora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+    const initialEvents: StatusTimelineEvent[] = data.historialEstatus ? [...data.historialEstatus] : [];
+    
+    // Auto-registrar hito de creación con sello inmutable de fecha y hora
+    initialEvents.push({
+      id: `auto_${now.getTime()}_creacion`,
+      titulo: 'Registro Inicial de Solicitud F56-e',
+      fase: 'Solicitud Inicial',
+      fecha: data.fechaSolicitud || currentFecha,
+      hora: currentHora,
+      responsable: data.dependenciaSolicitante || data.areaSolicitante || 'Área Solicitante',
+      observaciones: `Ingreso oficial del requerimiento al sistema. Formulario F56-e: ${data.f56e || 'S/N'}. NOG: ${data.nog}. Monto estimado: Q${(data.monto || 0).toLocaleString('es-GT', { minimumFractionDigits: 2 })}.`,
+      documentoReferencia: `F56-e No. ${data.f56e}`,
+      estado: 'completado',
+      registradoPor: creator,
+      fechaRegistro: nowIso,
+      automatico: true,
+    });
+
+    if (data.evaluadoGIT === 'Sí' || data.fechaDictamenGIT) {
+      initialEvents.push({
+        id: `auto_${now.getTime()}_dictamen`,
+        titulo: 'Llegó para Dictamen Técnico en GIT',
+        fase: 'Dictamen Técnico',
+        fecha: data.fechaDictamenGIT || data.fechaSolicitud || currentFecha,
+        hora: currentHora,
+        responsable: 'Gerencia de Informática - GIT',
+        observaciones: 'Expediente registrado para evaluación técnica y emisión de dictamen por la GIT.',
+        documentoReferencia: data.fechaDictamenGIT ? `Dictamen: ${data.fechaDictamenGIT}` : undefined,
+        estado: 'completado',
+        registradoPor: creator,
+        fechaRegistro: nowIso,
+        automatico: true,
+      });
+    }
+
+    if (data.fechaElaboracionOficioGIT) {
+      initialEvents.push({
+        id: `auto_${now.getTime()}_oficio`,
+        titulo: 'GIT lo remite a Dirección de Compras',
+        fase: 'Compras',
+        fecha: data.fechaElaboracionOficioGIT,
+        hora: currentHora,
+        responsable: 'Gerencia de Informática - GIT',
+        observaciones: 'Oficio técnico formal elaborado por la GIT y remitido a Compras.',
+        documentoReferencia: `Oficio GIT: ${data.fechaElaboracionOficioGIT}`,
+        estado: 'completado',
+        registradoPor: creator,
+        fechaRegistro: nowIso,
+        automatico: true,
+      });
+    }
+
+    if (data.estatusEvento === 'Adjudicación') {
+      initialEvents.push({
+        id: `auto_${now.getTime()}_adjudicacion`,
+        titulo: 'Adjudicación Definitiva',
+        fase: 'Adjudicación',
+        fecha: data.fechaAdjudicacion || currentFecha,
+        hora: currentHora,
+        responsable: 'Autoridad Superior / Compras',
+        observaciones: data.proveedorAdjudicado ? `Adjudicado formalmente a: ${data.proveedorAdjudicado}.` : 'Adjudicación registrada.',
+        estado: 'completado',
+        registradoPor: creator,
+        fechaRegistro: nowIso,
+        automatico: true,
+      });
+    }
 
     const newRecord: PurchaseRecord = {
       ...data,
       id: newId,
-      creadoPor: currentUser ? currentUser.nombreCompleto : 'Operador GIT',
-      fechaCreacion: new Date().toISOString(),
+      creadoPor: creator,
+      fechaCreacion: nowIso,
+      historialEstatus: initialEvents,
     };
 
     setPurchases(prev => [newRecord, ...prev]);
@@ -1079,14 +1173,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prev = purchases.find(p => p.id === id);
     if (!prev) return;
 
+    const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    // Base timeline de la compra (usar existente o calcular a partir de la ficha)
+    const baseTimeline = (prev.historialEstatus && prev.historialEstatus.length > 0)
+      ? [...prev.historialEstatus]
+      : getPurchaseTimeline(prev);
+
+    let updatedEvents = data.historialEstatus ? [...data.historialEstatus] : [...baseTimeline];
+
+    // Detectar automáticamente cambios en campos y generar hitos sellados con fecha/hora actual
+    const autoDetected = detectAutomaticEventsOnUpdate(prev, data, creator);
+    if (autoDetected.length > 0) {
+      updatedEvents = [...updatedEvents, ...autoDetected];
+    }
+
     const updated: PurchaseRecord = {
       ...prev,
       ...data,
-      modificadoPor: currentUser ? currentUser.nombreCompleto : 'Operador GIT',
-      fechaModificacion: new Date().toISOString(),
+      historialEstatus: updatedEvents,
+      modificadoPor: creator,
+      fechaModificacion: nowIso,
     };
 
     setPurchases(prevList => prevList.map(p => p.id === id ? updated : p));
+    setSelectedPurchase(curr => (curr && curr.id === id ? updated : curr));
     
     savePurchaseToFirestore(updated).then(res => {
       if (!res.success) {
@@ -1135,6 +1248,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       title: 'Compra Actualizada Exitosamente',
       message: `Los cambios para el evento NOG ${updated.nog} fueron guardados en el sistema.`,
       duration: 4500
+    });
+  };
+
+  const recordPurchaseMilestone = (
+    purchaseId: string, 
+    milestone: {
+      titulo: string;
+      fase?: string;
+      responsable?: string;
+      observaciones?: string;
+      documentoReferencia?: string;
+      estado?: TimelineEventState;
+      nuevoEstatus?: string;
+      additionalFields?: Partial<PurchaseRecord>;
+    }
+  ) => {
+    const prev = purchases.find(p => p.id === purchaseId);
+    if (!prev) return;
+
+    const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const fecha = nowIso.slice(0, 10);
+    const hora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+    const newEvent: StatusTimelineEvent = {
+      id: `auto_${now.getTime()}_${Math.random().toString(36).substring(2, 7)}`,
+      titulo: milestone.titulo,
+      fase: milestone.fase || 'Gestión',
+      fecha,
+      hora,
+      responsable: milestone.responsable || 'Gerencia de Informática - GIT',
+      observaciones: milestone.observaciones,
+      documentoReferencia: milestone.documentoReferencia,
+      estado: milestone.estado || 'completado',
+      registradoPor: creator,
+      fechaRegistro: nowIso,
+      automatico: true,
+    };
+
+    const currentTimeline = (prev.historialEstatus && prev.historialEstatus.length > 0)
+      ? [...prev.historialEstatus]
+      : getPurchaseTimeline(prev);
+
+    const updatedEvents = [...currentTimeline, newEvent];
+
+    const patch: Partial<PurchaseRecord> = {
+      ...(milestone.additionalFields || {}),
+      historialEstatus: updatedEvents,
+    };
+
+    if (milestone.nuevoEstatus && milestone.nuevoEstatus !== prev.estatusEvento) {
+      patch.estatusEvento = milestone.nuevoEstatus;
+    }
+
+    updatePurchase(purchaseId, patch);
+
+    logAudit(
+      'SISTEMA',
+      'Compras',
+      `Acción registrada automáticamente en línea de tiempo para NOG ${prev.nog} (${prev.f56e}): "${milestone.titulo}". Grabado: ${fecha} ${hora}.`,
+      purchaseId,
+      { estatusEvento: prev.estatusEvento },
+      { estatusEvento: patch.estatusEvento || prev.estatusEvento, hito: milestone.titulo }
+    );
+
+    showToast({
+      type: 'success',
+      title: 'Acción Grabada Automáticamente',
+      message: `"${milestone.titulo}" registrado exitosamente con fecha y hora ${fecha} ${hora} (Sello Inmutable).`
     });
   };
 
@@ -1420,6 +1603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPurchase,
         importPurchases,
         updatePurchase,
+        recordPurchaseMilestone,
         deletePurchase,
         deletePurchases,
         addCatalog,
