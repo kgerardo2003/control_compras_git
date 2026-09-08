@@ -4,6 +4,8 @@
  * Organismo Judicial de Guatemala
  */
 
+import { OJ_LOGO_CID } from './emailLogoAsset';
+
 export interface UserWelcomeEmailParams {
   username: string;
   temporaryPassword?: string;
@@ -57,9 +59,24 @@ Organismo Judicial de Guatemala`;
       <td align="center">
         <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);">
           
-          <!-- Encabezado Institucional OJ -->
+          <!-- Encabezado Institucional OJ con Logotipo Oficial -->
           <tr>
-            <td style="background-color: #0b183c; padding: 26px 24px; text-align: center; border-bottom: 4px solid #f59e0b;">
+            <td style="background-color: #0b183c; padding: 28px 24px 22px; text-align: center; border-bottom: 4px solid #f59e0b;">
+              <!-- Logotipo Oficial del Organismo Judicial -->
+              <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 16px auto;">
+                <tr>
+                  <td align="center" style="background-color: #ffffff; width: 70px; height: 70px; border-radius: 14px; border: 2px solid #f59e0b; padding: 6px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);">
+                    <img 
+                      src="cid:${OJ_LOGO_CID}" 
+                      alt="Logotipo Oficial Organismo Judicial de Guatemala" 
+                      width="58" 
+                      height="66" 
+                      style="display: block; width: 58px; height: auto; max-height: 66px; margin: 0 auto; border: 0; outline: none; text-decoration: none;" 
+                    />
+                  </td>
+                </tr>
+              </table>
+
               <h1 style="color: #ffffff; margin: 0; font-size: 17px; font-weight: bold; letter-spacing: 0.8px; text-transform: uppercase;">
                 ORGANISMO JUDICIAL DE GUATEMALA
               </h1>

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
+import { OJ_LOGO_CID, OJ_LOGO_PNG_BASE64 } from '../../src/utils/emailLogoAsset';
 
 function normalizeEmail(email?: string): string {
   if (!email) return '';
@@ -96,7 +97,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       text: `Verificación exitosa de servicio de correo SMTP de Google para el Sistema de Control de Compras de la Gerencia de Informática del Organismo Judicial de Guatemala.\n\nRemitente: ${user}\nDestinatario: ${recipient}\nServidor: ${host}:${port}\nFecha: ${new Date().toLocaleString('es-GT', { timeZone: 'America/Guatemala' })}`,
       html: `
         <div style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-          <div style="background-color: #0f172a; padding: 24px; text-align: center; border-bottom: 3px solid #f59e0b;">
+          <div style="background-color: #0f172a; padding: 26px 24px 20px; text-align: center; border-bottom: 3px solid #f59e0b;">
+            <div style="display: inline-block; background-color: #ffffff; width: 68px; height: 68px; border-radius: 12px; border: 2px solid #f59e0b; padding: 5px; margin-bottom: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+              <img src="cid:${OJ_LOGO_CID}" alt="OJ Logo" width="56" height="64" style="display: block; width: 56px; height: auto; max-height: 64px; margin: 0 auto; border: 0;" />
+            </div>
             <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 0.5px;">
               ORGANISMO JUDICIAL DE GUATEMALA
             </h1>
@@ -146,7 +150,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             Sistema de Control de Adquisiciones GIT • Organismo Judicial de Guatemala
           </div>
         </div>
-      `
+      `,
+      attachments: [
+        {
+          filename: 'organismo_judicial_logo.png',
+          content: Buffer.from(OJ_LOGO_PNG_BASE64, 'base64'),
+          cid: OJ_LOGO_CID,
+          contentType: 'image/png',
+          contentDisposition: 'inline'
+        }
+      ]
     });
 
     return res.status(200).json({

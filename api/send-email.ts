@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
+import { OJ_LOGO_CID, OJ_LOGO_PNG_BASE64 } from '../src/utils/emailLogoAsset';
 
 function normalizeEmail(email?: string): string {
   if (!email) return '';
@@ -69,12 +70,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       socketTimeout: 15000,
     });
 
+    const finalHtml = html || htmlContenido || `<p>${text || 'Notificación oficial de compras.'}</p>`;
+    const attachments = [];
+    if (finalHtml.includes(`cid:${OJ_LOGO_CID}`) || finalHtml.includes('organismo_judicial_logo') || finalHtml.includes('ORGANISMO JUDICIAL')) {
+      attachments.push({
+        filename: 'organismo_judicial_logo.png',
+        content: Buffer.from(OJ_LOGO_PNG_BASE64, 'base64'),
+        cid: OJ_LOGO_CID,
+        contentType: 'image/png',
+        contentDisposition: 'inline'
+      });
+    }
+
     const info = await transporter.sendMail({
       from: `"Sistema de Compras GIT - OJ" <${user}>`,
       to: recipientsList.length > 0 ? recipientsList.join(', ') : user,
       subject: subject || asunto || '[GIT-OJ] Notificación de Compra',
       text: text || 'Notificación oficial de compras.',
-      html: html || htmlContenido || `<p>${text || 'Notificación oficial de compras.'}</p>`,
+      html: finalHtml,
+      attachments
     });
 
     return res.status(200).json({ success: true, messageId: info.messageId, user });

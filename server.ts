@@ -3,6 +3,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { OJ_LOGO_CID, OJ_LOGO_PNG_BASE64 } from './src/utils/emailLogoAsset';
 
 dotenv.config();
 
@@ -121,7 +122,10 @@ app.post('/api/email/test', async (req, res) => {
       text: `Verificación exitosa de servicio de correo SMTP de Google para el Sistema de Control de Compras de la Gerencia de Informática del Organismo Judicial de Guatemala.\n\nRemitente: ${user}\nDestinatario: ${recipient}\nFecha: ${new Date().toLocaleString('es-GT', { timeZone: 'America/Guatemala' })}`,
       html: `
         <div style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-          <div style="background-color: #0f172a; padding: 24px; text-align: center; border-bottom: 3px solid #f59e0b;">
+          <div style="background-color: #0f172a; padding: 26px 24px 20px; text-align: center; border-bottom: 3px solid #f59e0b;">
+            <div style="display: inline-block; background-color: #ffffff; width: 68px; height: 68px; border-radius: 12px; border: 2px solid #f59e0b; padding: 5px; margin-bottom: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+              <img src="cid:${OJ_LOGO_CID}" alt="OJ Logo" width="56" height="64" style="display: block; width: 56px; height: auto; max-height: 64px; margin: 0 auto; border: 0;" />
+            </div>
             <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 0.5px;">
               ORGANISMO JUDICIAL DE GUATEMALA
             </h1>
@@ -171,7 +175,16 @@ app.post('/api/email/test', async (req, res) => {
             Sistema de Control de Adquisiciones GIT • Organismo Judicial de Guatemala
           </div>
         </div>
-      `
+      `,
+      attachments: [
+        {
+          filename: 'organismo_judicial_logo.png',
+          content: Buffer.from(OJ_LOGO_PNG_BASE64, 'base64'),
+          cid: OJ_LOGO_CID,
+          contentType: 'image/png',
+          contentDisposition: 'inline'
+        }
+      ]
     });
 
     return res.json({
@@ -220,12 +233,24 @@ app.post(['/api/email/send', '/api/send-email'], async (req, res) => {
     const finalHtml = html || htmlContenido || `<p>${text || 'Notificación oficial generada por el Sistema de Control de Compras GIT OJ.'}</p>`;
     const finalSubject = subject || asunto || '[NOTIFICACIÓN] Sistema de Compras - GIT OJ';
 
+    const attachments = [];
+    if (finalHtml.includes(`cid:${OJ_LOGO_CID}`) || finalHtml.includes('organismo_judicial_logo') || finalHtml.includes('ORGANISMO JUDICIAL')) {
+      attachments.push({
+        filename: 'organismo_judicial_logo.png',
+        content: Buffer.from(OJ_LOGO_PNG_BASE64, 'base64'),
+        cid: OJ_LOGO_CID,
+        contentType: 'image/png',
+        contentDisposition: 'inline'
+      });
+    }
+
     const info = await transporter.sendMail({
       from: `"${fromDisplayName}" <${user}>`,
       to: recipientsList.join(', '),
       subject: finalSubject,
       text: text || 'Notificación oficial generada por el Sistema de Control de Compras GIT OJ.',
-      html: finalHtml
+      html: finalHtml,
+      attachments
     });
 
     return res.json({

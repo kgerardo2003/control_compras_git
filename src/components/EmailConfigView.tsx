@@ -21,7 +21,6 @@ import {
   HelpCircle,
   Code2,
   RefreshCw,
-  Building2,
   Terminal
 } from 'lucide-react';
 
@@ -931,8 +930,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             {/* Header del Correo */}
             <div className="bg-[#1c39bb] text-white p-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-white/10 p-1.5 flex items-center justify-center border border-white/20">
-                  <Building2 className="w-6 h-6 text-amber-300" />
+                <div className="w-10 h-10 rounded-lg bg-white p-1 flex items-center justify-center border-2 border-amber-400 shadow-xs">
+                  <img src="/organismo_judicial_logo.svg" alt="Organismo Judicial" className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <h3 className="font-black text-sm uppercase tracking-wider text-white">
