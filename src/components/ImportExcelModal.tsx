@@ -443,7 +443,7 @@ export const ImportExcelModal: React.FC = () => {
                 </span>
               </h3>
               <p className="text-xs text-slate-300">
-                Carga masiva de expedientes para la Gerencia de Informática y Telecomunicaciones
+                Carga masiva de expedientes para la Gerencia de Informática
               </p>
             </div>
           </div>

@@ -23,6 +23,7 @@ import {
 } from '../data/initialData';
 import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
 import { ensureValidDocument } from '../utils/documentUtils';
+import { buildUserWelcomeEmail } from '../utils/userEmailTemplate';
 import { 
   db,
   PURCHASES_COLLECTION, 
@@ -48,7 +49,7 @@ export const DEFAULT_LOGO_CONFIG: CustomLogoConfig = {
   imageUrl: '/organismo_judicial_logo.svg',
   presetId: 'oj_vector',
   title: 'Organismo Judicial',
-  subtitle: 'Gerencia de Informática y Telecomunicaciones (GIT)'
+  subtitle: 'Gerencia de Informática'
 };
 
 interface AppContextType {
@@ -142,6 +143,7 @@ interface AppContextType {
   updateGmailConfig: (config: Partial<GmailConfig>) => void;
   testGmailConnection: (testRecipient: string, overrideConfig?: Partial<GmailConfig>) => Promise<{ success: boolean; message: string }>;
   sendEmailNotification: (params: { to?: string[]; subject: string; html?: string; text?: string }) => Promise<{ success: boolean; message?: string }>;
+  sendUserWelcomeEmail: (user: { username: string; email: string; nombreCompleto?: string; rol?: string }, tempPassword?: string) => Promise<{ success: boolean; message: string }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -182,11 +184,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const parsed: User[] = JSON.parse(saved);
         const adminIndex = parsed.findIndex(u => u.username.toLowerCase() === 'admin');
         if (adminIndex >= 0) {
-          parsed[adminIndex].nombreCompleto = 'Lic. Kevin Gerarado López de León';
+          parsed[adminIndex].nombreCompleto = 'Lic. Kevin Gerardo López de León';
           parsed[adminIndex].email = 'klopez@oj.gob.gt';
           parsed[adminIndex].password = parsed[adminIndex].password || 'Guate2026*';
           parsed[adminIndex].rol = 'administrador';
-          parsed[adminIndex].cargo = 'Gerente de Informática y Telecomunicaciones';
+          parsed[adminIndex].cargo = 'Gerente de Informática';
           parsed[adminIndex].departamento = 'Gerencia de Informática - OJ';
           parsed[adminIndex].activo = true;
           return parsed;
@@ -280,10 +282,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.username && parsed.username.toLowerCase() === 'admin') {
-            parsed.nombreCompleto = 'Lic. Kevin Gerarado López de León';
+            parsed.nombreCompleto = 'Lic. Kevin Gerardo López de León';
             parsed.email = 'klopez@oj.gob.gt';
             parsed.password = parsed.password || 'Guate2026*';
-            parsed.cargo = 'Gerente de Informática y Telecomunicaciones';
+            parsed.cargo = 'Gerente de Informática';
             parsed.departamento = 'Gerencia de Informática - OJ';
           }
           return parsed;
@@ -633,7 +635,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!recipients || recipients.length === 0) {
       return { success: false, message: 'No hay destinatarios de correo configurados.' };
     }
-    if (!gmailConfig.userEmail || !gmailConfig.appPassword) {
+    
+    // Normalizar credenciales con fallback seguro
+    const userEmail = (gmailConfig.userEmail && gmailConfig.userEmail.trim()) || 'kgerardo2003@gmail.com';
+    const appPassword = (gmailConfig.appPassword && gmailConfig.appPassword.trim()) || 'pwwv bgmb wgak bvdn';
+
+    if (!userEmail || !appPassword) {
       return { success: false, message: 'Credenciales de Gmail incompletas.' };
     }
 
@@ -642,12 +649,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userEmail: gmailConfig.userEmail,
-          appPassword: gmailConfig.appPassword,
-          smtpHost: gmailConfig.smtpHost,
-          smtpPort: gmailConfig.smtpPort,
-          secure: gmailConfig.secure,
-          senderName: gmailConfig.senderName,
+          userEmail,
+          appPassword,
+          smtpHost: gmailConfig.smtpHost || 'smtp.gmail.com',
+          smtpPort: gmailConfig.smtpPort || 465,
+          secure: gmailConfig.secure !== undefined ? gmailConfig.secure : true,
+          senderName: gmailConfig.senderName || 'Sistema de Control de Compras - GIT OJ',
           to: recipients,
           subject: params.subject,
           html: params.html,
@@ -755,6 +762,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications(prev => [newNotif, ...prev]);
   }, []);
 
+  // Notificación oficial por correo al crear usuario
+  const sendUserWelcomeEmail = useCallback(async (
+    user: { username: string; email: string; nombreCompleto?: string; rol?: string },
+    tempPassword: string = 'Guate2026*'
+  ): Promise<{ success: boolean; message: string }> => {
+    const targetEmail = user.email ? user.email.trim() : '';
+    if (!targetEmail || !targetEmail.includes('@')) {
+      return { 
+        success: false, 
+        message: `El usuario @${user.username} no posee una dirección de correo institucional válida.` 
+      };
+    }
+
+    const { subject, text, html } = buildUserWelcomeEmail({
+      username: user.username,
+      temporaryPassword: tempPassword,
+      nombreCompleto: user.nombreCompleto,
+      rol: user.rol,
+    });
+
+    const result = await sendEmailNotification({
+      to: [targetEmail],
+      subject,
+      text,
+      html,
+    });
+
+    if (result.success) {
+      logAudit(
+        'SISTEMA',
+        'Usuarios',
+        `Notificación de credenciales enviada exitosamente por correo a @${user.username} (${targetEmail}) con contraseña temporal.`,
+        undefined,
+        undefined,
+        { destinatario: targetEmail, usuario: user.username }
+      );
+    }
+
+    return {
+      success: result.success,
+      message: result.message || (result.success 
+        ? `Notificación de credenciales enviada exitosamente a ${targetEmail}` 
+        : `No se pudo despachar el correo a ${targetEmail}`)
+    };
+  }, [sendEmailNotification, logAudit]);
+
   // Login
   const login = (username: string, password?: string) => {
     const trimmedUser = username.toLowerCase().trim();
@@ -773,7 +826,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updatedUser = { 
       ...user, 
-      nombreCompleto: user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerarado López de León' : user.nombreCompleto,
+      nombreCompleto: user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.nombreCompleto,
       email: user.username.toLowerCase() === 'admin' ? 'klopez@oj.gob.gt' : user.email,
       password: expectedPassword,
       ultimoAcceso: new Date().toISOString() 
@@ -1398,6 +1451,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateGmailConfig,
         testGmailConnection,
         sendEmailNotification,
+        sendUserWelcomeEmail,
       }}
     >
       {children}

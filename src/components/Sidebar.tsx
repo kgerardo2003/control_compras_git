@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
     switch (rol) {
       case 'administrador': return 'Administrador';
       case 'auditor': return 'Auditor';
-      case 'usuario_estandar': return 'Operador GIT';
+      case 'usuario_estandar': return 'Operador Informática';
       default: return 'Usuario';
     }
   };
@@ -331,8 +331,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
             </div>
           </div>
 
+          {/* Tarjeta de Creador del Sistema */}
+          <div className="bg-white/5 p-2.5 rounded-lg border border-white/10 text-left">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">
+              Creador del Sistema:
+            </span>
+            <span className="text-[11px] font-semibold text-white block truncate mt-0.5">
+              Lic. Kevin Gerardo López de León
+            </span>
+          </div>
+
           <div className="flex items-center justify-between px-1 text-[10px] text-slate-400">
-            <span>SICOIN-GIT v2.4</span>
+            <span>SICOIN-GI v2.4</span>
             <button
               type="button"
               onClick={resetToDemoData}

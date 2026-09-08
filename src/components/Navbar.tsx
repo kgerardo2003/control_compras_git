@@ -122,7 +122,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
             Gestión de Adquisiciones Institucionales
           </h1>
           <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
-            Gerencia de Informática y Telecomunicaciones • Organismo Judicial
+            Gerencia de Informática • Organismo Judicial
           </p>
         </div>
       </div>

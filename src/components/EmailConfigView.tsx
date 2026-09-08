@@ -939,7 +939,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     Organismo Judicial de Guatemala
                   </h3>
                   <p className="text-xs text-blue-100">
-                    Gerencia de Informática y Telecomunicaciones (GIT)
+                    Gerencia de Informática
                   </p>
                 </div>
               </div>

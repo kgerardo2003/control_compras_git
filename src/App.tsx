@@ -132,9 +132,15 @@ const AppContent: React.FC = () => {
         </main>
 
         {/* Pie de Página Institucional (Professional Polish) */}
-        <footer className="h-8 bg-slate-200 px-6 flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest flex-shrink-0 print:hidden">
-          <span>© 2026 Organismo Judicial de Guatemala - Gerencia de Informática</span>
-          <div className="flex items-center space-x-4">
+        <footer className="py-2 min-h-8 bg-slate-200 border-t border-slate-300 px-6 flex flex-wrap items-center justify-between text-[11px] font-medium text-slate-600 flex-shrink-0 print:hidden gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-semibold text-slate-700">© 2026 Organismo Judicial de Guatemala - Gerencia de Informática</span>
+            <span className="text-slate-400 hidden sm:inline">•</span>
+            <span className="text-slate-800">
+              Creador del Sistema: <strong className="text-blue-900 font-bold">Lic. Kevin Gerardo López de León</strong>
+            </span>
+          </div>
+          <div className="flex items-center space-x-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
             <span className="flex items-center">
               <span className="w-2 h-2 bg-emerald-500 rounded-full mr-1.5 animate-pulse" />
               Sesión Verificada

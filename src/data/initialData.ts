@@ -5,11 +5,11 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'usr-admin-1',
     username: 'admin',
-    nombreCompleto: 'Lic. Kevin Gerarado López de León',
+    nombreCompleto: 'Lic. Kevin Gerardo López de León',
     email: 'klopez@oj.gob.gt',
     password: 'Guate2026*',
     rol: 'administrador',
-    cargo: 'Gerente de Informática y Telecomunicaciones',
+    cargo: 'Gerente de Informática',
     departamento: 'Gerencia de Informática - OJ',
     activo: true,
     fechaCreacion: '2024-01-10T08:00:00Z',
@@ -74,7 +74,7 @@ export const INITIAL_CATALOGS: Catalog[] = [
     id: 'cat-evaluado-git',
     codigo: 'EVALUADO_GIT',
     nombre: 'Evaluado por la GIT',
-    descripcion: 'Dictamen técnico y validación por la Gerencia de Informática y Telecomunicaciones',
+    descripcion: 'Dictamen técnico y validación por la Gerencia de Informática',
     esSistema: true,
     items: [
       { id: 'git-1', codigo: 'SI', valor: 'Sí', descripcion: 'Cuenta con dictamen técnico favorable de la GIT', activo: true, color: 'emerald' },

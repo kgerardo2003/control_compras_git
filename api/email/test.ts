@@ -101,7 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               ORGANISMO JUDICIAL DE GUATEMALA
             </h1>
             <p style="color: #94a3b8; margin: 6px 0 0; font-size: 12px; font-weight: 600;">
-              GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES (GIT)
+              GERENCIA DE INFORMÁTICA
             </p>
           </div>
           

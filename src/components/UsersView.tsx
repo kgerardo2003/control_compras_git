@@ -7,7 +7,8 @@ import {
   Edit3, 
   Trash2, 
   X,
-  ShieldAlert
+  ShieldAlert,
+  Mail
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
@@ -20,7 +21,9 @@ export const UsersView: React.FC = () => {
     toggleUserStatus, 
     deleteUser, 
     currentUser,
-    themeConfig
+    themeConfig,
+    sendUserWelcomeEmail,
+    showToast
   } = useApp();
 
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState(false);
@@ -30,10 +33,13 @@ export const UsersView: React.FC = () => {
   const [username, setUsername] = useState('');
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('Guate2026*');
   const [rol, setRol] = useState<UserRole>('usuario_estandar');
   const [cargo, setCargo] = useState('');
   const [departamento, setDepartamento] = useState('Gerencia de Informática - OJ');
+  const [notifyByEmail, setNotifyByEmail] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resendingEmailUserId, setResendingEmailUserId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
   const canManage = currentUser?.rol === 'administrador';
@@ -42,10 +48,12 @@ export const UsersView: React.FC = () => {
     setUsername('');
     setNombreCompleto('');
     setEmail('');
-    setPassword('');
+    setPassword('Guate2026*');
     setRol('usuario_estandar');
     setCargo('');
     setDepartamento('Gerencia de Informática - OJ');
+    setNotifyByEmail(true);
+    setIsSubmitting(false);
     setErrorMsg('');
     setIsNewUserModalOpen(true);
   };
@@ -59,10 +67,50 @@ export const UsersView: React.FC = () => {
     setRol(user.rol);
     setCargo(user.cargo);
     setDepartamento(user.departamento);
+    setIsSubmitting(false);
     setErrorMsg('');
   };
 
-  const handleSubmitUser = (e: React.FormEvent) => {
+  const handleResendEmail = async (user: User) => {
+    if (!user.email) {
+      showToast({
+        type: 'warning',
+        title: 'Sin Correo Institucional',
+        message: `El usuario @${user.username} no tiene configurado un correo electrónico.`
+      });
+      return;
+    }
+
+    setResendingEmailUserId(user.id);
+    try {
+      const res = await sendUserWelcomeEmail(user, user.password || 'Guate2026*');
+      if (res.success) {
+        showToast({
+          type: 'success',
+          title: 'Credenciales Enviadas por Correo',
+          message: `Se enviaron las credenciales de acceso a ${user.email} con el enlace y las instrucciones de seguridad.`,
+          duration: 5000
+        });
+      } else {
+        showToast({
+          type: 'warning',
+          title: 'Aviso al Enviar Correo',
+          message: res.message || 'No se pudo enviar el correo de credenciales.',
+          duration: 7000
+        });
+      }
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Error de Envío',
+        message: err?.message || 'Ocurrió un error inesperado al enviar el correo.'
+      });
+    } finally {
+      setResendingEmailUserId(null);
+    }
+  };
+
+  const handleSubmitUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !nombreCompleto.trim() || !email.trim()) {
       setErrorMsg('Por favor complete todos los campos obligatorios.');
@@ -76,7 +124,12 @@ export const UsersView: React.FC = () => {
         rol,
         cargo: cargo.trim(),
         departamento: departamento.trim(),
-        password: password ? password : editingUser.password,
+        password: password.trim() ? password.trim() : editingUser.password,
+      });
+      showToast({
+        type: 'success',
+        title: 'Usuario Actualizado',
+        message: `Los datos del usuario @${editingUser.username} fueron actualizados correctamente.`
       });
       setEditingUser(null);
     } else {
@@ -85,16 +138,56 @@ export const UsersView: React.FC = () => {
         return;
       }
 
-      addUser({
+      const assignedPassword = password.trim() || 'Guate2026*';
+      setIsSubmitting(true);
+
+      const newUser = addUser({
         username: username.trim().toLowerCase(),
         nombreCompleto: nombreCompleto.trim(),
         email: email.trim(),
-        password: password || '123456',
+        password: assignedPassword,
         rol,
         cargo: cargo.trim() || 'Funcionario OJ',
         departamento: departamento.trim(),
         activo: true,
       });
+
+      if (notifyByEmail) {
+        try {
+          const emailRes = await sendUserWelcomeEmail(newUser, assignedPassword);
+          if (emailRes.success) {
+            showToast({
+              type: 'success',
+              title: 'Usuario Creado y Notificado',
+              message: `El usuario @${newUser.username} fue registrado exitosamente y se despacharon sus credenciales de acceso a ${newUser.email}.`,
+              duration: 6000
+            });
+          } else {
+            showToast({
+              type: 'warning',
+              title: 'Usuario Creado (Aviso de Envío)',
+              message: `Usuario registrado. Sin embargo: ${emailRes.message}. Las credenciales son: Usuario: ${newUser.username} / Contraseña temporal: ${assignedPassword}`,
+              duration: 9000
+            });
+          }
+        } catch (err: any) {
+          showToast({
+            type: 'warning',
+            title: 'Usuario Creado',
+            message: `Usuario registrado con contraseña temporal: ${assignedPassword}. Falló el envío de correo: ${err?.message}`,
+            duration: 8000
+          });
+        }
+      } else {
+        showToast({
+          type: 'success',
+          title: 'Usuario Creado Exitosamente',
+          message: `El usuario @${newUser.username} fue registrado con contraseña temporal: ${assignedPassword}.`,
+          duration: 5000
+        });
+      }
+
+      setIsSubmitting(false);
       setIsNewUserModalOpen(false);
     }
   };
@@ -261,6 +354,19 @@ export const UsersView: React.FC = () => {
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
+                          onClick={() => handleResendEmail(u)}
+                          disabled={resendingEmailUserId === u.id}
+                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                          title="Enviar credenciales de acceso por correo"
+                        >
+                          {resendingEmailUserId === u.id ? (
+                            <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Mail className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleOpenEdit(u)}
                           className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                           title="Editar Usuario"
@@ -368,11 +474,11 @@ export const UsersView: React.FC = () => {
                     {editingUser ? 'Nueva Contraseña' : 'Contraseña *'}
                   </label>
                   <input
-                    type="password"
+                    type={editingUser ? "password" : "text"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={editingUser ? 'Mantener actual' : 'Contraseña'}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
+                    placeholder={editingUser ? 'Mantener actual' : 'Guate2026*'}
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500 font-mono text-xs"
                     required={!editingUser}
                   />
                 </div>
@@ -384,7 +490,7 @@ export const UsersView: React.FC = () => {
                   type="text"
                   value={cargo}
                   onChange={(e) => setCargo(e.target.value)}
-                  placeholder="ej. Analista de Redes y Telecomunicaciones"
+                  placeholder="ej. Analista de Sistemas / Informática"
                   className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
                 />
               </div>
@@ -410,9 +516,17 @@ export const UsersView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs shadow-2xs cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  {editingUser ? 'Actualizar Usuario' : 'Guardar Usuario'}
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <span>{editingUser ? 'Actualizar Usuario' : 'Guardar Usuario'}</span>
+                  )}
                 </button>
               </div>
             </form>

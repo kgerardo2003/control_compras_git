@@ -353,7 +353,7 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Área Solicitante (GIT):
+                  Área Solicitante:
                 </span>
                 <span className="font-bold text-amber-700">{selectedPurchase.areaSolicitante || 'Soporte técnico'}</span>
               </div>

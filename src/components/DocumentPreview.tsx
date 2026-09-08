@@ -125,7 +125,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     const f56 = purchase?.f56 || '000001';
     const monto = purchase?.monto ? formatQuetzales(purchase.monto) : 'Q 845,000.00';
     const desc = purchase?.descripcion || 'Adquisición de suministros y equipamiento tecnológico conforme a especificaciones oficiales de la Gerencia de Informática.';
-    const depto = purchase?.dependenciaSolicitante || purchase?.areaSolicitante || 'Gerencia de Informática y Telecomunicaciones';
+    const depto = purchase?.dependenciaSolicitante || purchase?.areaSolicitante || 'Gerencia de Informática';
     const prov = purchase?.proveedorAdjudicado || 'En proceso de selección y adjudicación';
     const dictamen = purchase?.fechaDictamenGIT || 'Dictamen Técnico Registrado';
     const oficio = purchase?.fechaElaboracionOficioGIT || 'Oficio GIT Elaborado';
@@ -148,7 +148,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     Organismo Judicial de Guatemala
                   </h3>
                   <p className="text-[11px] font-semibold text-slate-600 uppercase">
-                    Gerencia de Informática y Telecomunicaciones • Dirección de Compras
+                    Gerencia de Informática • Dirección de Compras
                   </p>
                 </div>
               </div>
@@ -256,8 +256,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           <div className="border-t border-slate-200 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
             <div>
               <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Firma y Dictamen Digital</p>
-              <p className="text-xs font-bold text-slate-800">Lic. Kevin Gerarado López de León</p>
-              <p className="text-[11px] text-slate-500">Gerente de Informática y Telecomunicaciones - OJ</p>
+              <p className="text-xs font-bold text-slate-800">Lic. Kevin Gerardo López de León</p>
+              <p className="text-[11px] text-slate-500">Gerente de Informática - OJ</p>
             </div>
 
             <div className="border border-amber-300 bg-amber-50 rounded-lg p-2 max-w-xs text-center">

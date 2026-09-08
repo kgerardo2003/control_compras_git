@@ -32,7 +32,7 @@ export function generateOfficialF56PdfDataUrl(
   const f56 = purchase?.f56 || '000001';
   const desc = purchase?.descripcion || 'Solicitud de adquisición y dictamen técnico de equipamiento o servicios tecnológicos.';
   const monto = purchase?.monto || 0;
-  const depto = purchase?.dependenciaSolicitante || purchase?.areaSolicitante || 'Gerencia de Informática y Telecomunicaciones (GIT)';
+  const depto = purchase?.dependenciaSolicitante || purchase?.areaSolicitante || 'Gerencia de Informática';
   const prov = purchase?.proveedorAdjudicado || 'En proceso de evaluación y adjudicación';
   const fechaDictamen = purchase?.fechaDictamenGIT || 'Dictamen Técnico Registrado';
   const fechaOficio = purchase?.fechaElaboracionOficioGIT || 'Oficio de Traslado GIT Emitido';
@@ -47,7 +47,7 @@ export function generateOfficialF56PdfDataUrl(
   doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 105, 10, { align: 'center' });
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES  |  DIRECCIÓN DE COMPRAS', 105, 17, { align: 'center' });
+  doc.text('GERENCIA DE INFORMÁTICA  |  DIRECCIÓN DE COMPRAS', 105, 17, { align: 'center' });
 
   // Título principal
   doc.setTextColor(30, 41, 59);
@@ -133,7 +133,7 @@ export function generateOfficialF56PdfDataUrl(
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(180, 83, 9);
-  doc.text('Firma Digital: Lic. Kevin Gerarado López de León - Gerente de Informática y Telecomunicaciones', 105, 190, { align: 'center' });
+  doc.text('Firma Digital: Lic. Kevin Gerardo López de León - Gerente de Informática', 105, 190, { align: 'center' });
   doc.text(`Hash de Seguridad SHA-256: 8f4b29a7c1e5d3092bb45612ac9834fe108392bbec54321${f56e.replace(/[^0-9]/g, '')}`, 105, 197, { align: 'center' });
   doc.text('Constancia generada y verificada de conformidad con el Sistema de Control de Compras del Organismo Judicial', 105, 204, { align: 'center' });
 

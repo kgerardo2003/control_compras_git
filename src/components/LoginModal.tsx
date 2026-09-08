@@ -169,9 +169,14 @@ export const LoginModal: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-5 pt-4 border-t border-slate-200 text-[11px] text-center text-slate-500 flex items-center justify-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-[#4682b4]" />
-            <span>Acceso oficial restringido. Sesión registrada en bitácora de auditoría.</span>
+          <div className="mt-5 pt-4 border-t border-slate-200 text-center space-y-1.5">
+            <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-[#4682b4]" />
+              <span>Acceso oficial restringido. Sesión registrada en bitácora de auditoría.</span>
+            </div>
+            <p className="text-[11px] text-slate-600 font-medium">
+              Creador del Sistema: <strong className="text-slate-900 font-bold">Lic. Kevin Gerardo López de León</strong>
+            </p>
           </div>
 
         </div>
