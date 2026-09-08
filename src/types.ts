@@ -73,6 +73,69 @@ export interface PurchaseRecord {
   fechaModificacion?: string;
   observaciones?: string;
   historialEstatus?: StatusTimelineEvent[]; // Línea de tiempo de tracking y cambios de estatus del evento
+  renglonPresupuestario?: string; // Ej: "158", "328", "121"
+  grupoPresupuestario?: string; // Ej: "Grupo 100 - Servicios No Personales"
+  nombreRenglon?: string; // Ej: "Arrendamiento de Equipo de Cómputo"
+  estadoPago?: 'comprometido' | 'pagado'; // "comprometido" = pendiente de pago; "pagado" = rebaja realizada
+  montoPagado?: number; // Monto que ya fue efectivamente pagado / devengado
+}
+
+// ==========================================
+// MÓDULO FINANCIERO Y PRESUPUESTARIO (GIT)
+// ==========================================
+
+export type BudgetDisponibilidadStatus = 'Con Disponibilidad' | 'Alerta Disponibilidad Baja' | 'Sin Disponibilidad';
+
+export interface BudgetGroup {
+  id: string;
+  codigo: string; // Ej: "100", "200", "300"
+  nombre: string; // Ej: "Servicios No Personales"
+  descripcion?: string;
+}
+
+export interface BudgetLineItem {
+  id: string;
+  grupoPresupuestario: string;    // 1. Grupo Presupuestario (Ej: "Grupo 100 - Servicios No Personales")
+  renglonPresupuestario: string;  // 2. Renglón Presupuestario (Ej: "158")
+  nombreRenglon: string;          // 3. Nombre del Renglón (Ej: "Arrendamiento de Equipo de Cómputo")
+  presupuestoInicial: number;     // 4. Presupuesto Inicial (GTQ)
+  modificacionesAprobadas: number; // 5. Modificaciones Aprobadas (+ o - netas)
+  presupuestoVigente: number;     // 6. Presupuesto Vigente (Inicial + Modificaciones)
+  pagadoQueRebaja: number;        // 7. Pagado que Rebaja (Total ejecutado/pagado)
+  disponibleReal: number;         // 8. Disponible Real (Vigente - Pagado que Rebaja)
+  comprometidoPendiente: number;  // 9. Comprometido Pendiente (Adquisiciones en trámite/adjudicadas pendientes)
+  disponibleProyectado: number;   // 10. Disponible Proyectado (Disponible Real - Comprometido Pendiente)
+  porcentajeUsadoComprometido: number; // 11. Porcentaje Usado/Comprometido
+  estatusDisponibilidad: BudgetDisponibilidadStatus; // 12. Estatus si hay disponibilidad o No
+  ejercicioFiscal?: number;       // Ej: 2026
+  observaciones?: string;
+  creadoPor?: string;
+  fechaCreacion?: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
+
+export type BudgetModificationType = 'ampliacion' | 'disminucion' | 'transferencia';
+export type BudgetModificationState = 'aprobada' | 'en_tramite' | 'rechazada';
+
+export interface BudgetModification {
+  id: string;
+  correlativo: string;           // Ej: "MOD-2026-001"
+  tipo: BudgetModificationType;  // "ampliacion" (+), "disminucion" (-), "transferencia" (entre renglones)
+  renglonPresupuestario: string; // Renglón afectado (o renglón destino en transferencias)
+  nombreRenglon: string;
+  grupoPresupuestario: string;
+  renglonOrigenPresupuestario?: string; // En caso de transferencia
+  nombreRenglonOrigen?: string;
+  monto: number;                 // Quetzales (siempre positivo en registro, se suma o resta según el tipo)
+  fecha: string;                 // YYYY-MM-DD
+  noResolucion: string;          // Ej: "Resolución DAF-OJ-2026-015"
+  descripcion: string;           // Justificación técnica/legal
+  estado: BudgetModificationState; // Solo 'aprobada' afecta el presupuesto vigente
+  aprobadoPor?: string;
+  fechaAprobacion?: string;
+  creadoPor: string;
+  fechaCreacion: string;
 }
 
 export interface CatalogItem {
@@ -106,7 +169,13 @@ export type AuditAction =
   | 'EDITAR_USUARIO' 
   | 'EXPORTAR_DATOS'
   | 'RESTAURAR_DATOS'
-  | 'IMPORTAR_DATOS';
+  | 'IMPORTAR_DATOS'
+  | 'CREAR_RENGLON'
+  | 'EDITAR_RENGLON'
+  | 'ELIMINAR_RENGLON'
+  | 'CREAR_MODIFICACION_PRESUPUESTARIA'
+  | 'APROBAR_MODIFICACION_PRESUPUESTARIA'
+  | 'IMPORTAR_PRESUPUESTO';
 
 export interface AuditLogEntry {
   id: string;
@@ -114,7 +183,7 @@ export interface AuditLogEntry {
   usuario: string;
   rol: UserRole;
   accion: AuditAction;
-  modulo: 'Autenticación' | 'Compras' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema';
+  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema';
   detalles: string;
   registroId?: string;
   ip: string;
@@ -135,7 +204,7 @@ export interface AppNotification {
   categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema';
 }
 
-export type ActiveTab = 'dashboard' | 'compras' | 'catalogos' | 'auditoria' | 'usuarios' | 'reportes' | 'personalizacion' | 'correo';
+export type ActiveTab = 'dashboard' | 'compras' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'reportes' | 'personalizacion' | 'correo';
 
 export interface GmailConfig {
   userEmail: string;

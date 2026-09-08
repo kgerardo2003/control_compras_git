@@ -710,7 +710,17 @@ export const PurchasesView: React.FC = () => {
 
                       {/* Monto */}
                       <td className="px-3 py-3 text-right font-bold text-slate-900 whitespace-nowrap">
-                        {formatQuetzales(p.monto)}
+                        <span>{formatQuetzales(p.monto)}</span>
+                        {p.renglonPresupuestario && (
+                          <div className="mt-0.5">
+                            <span 
+                              className="inline-block text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200" 
+                              title={p.nombreRenglon || `Renglón presupuestario ${p.renglonPresupuestario}`}
+                            >
+                              Reng. {p.renglonPresupuestario}
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Cantidad de Ofertas */}

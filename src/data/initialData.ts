@@ -61,13 +61,21 @@ export const INITIAL_CATALOGS: Catalog[] = [
     id: 'cat-estatus',
     codigo: 'ESTATUS_EVENTO',
     nombre: 'Estatus del Evento',
-    descripcion: 'Estados oficiales de los eventos de adquisiciones según normativa Guatecompras y GIT',
+    descripcion: 'Estados oficiales de los eventos de adquisiciones según matriz de la Gerencia de Informática',
     esSistema: true,
     items: [
-      { id: 'est-1', codigo: 'EVALUACION', valor: 'Evaluación', descripcion: 'En proceso de calificación técnica y financiera por la comisión', activo: true, color: 'blue' },
-      { id: 'est-2', codigo: 'ADJUDICACION', valor: 'Adjudicación', descripcion: 'Evento resuelto favorablemente a proveedor adjudicado', activo: true, color: 'emerald' },
-      { id: 'est-3', codigo: 'PRESCINDIDO', valor: 'Prescindido', descripcion: 'Evento dejado sin efecto por razones de interés institucional', activo: true, color: 'amber' },
-      { id: 'est-4', codigo: 'DESIERTO', valor: 'Desierto', descripcion: 'Ninguna oferta cumplió con los requerimientos técnicos o no hubo postores', activo: true, color: 'rose' },
+      { id: 'est-reg', codigo: 'REGISTRADA', valor: 'Registrada', descripcion: 'Evento registrado en sistema, compromete preventivamente saldo (Afecta: Sí)', activo: true, color: 'blue' },
+      { id: 'est-proc', codigo: 'EN_PROCESO', valor: 'En proceso', descripcion: 'Expediente en gestión técnica o recepción de plicas (Afecta: Sí)', activo: true, color: 'amber' },
+      { id: 'est-comp', codigo: 'COMPROMETIDA', valor: 'Comprometida', descripcion: 'Evento con reserva de saldo y compromiso formal (Afecta: Sí)', activo: true, color: 'indigo' },
+      { id: 'est-adj', codigo: 'ADJUDICADA', valor: 'Adjudicada', descripcion: 'Evento resuelto y adjudicado a proveedor (Afecta: Sí)', activo: true, color: 'emerald' },
+      { id: 'est-pag', codigo: 'PAGADA', valor: 'Pagada', descripcion: 'Factura devengada y pagada, rebaja en Pagado (Afecta: Sí)', activo: true, color: 'purple' },
+      { id: 'est-anul', codigo: 'ANULADA', valor: 'Anulada', descripcion: 'Evento anulado o dejado sin efecto legal (Afecta: No)', activo: true, color: 'slate' },
+      { id: 'est-rech', codigo: 'RECHAZADA', valor: 'Rechazada', descripcion: 'Evento no autorizado o rechazado (Afecta: No)', activo: true, color: 'rose' },
+      // Compatibilidad histórica
+      { id: 'est-1', codigo: 'EVALUACION', valor: 'Evaluación', descripcion: 'En proceso de calificación técnica y financiera (Afecta: Sí)', activo: true, color: 'blue' },
+      { id: 'est-2', codigo: 'ADJUDICACION', valor: 'Adjudicación', descripcion: 'Evento adjudicado a proveedor (Afecta: Sí)', activo: true, color: 'emerald' },
+      { id: 'est-3', codigo: 'PRESCINDIDO', valor: 'Prescindido', descripcion: 'Evento prescindido (Afecta: No)', activo: true, color: 'amber' },
+      { id: 'est-4', codigo: 'DESIERTO', valor: 'Desierto', descripcion: 'Evento desierto (Afecta: No)', activo: true, color: 'rose' },
     ]
   },
   {
@@ -131,13 +139,15 @@ export const INITIAL_CATALOGS: Catalog[] = [
     id: 'cat-modalidades',
     codigo: 'MODALIDAD_COMPRA',
     nombre: 'Modalidad de Compra',
-    descripcion: 'Modalidades de contratación pública según Ley de Contrataciones del Estado',
+    descripcion: 'Modalidades de contratación pública según Ley de Contrataciones y Normas del Organismo Judicial',
     esSistema: false,
     items: [
-      { id: 'mod-1', codigo: 'COMPRA_DIRECTA', valor: 'Compra Directa', descripcion: 'Montos menores a Q.90,000.00', activo: true },
-      { id: 'mod-2', codigo: 'COTIZACION', valor: 'Cotización Pública', descripcion: 'Montos entre Q.90,000.01 y Q.900,000.00', activo: true },
-      { id: 'mod-3', codigo: 'LICITACION', valor: 'Licitación Pública', descripcion: 'Montos mayores a Q.900,000.00', activo: true },
-      { id: 'mod-4', codigo: 'CONTRATO_ABIERTO', valor: 'Contrato Abierto', descripcion: 'Convenio marco con precios fijados por Minfin', activo: true },
+      { id: 'mod-bc', codigo: 'BAJA_CUANTIA', valor: 'Baja cuantía', descripcion: 'Orden 1: Montos de hasta Q.25,000.00', activo: true },
+      { id: 'mod-cd', codigo: 'COMPRA_DIRECTA', valor: 'Compra directa', descripcion: 'Orden 2: De Q.25,000.01 hasta Q.90,000.00', activo: true },
+      { id: 'mod-cot', codigo: 'COTIZACION', valor: 'Cotización', descripcion: 'Orden 3: De Q.90,000.01 hasta Q.900,000.00', activo: true },
+      { id: 'mod-lic', codigo: 'LICITACION', valor: 'Licitación', descripcion: 'Orden 4: Supera los Q.900,000.00', activo: true },
+      { id: 'mod-fr', codigo: 'FONDO_ROTATIVO', valor: 'Fondo rotativo', descripcion: 'Orden 5: Fondo privativo institucional para gastos menores y urgentes', activo: true },
+      { id: 'mod-ca', codigo: 'CONTRATO_ABIERTO', valor: 'Contrato Abierto', descripcion: 'Convenio marco con precios fijados por Minfin', activo: true },
     ]
   }
 ];

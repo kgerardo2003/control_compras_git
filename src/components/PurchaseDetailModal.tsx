@@ -149,11 +149,9 @@ export const PurchaseDetailModal: React.FC = () => {
                 }`}
               >
                 <Clock className="w-3.5 h-3.5" />
-                <span>Línea de Tiempo del Estatus</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                  activeTab === 'timeline' ? 'bg-slate-900 text-white' : 'bg-amber-100 text-amber-900'
-                }`}>
-                  {timelineEvents.length}
+                <span>Línea de Tiempo de Estatus</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badgeClass}`}>
+                  {selectedPurchase.estatusEvento}
                 </span>
               </button>
 
@@ -198,12 +196,19 @@ export const PurchaseDetailModal: React.FC = () => {
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Estatus del Evento
+                    Último Estatus
                   </span>
-                  <span className={`inline-flex items-center gap-1.5 mt-0.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${badgeClass}`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
-                    {selectedPurchase.estatusEvento}
-                  </span>
+                  <div className="flex items-center gap-1.5 mt-0.5 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('timeline')}
+                      title="Ver / Cambiar último estatus"
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${badgeClass} cursor-pointer hover:opacity-90 transition-opacity`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
+                      {selectedPurchase.estatusEvento}
+                    </button>
+                  </div>
                 </div>
                 <div className="text-right border-l border-slate-200 pl-3">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -229,23 +234,7 @@ export const PurchaseDetailModal: React.FC = () => {
 
             {/* Vista 1: Solo Línea de Tiempo / Tracking */}
             {activeTab === 'timeline' && (
-              <div className="space-y-4 pt-1">
-                <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                    <div>
-                      <span className="font-bold text-amber-950 block">
-                        Tracking Activo del Evento: NOG {selectedPurchase.nog} • Formulario F56-e: {selectedPurchase.f56e}
-                      </span>
-                      <span className="text-[11px] text-amber-800">
-                        {selectedPurchase.descripcion.length > 100 ? `${selectedPurchase.descripcion.slice(0, 100)}...` : selectedPurchase.descripcion}
-                      </span>
-                    </div>
-                  </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${badgeClass} shrink-0`}>
-                    {selectedPurchase.estatusEvento}
-                  </span>
-                </div>
+              <div className="pt-1">
                 <PurchaseStatusTimeline purchase={selectedPurchase} canEdit={canEdit} />
               </div>
             )}
@@ -479,6 +468,39 @@ export const PurchaseDetailModal: React.FC = () => {
                   <span className="block text-slate-500 italic mt-0.5">{modalidadLCE.fundamentoLegal}</span>
                 </div>
               </div>
+
+              {/* Afectación Presupuestaria IT */}
+              <div className="p-2.5 rounded-lg border border-blue-200 bg-blue-50/60 sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-blue-900 uppercase tracking-wider">
+                    Imputación Presupuestaria (Informática)
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    selectedPurchase.estadoPago === 'pagado'
+                      ? 'bg-purple-100 text-purple-900 border border-purple-200'
+                      : 'bg-amber-100 text-amber-900 border border-amber-200'
+                  }`}>
+                    {selectedPurchase.estadoPago === 'pagado' ? 'Pagado que Rebaja' : 'Comprometido Pendiente'}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Renglón Presupuestario:</span>
+                    <strong className="font-mono text-blue-950 font-bold">
+                      {selectedPurchase.renglonPresupuestario || '158'}
+                    </strong>
+                    {selectedPurchase.nombreRenglon && (
+                      <span className="text-slate-600 text-[11px] ml-1.5">({selectedPurchase.nombreRenglon})</span>
+                    )}
+                  </div>
+                  {selectedPurchase.grupoPresupuestario && (
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Grupo Presupuestario:</span>
+                      <strong className="font-bold text-slate-800">{selectedPurchase.grupoPresupuestario}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Ofertas Recibidas:
@@ -515,9 +537,39 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             )}
 
-            {/* Línea de Tiempo del Historial del Estatus del Evento (Tracking) */}
-            <div className="pt-2">
-              <PurchaseStatusTimeline purchase={selectedPurchase} canEdit={canEdit} />
+            {/* Tarjeta Resumen del Último Estatus */}
+            <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Último Estatus del Evento
+                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide ${badgeClass}`}>
+                      {selectedPurchase.estatusEvento}
+                    </span>
+                    {selectedPurchase.proveedorAdjudicado && selectedPurchase.estatusEvento === 'Adjudicación' && (
+                      <span className="text-xs text-slate-600">
+                        Adjudicado a: <strong className="text-slate-800">{selectedPurchase.proveedorAdjudicado}</strong>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('timeline')}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-xs transition-colors cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Ver Línea de Tiempo / Cambiar Estatus</span>
+                </button>
+              )}
             </div>
           </>
         )}

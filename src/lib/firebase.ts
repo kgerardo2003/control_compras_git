@@ -16,7 +16,7 @@ import {
   limit
 } from 'firebase/firestore';
 import firebaseConfigFile from '../../firebase-applet-config.json';
-import { PurchaseRecord, AuditLogEntry, Catalog, User } from '../types';
+import { PurchaseRecord, AuditLogEntry, Catalog, User, BudgetLineItem, BudgetModification } from '../types';
 
 export const FIREBASE_CONFIG = {
   apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || firebaseConfigFile.apiKey,
@@ -72,6 +72,8 @@ export const PURCHASES_COLLECTION = 'purchases';
 export const AUDIT_LOGS_COLLECTION = 'audit_logs';
 export const CATALOGS_COLLECTION = 'catalogs';
 export const USERS_COLLECTION = 'users';
+export const BUDGET_LINES_COLLECTION = 'budget_lines';
+export const BUDGET_MODIFICATIONS_COLLECTION = 'budget_modifications';
 
 // Función para limpiar campos con valor undefined recursivamente (Firestore no acepta undefined)
 export function cleanUndefined<T>(data: T): T {
@@ -342,4 +344,129 @@ export async function forceFetchAuditLogsFromServer(): Promise<AuditLogEntry[]> 
   items.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
   return items;
 }
+
+// ==========================================
+// OPERACIONES FIRESTORE PARA PRESUPUESTO
+// ==========================================
+
+export async function saveBudgetLineToFirestore(item: BudgetLineItem): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, BUDGET_LINES_COLLECTION, item.id);
+    await setDoc(docRef, cleanUndefined(item), { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error guardando renglón presupuestario en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function saveBatchBudgetLinesToFirestore(lines: BudgetLineItem[]): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    if (!lines || lines.length === 0) return { success: true, count: 0 };
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
+      const chunk = lines.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const l of chunk) {
+        const docRef = doc(db, BUDGET_LINES_COLLECTION, l.id);
+        batch.set(docRef, cleanUndefined(l), { merge: true });
+      }
+      await batch.commit();
+    }
+    return { success: true, count: lines.length };
+  } catch (err: any) {
+    console.error("Error guardando lote de renglones presupuestarios en Firestore:", err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
+export async function removeBudgetLineFromFirestore(lineId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, BUDGET_LINES_COLLECTION, lineId);
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error eliminando renglón presupuestario en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function saveBudgetModificationToFirestore(mod: BudgetModification): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, BUDGET_MODIFICATIONS_COLLECTION, mod.id);
+    await setDoc(docRef, cleanUndefined(mod), { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error guardando modificación presupuestaria en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function removeBudgetModificationFromFirestore(modId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, BUDGET_MODIFICATIONS_COLLECTION, modId);
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error eliminando modificación presupuestaria en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export function onBudgetLinesSnapshot(
+  onData: (lines: BudgetLineItem[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  try {
+    const colRef = collection(db, BUDGET_LINES_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: BudgetLineItem[] = [];
+        snapshot.forEach((d) => {
+          items.push(d.data() as BudgetLineItem);
+        });
+        items.sort((a, b) => a.renglonPresupuestario.localeCompare(b.renglonPresupuestario));
+        onData(items);
+      },
+      (err) => {
+        console.warn("Error en listener de renglones presupuestarios:", err);
+        onError?.(err);
+      }
+    );
+  } catch (err) {
+    console.warn("Excepción al iniciar listener de presupuesto:", err);
+    onError?.(err as Error);
+    return () => {};
+  }
+}
+
+export function onBudgetModificationsSnapshot(
+  onData: (mods: BudgetModification[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  try {
+    const colRef = collection(db, BUDGET_MODIFICATIONS_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: BudgetModification[] = [];
+        snapshot.forEach((d) => {
+          items.push(d.data() as BudgetModification);
+        });
+        items.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+        onData(items);
+      },
+      (err) => {
+        console.warn("Error en listener de modificaciones presupuestarias:", err);
+        onError?.(err);
+      }
+    );
+  } catch (err) {
+    console.warn("Excepción al iniciar listener de modificaciones:", err);
+    onError?.(err as Error);
+    return () => {};
+  }
+}
+
 

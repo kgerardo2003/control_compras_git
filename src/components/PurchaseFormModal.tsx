@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { EvaluacionGIT, AttachedDocument } from '../types';
 import { formatQuetzales, getModalidadCompraByMonto } from '../utils/formatters';
+import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { DocumentPreview } from './DocumentPreview';
 
 // Función para campo F56e tipo texto de 10 posiciones
@@ -59,7 +60,8 @@ export const PurchaseFormModal: React.FC = () => {
     addPurchase, 
     updatePurchase, 
     catalogs,
-    themeConfig
+    themeConfig,
+    budgetAvailability
   } = useApp();
 
   // Estados del Formulario (Validaciones de longitud y tipos requeridos)
@@ -80,6 +82,8 @@ export const PurchaseFormModal: React.FC = () => {
   const [cantidadOfertas, setCantidadOfertas] = useState<number>(0);
   const [monto, setMonto] = useState<number | ''>('');
   const [montoInput, setMontoInput] = useState<string>('');
+  const [renglonPresupuestario, setRenglonPresupuestario] = useState<string>('158');
+  const [estadoPago, setEstadoPago] = useState<'comprometido' | 'pagado'>('comprometido');
   const [evaluadoGIT, setEvaluadoGIT] = useState<EvaluacionGIT>('Sí');
   const [fechaDictamenGIT, setFechaDictamenGIT] = useState<string>('');
   const [fechaElaboracionOficioGIT, setFechaElaboracionOficioGIT] = useState<string>('');
@@ -153,6 +157,8 @@ export const PurchaseFormModal: React.FC = () => {
       setCantidadOfertas(purchaseToEdit.cantidadOfertas ?? 0);
       setMonto(purchaseToEdit.monto ?? '');
       setMontoInput(purchaseToEdit.monto !== undefined && purchaseToEdit.monto !== null && purchaseToEdit.monto !== '' ? formatMontoMask(purchaseToEdit.monto) : '');
+      setRenglonPresupuestario(purchaseToEdit.renglonPresupuestario || (budgetAvailability[0]?.renglonPresupuestario || '158'));
+      setEstadoPago(purchaseToEdit.estadoPago || 'comprometido');
       setEvaluadoGIT(purchaseToEdit.evaluadoGIT || 'Sí');
       setFechaDictamenGIT(purchaseToEdit.fechaDictamenGIT || '');
       setFechaElaboracionOficioGIT(purchaseToEdit.fechaElaboracionOficioGIT || '');
@@ -179,6 +185,8 @@ export const PurchaseFormModal: React.FC = () => {
       setFechaOfertas('');
       setCantidadOfertas(0);
       setMonto('');
+      setRenglonPresupuestario(budgetAvailability[0]?.renglonPresupuestario || '158');
+      setEstadoPago('comprometido');
       setEvaluadoGIT('Sí');
       setFechaDictamenGIT('');
       setFechaElaboracionOficioGIT('');
@@ -374,6 +382,8 @@ export const PurchaseFormModal: React.FC = () => {
 
     setIsSubmitting(true);
 
+    const selectedLine = budgetAvailability.find(l => l.renglonPresupuestario === renglonPresupuestario);
+
     const recordData = {
       descripcion: descripcion.trim(),
       f56e: f56e.trim(),
@@ -387,6 +397,10 @@ export const PurchaseFormModal: React.FC = () => {
       fechaOfertas: fechaOfertas || '',
       cantidadOfertas: Number(cantidadOfertas),
       monto: Number(monto),
+      renglonPresupuestario,
+      grupoPresupuestario: selectedLine?.grupoPresupuestario || '',
+      nombreRenglon: selectedLine?.nombreRenglon || '',
+      estadoPago,
       evaluadoGIT,
       fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
       fechaElaboracionOficioGIT: evaluadoGIT === 'Sí' ? fechaElaboracionOficioGIT : '',
@@ -874,6 +888,76 @@ export const PurchaseFormModal: React.FC = () => {
                   <span className="block text-[9px] text-slate-400 italic">{getModalidadCompraByMonto(monto).fundamentoLegal}</span>
                 </div>
               </div>
+
+              {/* Renglón Presupuestario Afectado (Integración Financiera IT) */}
+              <div className="mt-3 p-3 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="select-purchase-renglon" className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                    <span>Renglón Presupuestario Afectado (Informática) *</span>
+                  </label>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-200">
+                    Afectación en Tiempo Real
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="sm:col-span-2">
+                    <select
+                      id="select-purchase-renglon"
+                      value={renglonPresupuestario}
+                      onChange={(e) => setRenglonPresupuestario(e.target.value)}
+                      className="w-full p-2 text-xs font-semibold bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
+                    >
+                      {budgetAvailability.map((line) => (
+                        <option key={line.id} value={line.renglonPresupuestario}>
+                          Renglón {line.renglonPresupuestario} - {line.nombreRenglon} (Disponible: Q. {line.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 })})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <select
+                      value={estadoPago}
+                      onChange={(e) => setEstadoPago(e.target.value as 'comprometido' | 'pagado')}
+                      className="w-full p-2 text-xs font-semibold bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
+                    >
+                      <option value="comprometido">Comprometido Pendiente</option>
+                      <option value="pagado">Pagado que Rebaja</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Resumen del Renglón Seleccionado y Advertencia de Disponibilidad */}
+                {(() => {
+                  const line = budgetAvailability.find(l => l.renglonPresupuestario === renglonPresupuestario);
+                  if (!line) return null;
+                  const currentMonto = Number(monto) || 0;
+                  const exceeds = currentMonto > line.disponibleProyectado;
+
+                  return (
+                    <div className="pt-1.5 text-[11px] space-y-1">
+                      <div className="flex flex-wrap items-center justify-between text-slate-600 gap-1">
+                        <span>Grupo: <strong>{line.grupoPresupuestario}</strong></span>
+                        <span>
+                          Disponible Proyectado: <strong className={`font-mono ${line.disponibleProyectado >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            Q. {line.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+                          </strong>
+                        </span>
+                      </div>
+
+                      {exceeds && (
+                        <div className="p-2 rounded-lg bg-amber-100 border border-amber-300 text-amber-900 font-medium flex items-center gap-1.5 text-[10px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+                          <span>
+                            Atención: El monto estimado (Q. {currentMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}) supera el disponible proyectado de este renglón. Deberá tramitar una modificación presupuestaria de ampliación o transferencia.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
 
             {/* 4. CANTIDAD DE OFERTAS */}
@@ -978,27 +1062,53 @@ export const PurchaseFormModal: React.FC = () => {
               </div>
             </div>
 
-            {/* 6. ESTATUS DEL EVENTO */}
-            <div className="pt-2 border-t border-slate-200">
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                Estatus del Evento <span className="text-rose-600">*</span>
-              </label>
+            {/* 6. ESTATUS DEL EVENTO Y AFECTACIÓN DE DISPONIBILIDAD */}
+            <div className="pt-2 border-t border-slate-200 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-800">
+                  Estatus del Evento <span className="text-rose-600">*</span>
+                </label>
+                {/* Badge institucional de afectación presupuestaria (Image 3) */}
+                {doesStatusAffectBudget(estatusEvento) ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Afecta Disponibilidad: Sí
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                    <X className="w-3 h-3 text-slate-500" />
+                    Afecta Disponibilidad: No
+                  </span>
+                )}
+              </div>
+
               <select
                 id="select-purchase-estatus-evento"
                 value={estatusEvento}
-                onChange={(e) => setEstatusEvento(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEstatusEvento(val);
+                  if (val === 'Pagada') {
+                    setEstadoPago('pagado');
+                  }
+                }}
                 className="w-full p-2 text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800"
               >
                 {statusOptions.map((opt) => (
                   <option key={opt} value={opt}>
-                    {opt}
+                    {opt} {doesStatusAffectBudget(opt) ? '• (Afecta: Sí)' : '• (Afecta: No)'}
                   </option>
                 ))}
               </select>
+              <p className="text-[10px] text-slate-400">
+                {doesStatusAffectBudget(estatusEvento) 
+                  ? 'Este evento consume o compromete saldo del renglón presupuestario seleccionado.'
+                  : 'Este evento está anulado/rechazado y no descuenta fondos de la disponibilidad del renglón.'}
+              </p>
             </div>
 
             {/* 7. SI EL EVENTO YA SE ADJUDICÓ: FECHA DE ADJUDICACIÓN Y PROVEEDOR */}
-            {estatusEvento === 'Adjudicación' && (
+            {(estatusEvento === 'Adjudicación' || estatusEvento === 'Adjudicada') && (
               <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-300 space-y-3">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
                   <Award className="w-4 h-4 text-amber-700" />

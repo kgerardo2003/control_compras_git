@@ -14,6 +14,7 @@ import { CatalogsView } from './components/CatalogsView';
 import { AuditLogView } from './components/AuditLogView';
 import { UsersView } from './components/UsersView';
 import { ReportsView } from './components/ReportsView';
+import { BudgetView } from './components/budget/BudgetView';
 import { CustomizationView } from './components/CustomizationView';
 import { EmailConfigView } from './components/EmailConfigView';
 import { LoginModal } from './components/LoginModal';
@@ -69,6 +70,7 @@ const AppContent: React.FC = () => {
           <div className="max-w-7xl mx-auto w-full">
             {activeTab === 'dashboard' && <DashboardView />}
             {activeTab === 'compras' && <PurchasesView />}
+            {activeTab === 'presupuesto' && <BudgetView />}
             {activeTab === 'reportes' && <ReportsView />}
             
             {/* Control & Auditoría */}

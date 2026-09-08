@@ -50,6 +50,16 @@ service cloud.firestore {
       allow write: if isValidId(userId);
     }
 
+    // Reglas para Renglones Presupuestarios y Matriz de Disponibilidad
+    match /budget_lines/{lineId} {
+      allow read, write: if true;
+    }
+
+    // Reglas para Modificaciones Presupuestarias
+    match /budget_modifications/{modId} {
+      allow read, write: if true;
+    }
+
     // Default deny all other paths
     match /{document=**} {
       allow read, write: if false;

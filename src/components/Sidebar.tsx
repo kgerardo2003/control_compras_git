@@ -13,7 +13,8 @@ import {
   X,
   Lock,
   RotateCcw,
-  KeyRound
+  KeyRound,
+  DollarSign
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { OJLogo } from './OJLogo';
@@ -33,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
     setPurchaseToEdit,
     resetToDemoData,
     purchases,
+    budgetAvailability,
     themeConfig,
     firestoreStatus
   } = useApp();
@@ -156,6 +158,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
             </div>
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeConfig.sidebarBadge} font-mono`}>
               {purchases.length}
+            </span>
+          </button>
+
+          {/* Presupuesto IT (Finanzas & Disponibilidad) */}
+          <button
+            id="nav-tab-presupuesto"
+            type="button"
+            onClick={() => handleNavClick('presupuesto')}
+            className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'presupuesto'
+                ? themeConfig.sidebarActive
+                : `text-slate-300 ${themeConfig.sidebarHover}`
+            }`}
+          >
+            <div className="flex items-center">
+              <DollarSign className={`w-4 h-4 mr-3 ${activeTab === 'presupuesto' ? themeConfig.sidebarIconActive : 'text-slate-400'}`} />
+              <span>Presupuesto IT</span>
+            </div>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeConfig.sidebarBadge} font-mono`}>
+              {budgetAvailability.length}
             </span>
           </button>
 

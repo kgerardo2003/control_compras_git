@@ -14,7 +14,9 @@ import {
   ToastItem,
   GmailConfig,
   StatusTimelineEvent,
-  TimelineEventState
+  TimelineEventState,
+  BudgetLineItem,
+  BudgetModification
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -23,6 +25,11 @@ import {
   INITIAL_AUDIT_LOGS, 
   INITIAL_NOTIFICATIONS 
 } from '../data/initialData';
+import { 
+  INITIAL_BUDGET_LINES, 
+  INITIAL_BUDGET_MODIFICATIONS 
+} from '../data/initialBudgetData';
+import { calculateBudgetAvailability } from '../utils/budgetCalculations';
 import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
 import { ensureValidDocument } from '../utils/documentUtils';
 import { buildUserWelcomeEmail } from '../utils/userEmailTemplate';
@@ -47,7 +54,14 @@ import {
   saveUserToFirestore,
   removeUserFromFirestore,
   seedInitialDataIfEmpty,
-  forceFetchPurchasesFromServer
+  forceFetchPurchasesFromServer,
+  saveBudgetLineToFirestore,
+  saveBatchBudgetLinesToFirestore,
+  removeBudgetLineFromFirestore,
+  saveBudgetModificationToFirestore,
+  removeBudgetModificationFromFirestore,
+  onBudgetLinesSnapshot,
+  onBudgetModificationsSnapshot
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit } from 'firebase/firestore';
 
@@ -164,6 +178,21 @@ interface AppContextType {
   testGmailConnection: (testRecipient: string, overrideConfig?: Partial<GmailConfig>) => Promise<{ success: boolean; message: string }>;
   sendEmailNotification: (params: { to?: string[]; subject: string; html?: string; text?: string }) => Promise<{ success: boolean; message?: string }>;
   sendUserWelcomeEmail: (user: { username: string; email: string; nombreCompleto?: string; rol?: string }, tempPassword?: string) => Promise<{ success: boolean; message: string }>;
+
+  // MÓDULO FINANCIERO Y PRESUPUESTARIO
+  budgetLines: BudgetLineItem[];
+  budgetModifications: BudgetModification[];
+  budgetAvailability: BudgetLineItem[];
+  addBudgetLine: (data: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>) => BudgetLineItem;
+  updateBudgetLine: (id: string, data: Partial<BudgetLineItem>) => void;
+  deleteBudgetLine: (id: string) => void;
+  importBudgetLines: (lines: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>[], replaceAll?: boolean) => Promise<{ count: number }>;
+  addBudgetModification: (mod: Omit<BudgetModification, 'id' | 'correlativo' | 'fechaCreacion'>) => BudgetModification;
+  updateBudgetModification: (id: string, data: Partial<BudgetModification>) => void;
+  deleteBudgetModification: (id: string) => void;
+  approveBudgetModification: (id: string) => void;
+  rejectBudgetModification: (id: string) => void;
+  togglePurchasePaymentState: (purchaseId: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -178,6 +207,8 @@ const STORAGE_KEYS = {
   THEME: 'oj_git_theme_v1',
   LOGO: 'oj_git_logo_v1',
   GMAIL: 'oj_git_gmail_v1',
+  BUDGET_LINES: 'oj_git_budget_lines_v1',
+  BUDGET_MODIFICATIONS: 'oj_git_budget_mods_v1',
 };
 
 export const DEFAULT_GMAIL_CONFIG: GmailConfig = {
@@ -292,6 +323,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return INITIAL_NOTIFICATIONS;
+  });
+
+  const [budgetLines, setBudgetLines] = useState<BudgetLineItem[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.BUDGET_LINES);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.warn("Error leyendo budgetLines de localStorage:", e);
+      }
+    }
+    return INITIAL_BUDGET_LINES;
+  });
+
+  const [budgetModifications, setBudgetModifications] = useState<BudgetModification[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.BUDGET_MODIFICATIONS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.warn("Error leyendo budgetModifications de localStorage:", e);
+      }
+    }
+    return INITIAL_BUDGET_MODIFICATIONS;
   });
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -422,11 +479,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn("No se pudo iniciar listener de usuarios:", err);
     }
 
+    // Suscripción reactiva a Renglones Presupuestarios (Budget Lines)
+    let unsubBudgetLines: (() => void) | undefined;
+    try {
+      unsubBudgetLines = onBudgetLinesSnapshot((cloudLines) => {
+        if (cloudLines && cloudLines.length > 0) {
+          setBudgetLines(cloudLines);
+          localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(cloudLines));
+        }
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de renglones presupuestarios:", err);
+    }
+
+    // Suscripción reactiva a Modificaciones Presupuestarias
+    let unsubBudgetMods: (() => void) | undefined;
+    try {
+      unsubBudgetMods = onBudgetModificationsSnapshot((cloudMods) => {
+        if (cloudMods && cloudMods.length > 0) {
+          setBudgetModifications(cloudMods);
+          localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(cloudMods));
+        }
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de modificaciones presupuestarias:", err);
+    }
+
     return () => {
       if (unsubPurchases) unsubPurchases();
       if (unsubLogs) unsubLogs();
       if (unsubCatalogs) unsubCatalogs();
       if (unsubUsers) unsubUsers();
+      if (unsubBudgetLines) unsubBudgetLines();
+      if (unsubBudgetMods) unsubBudgetMods();
     };
   }, []);
 
@@ -1187,7 +1272,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Detectar automáticamente cambios en campos y generar hitos sellados con fecha/hora actual
     const autoDetected = detectAutomaticEventsOnUpdate(prev, data, creator);
     if (autoDetected.length > 0) {
-      updatedEvents = [...updatedEvents, ...autoDetected];
+      // Evitar duplicar eventos si ya se pasaron explícitamente en data.historialEstatus
+      const filteredAuto = autoDetected.filter(autoEv => 
+        !updatedEvents.some(existing => 
+          existing.titulo.toLowerCase().trim() === autoEv.titulo.toLowerCase().trim() && 
+          existing.fecha === autoEv.fecha
+        )
+      );
+      if (filteredAuto.length > 0) {
+        updatedEvents = [...updatedEvents, ...filteredAuto];
+      }
     }
 
     const updated: PurchaseRecord = {
@@ -1555,12 +1649,298 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification(chosen);
   };
 
+  // MÉTODOS DEL MÓDULO FINANCIERO Y PRESUPUESTARIO
+  const budgetAvailability = calculateBudgetAvailability(budgetLines, budgetModifications, purchases);
+
+  const addBudgetLine = (data: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>): BudgetLineItem => {
+    const newItem: BudgetLineItem = {
+      ...data,
+      id: `bl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      creadoPor: currentUser?.nombreCompleto || 'Sistema',
+      fechaCreacion: new Date().toISOString()
+    };
+    const updated = [...budgetLines, newItem];
+    setBudgetLines(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(updated));
+    saveBudgetLineToFirestore(newItem);
+
+    logAudit(
+      'CREAR_RENGLON',
+      'Presupuesto',
+      `Creación de nuevo renglón presupuestario: ${newItem.renglonPresupuestario} - ${newItem.nombreRenglon} (Techo Inicial: Q. ${newItem.presupuestoInicial.toLocaleString('es-GT', { minimumFractionDigits: 2 })})`,
+      newItem.id,
+      undefined,
+      newItem
+    );
+    showToast({
+      title: 'Renglón Creado',
+      message: `El renglón ${newItem.renglonPresupuestario} se registró exitosamente en el presupuesto GIT.`,
+      type: 'exito'
+    });
+    return newItem;
+  };
+
+  const updateBudgetLine = (id: string, data: Partial<BudgetLineItem>) => {
+    const prevItem = budgetLines.find(l => l.id === id);
+    const updated = budgetLines.map(line => {
+      if (line.id === id) {
+        const item = { ...line, ...data };
+        saveBudgetLineToFirestore(item);
+        return item;
+      }
+      return line;
+    });
+    setBudgetLines(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(updated));
+
+    logAudit(
+      'EDITAR_RENGLON',
+      'Presupuesto',
+      `Actualización del renglón presupuestario: ${prevItem?.renglonPresupuestario || id}`,
+      id,
+      prevItem,
+      data
+    );
+    showToast({
+      title: 'Renglón Actualizado',
+      message: `Cambios guardados en el renglón ${prevItem?.renglonPresupuestario || ''}.`,
+      type: 'info'
+    });
+  };
+
+  const deleteBudgetLine = (id: string) => {
+    const item = budgetLines.find(l => l.id === id);
+    const updated = budgetLines.filter(l => l.id !== id);
+    setBudgetLines(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(updated));
+    removeBudgetLineFromFirestore(id);
+
+    logAudit(
+      'ELIMINAR_RENGLON',
+      'Presupuesto',
+      `Eliminación del renglón presupuestario: ${item?.renglonPresupuestario} - ${item?.nombreRenglon}`,
+      id,
+      item,
+      undefined
+    );
+    showToast({
+      title: 'Renglón Eliminado',
+      message: `El renglón ${item?.renglonPresupuestario} fue removido del presupuesto.`,
+      type: 'advertencia'
+    });
+  };
+
+  const importBudgetLines = async (
+    lines: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>[],
+    replaceAll: boolean = false
+  ): Promise<{ count: number }> => {
+    const formatted: BudgetLineItem[] = lines.map((l, idx) => ({
+      ...l,
+      id: `bl-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      creadoPor: currentUser?.nombreCompleto || 'Importación Excel',
+      fechaCreacion: new Date().toISOString()
+    }));
+
+    let resultList: BudgetLineItem[];
+    if (replaceAll) {
+      resultList = formatted;
+    } else {
+      // Reemplaza los existentes con mismo renglonPresupuestario o los agrega
+      const map = new Map<string, BudgetLineItem>();
+      budgetLines.forEach(bl => map.set(bl.renglonPresupuestario, bl));
+      formatted.forEach(fl => map.set(fl.renglonPresupuestario, fl));
+      resultList = Array.from(map.values());
+    }
+
+    setBudgetLines(resultList);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(resultList));
+    await saveBatchBudgetLinesToFirestore(resultList);
+
+    logAudit(
+      'IMPORTAR_PRESUPUESTO',
+      'Presupuesto',
+      `Importación masiva de presupuesto desde archivo Excel (${formatted.length} renglones procesados, modo: ${replaceAll ? 'Reemplazo total' : 'Actualización/Fusión'}).`
+    );
+
+    addNotification({
+      tipo: 'exito',
+      titulo: 'Presupuesto Actualizado vía Excel',
+      mensaje: `Se procesaron exitosamente ${formatted.length} renglones presupuestarios de la Gerencia de Informática.`,
+      categoria: 'sistema'
+    });
+
+    showToast({
+      title: 'Presupuesto Importado',
+      message: `Se importaron ${formatted.length} renglones presupuestarios correctamente.`,
+      type: 'exito'
+    });
+
+    return { count: formatted.length };
+  };
+
+  const addBudgetModification = (data: Omit<BudgetModification, 'id' | 'correlativo' | 'fechaCreacion'>): BudgetModification => {
+    const correlativo = `MOD-2026-${String(budgetModifications.length + 1).padStart(3, '0')}`;
+    const newMod: BudgetModification = {
+      ...data,
+      id: `mod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      correlativo,
+      creadoPor: currentUser?.nombreCompleto || 'Sistema',
+      fechaCreacion: new Date().toISOString()
+    };
+
+    const updated = [newMod, ...budgetModifications];
+    setBudgetModifications(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(updated));
+    saveBudgetModificationToFirestore(newMod);
+
+    logAudit(
+      'CREAR_MODIFICACION_PRESUPUESTARIA',
+      'Presupuesto',
+      `Registro de modificación presupuestaria ${correlativo} (${newMod.tipo.toUpperCase()}) por Q. ${newMod.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} en el renglón ${newMod.renglonPresupuestario}. Estatus: ${newMod.estado}`,
+      newMod.id,
+      undefined,
+      newMod
+    );
+
+    showToast({
+      title: 'Modificación Registrada',
+      message: `${correlativo} creada exitosamente. ${newMod.estado === 'aprobada' ? 'Afectó disponibilidades de inmediato.' : 'Pendiente de aprobación.'}`,
+      type: newMod.estado === 'aprobada' ? 'exito' : 'info'
+    });
+
+    return newMod;
+  };
+
+  const updateBudgetModification = (id: string, data: Partial<BudgetModification>) => {
+    const prev = budgetModifications.find(m => m.id === id);
+    const updated = budgetModifications.map(m => {
+      if (m.id === id) {
+        const item = { ...m, ...data };
+        saveBudgetModificationToFirestore(item);
+        return item;
+      }
+      return m;
+    });
+    setBudgetModifications(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(updated));
+
+    logAudit(
+      'CREAR_MODIFICACION_PRESUPUESTARIA',
+      'Presupuesto',
+      `Actualización de modificación presupuestaria: ${prev?.correlativo || id}`,
+      id,
+      prev,
+      data
+    );
+  };
+
+  const deleteBudgetModification = (id: string) => {
+    const item = budgetModifications.find(m => m.id === id);
+    const updated = budgetModifications.filter(m => m.id !== id);
+    setBudgetModifications(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(updated));
+    removeBudgetModificationFromFirestore(id);
+
+    showToast({
+      title: 'Modificación Eliminada',
+      message: `Se eliminó la modificación presupuestaria ${item?.correlativo || id}.`,
+      type: 'advertencia'
+    });
+  };
+
+  const approveBudgetModification = (id: string) => {
+    const mod = budgetModifications.find(m => m.id === id);
+    if (!mod) return;
+
+    const updated = budgetModifications.map(m => {
+      if (m.id === id) {
+        const approved: BudgetModification = {
+          ...m,
+          estado: 'aprobada',
+          aprobadoPor: currentUser?.nombreCompleto || 'Dirección Financiera DAF',
+          fechaAprobacion: new Date().toISOString().slice(0, 10)
+        };
+        saveBudgetModificationToFirestore(approved);
+        return approved;
+      }
+      return m;
+    });
+    setBudgetModifications(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(updated));
+
+    logAudit(
+      'APROBAR_MODIFICACION_PRESUPUESTARIA',
+      'Presupuesto',
+      `Aprobación formal de la modificación presupuestaria ${mod.correlativo} por monto de Q. ${mod.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}. Afectó automáticamente el presupuesto vigente y la disponibilidad.`,
+      id
+    );
+
+    addNotification({
+      tipo: 'exito',
+      titulo: `Modificación Aprobada: ${mod.correlativo}`,
+      mensaje: `La modificación presupuestaria fue aprobada e impactó positivamente/negativamente el renglón ${mod.renglonPresupuestario}.`,
+      categoria: 'sistema'
+    });
+
+    showToast({
+      title: 'Modificación Aprobada',
+      message: `${mod.correlativo} aprobada. Las disponibilidades se recalcularon automáticamente.`,
+      type: 'exito'
+    });
+  };
+
+  const rejectBudgetModification = (id: string) => {
+    const mod = budgetModifications.find(m => m.id === id);
+    if (!mod) return;
+
+    const updated = budgetModifications.map(m => {
+      if (m.id === id) {
+        const rejected: BudgetModification = {
+          ...m,
+          estado: 'rechazada'
+        };
+        saveBudgetModificationToFirestore(rejected);
+        return rejected;
+      }
+      return m;
+    });
+    setBudgetModifications(updated);
+    localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(updated));
+
+    showToast({
+      title: 'Modificación Rechazada',
+      message: `${mod.correlativo} ha sido marcada como rechazada.`,
+      type: 'advertencia'
+    });
+  };
+
+  const togglePurchasePaymentState = (purchaseId: string) => {
+    const purchase = purchases.find(p => p.id === purchaseId);
+    if (!purchase) return;
+
+    const nuevoEstado = purchase.estadoPago === 'pagado' ? 'comprometido' : 'pagado';
+    const nuevoMontoPagado = nuevoEstado === 'pagado' ? (purchase.montoPagado || purchase.monto) : 0;
+
+    updatePurchase(purchaseId, {
+      estadoPago: nuevoEstado,
+      montoPagado: nuevoMontoPagado
+    });
+
+    showToast({
+      title: nuevoEstado === 'pagado' ? 'Compra Marcada como Pagada' : 'Compra en Comprometido Pendiente',
+      message: `La adquisición ${purchase.nogGuatecompras || purchase.id} ahora rebaja en Pagado (${nuevoEstado === 'pagado' ? 'Pagado que Rebaja' : 'Comprometido Pendiente'}).`,
+      type: 'info'
+    });
+  };
+
   const resetToDemoData = () => {
     setUsers(INITIAL_USERS);
     setPurchases(INITIAL_PURCHASES);
     setCatalogs(INITIAL_CATALOGS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
     setNotifications(INITIAL_NOTIFICATIONS);
+    setBudgetLines(INITIAL_BUDGET_LINES);
+    setBudgetModifications(INITIAL_BUDGET_MODIFICATIONS);
     setCurrentUser(INITIAL_USERS[0]);
     localStorage.clear();
     logAudit('RESTAURAR_DATOS', 'Sistema', 'Restauración completa de los datos de demostración del sistema.');
@@ -1636,6 +2016,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         testGmailConnection,
         sendEmailNotification,
         sendUserWelcomeEmail,
+        budgetLines,
+        budgetModifications,
+        budgetAvailability,
+        addBudgetLine,
+        updateBudgetLine,
+        deleteBudgetLine,
+        importBudgetLines,
+        addBudgetModification,
+        updateBudgetModification,
+        deleteBudgetModification,
+        approveBudgetModification,
+        rejectBudgetModification,
+        togglePurchasePaymentState,
       }}
     >
       {children}
