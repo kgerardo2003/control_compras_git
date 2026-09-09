@@ -40,7 +40,8 @@ import {
   HelpCircle,
   Eye,
   RefreshCw,
-  BookOpen
+  BookOpen,
+  Calculator
 } from 'lucide-react';
 
 type BudgetSubTab = 'matriz' | 'catalogoOficial' | 'modificaciones' | 'estadisticas' | 'compras' | 'reportes';
@@ -174,15 +175,15 @@ export const BudgetView: React.FC = () => {
     };
   }, [purchases]);
 
-  // Totales consolidados
+  // Totales consolidados de la matriz institucional completa
   const totals = useMemo(() => {
-    const totalInicial = budgetAvailability.reduce((s, l) => s + (l.presupuestoInicial || 0), 0);
-    const totalModificaciones = budgetAvailability.reduce((s, l) => s + (l.modificacionesAprobadas || 0), 0);
-    const totalVigente = budgetAvailability.reduce((s, l) => s + (l.presupuestoVigente || 0), 0);
-    const totalPagado = budgetAvailability.reduce((s, l) => s + (l.pagadoQueRebaja || 0), 0);
-    const totalDisponibleReal = budgetAvailability.reduce((s, l) => s + (l.disponibleReal || 0), 0);
-    const totalComprometido = budgetAvailability.reduce((s, l) => s + (l.comprometidoPendiente || 0), 0);
-    const totalDisponibleProyectado = budgetAvailability.reduce((s, l) => s + (l.disponibleProyectado || 0), 0);
+    const totalInicial = budgetAvailability.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
+    const totalModificaciones = budgetAvailability.reduce((s, l) => s + (Number(l.modificacionesAprobadas) || 0), 0);
+    const totalVigente = budgetAvailability.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
+    const totalPagado = budgetAvailability.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
+    const totalDisponibleReal = budgetAvailability.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
+    const totalComprometido = budgetAvailability.reduce((s, l) => s + (Number(l.comprometidoPendiente) || 0), 0);
+    const totalDisponibleProyectado = budgetAvailability.reduce((s, l) => s + (Number(l.disponibleProyectado) || 0), 0);
     
     const totalAfectado = totalPagado + totalComprometido;
     const porcentajeGlobal = totalVigente > 0 ? (totalAfectado / totalVigente) * 100 : 0;
@@ -192,6 +193,7 @@ export const BudgetView: React.FC = () => {
     const sinDisponibilidadCount = budgetAvailability.filter(l => l.estatusDisponibilidad === 'Sin Disponibilidad').length;
 
     return {
+      count: budgetAvailability.length,
       totalInicial,
       totalModificaciones,
       totalVigente,
@@ -205,6 +207,39 @@ export const BudgetView: React.FC = () => {
       sinDisponibilidadCount
     };
   }, [budgetAvailability]);
+
+  // Totales de las líneas actualmente filtradas y visibles en la tabla
+  const filteredTotals = useMemo(() => {
+    const totalInicial = filteredLines.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
+    const totalModificaciones = filteredLines.reduce((s, l) => s + (Number(l.modificacionesAprobadas) || 0), 0);
+    const totalVigente = filteredLines.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
+    const totalPagado = filteredLines.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
+    const totalDisponibleReal = filteredLines.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
+    const totalComprometido = filteredLines.reduce((s, l) => s + (Number(l.comprometidoPendiente) || 0), 0);
+    const totalDisponibleProyectado = filteredLines.reduce((s, l) => s + (Number(l.disponibleProyectado) || 0), 0);
+    
+    const totalAfectado = totalPagado + totalComprometido;
+    const porcentajeGlobal = totalVigente > 0 ? (totalAfectado / totalVigente) * 100 : 0;
+
+    const conDisponibilidadCount = filteredLines.filter(l => l.estatusDisponibilidad === 'Con Disponibilidad').length;
+    const alertaCount = filteredLines.filter(l => l.estatusDisponibilidad === 'Alerta Disponibilidad Baja').length;
+    const sinDisponibilidadCount = filteredLines.filter(l => l.estatusDisponibilidad === 'Sin Disponibilidad').length;
+
+    return {
+      count: filteredLines.length,
+      totalInicial,
+      totalModificaciones,
+      totalVigente,
+      totalPagado,
+      totalDisponibleReal,
+      totalComprometido,
+      totalDisponibleProyectado,
+      porcentajeGlobal,
+      conDisponibilidadCount,
+      alertaCount,
+      sinDisponibilidadCount
+    };
+  }, [filteredLines]);
 
   // Estadísticas por Grupo
   const groupStats = useMemo(() => {
@@ -362,11 +397,17 @@ export const BudgetView: React.FC = () => {
 
         {/* Presupuesto Vigente */}
         <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/30 shadow-2xs">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-900">Presupuesto Vigente</div>
-          <div className="text-sm sm:text-base font-black text-blue-950 font-mono mt-1 truncate" title={formatCurrency(totals.totalVigente)}>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-900 flex items-center justify-between">
+            <span>Presupuesto Vigente</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">Col. 6</span>
+          </div>
+          <div className="text-sm sm:text-base font-black text-blue-950 font-mono mt-1 truncate" title={`Total Vigente: ${formatCurrency(totals.totalVigente)} (Suma de toda la columna 6)`}>
             {formatCurrency(totals.totalVigente)}
           </div>
-          <div className="text-[10px] text-blue-700 mt-1 font-medium">Techo actual consolidado</div>
+          <div className="text-[10px] text-blue-700 mt-1 font-medium flex items-center justify-between">
+            <span>Σ Columna Vigente</span>
+            <span title="Inicial + Modificaciones Aprobadas">Inicial ± Mods</span>
+          </div>
         </div>
 
         {/* Pagado que Rebaja */}
@@ -553,6 +594,35 @@ export const BudgetView: React.FC = () => {
             </div>
           </div>
 
+          {/* Banner de Verificación y Regla de Cálculo Institucional */}
+          <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-slate-50 border border-blue-200/80 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+            <div className="flex items-center gap-2.5 text-blue-950 font-medium">
+              <div className="p-1.5 rounded-lg bg-blue-600 text-white shrink-0 shadow-2xs">
+                <Calculator className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-bold text-blue-950">Fórmula de Cálculo Oficial:</span>{' '}
+                <span className="text-blue-900 font-medium">
+                  <strong>Presupuesto Vigente (Col. 6)</strong> = Presupuesto Inicial (Col. 4) ± Modificaciones Aprobadas (Col. 5)
+                </span>
+                <span className="mx-2 text-blue-400">|</span>
+                <span className="text-blue-800 font-medium">
+                  <strong>Total Vigente</strong> = Sumatoria de toda la Columna Vigente
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] font-mono">
+              <span className="px-2.5 py-1 rounded-md bg-white border border-blue-200 text-blue-950 font-bold shadow-2xs">
+                Total Vigente: {formatCurrency(totals.totalVigente)}
+              </span>
+              <span className="text-slate-400 text-xs hidden sm:inline">=</span>
+              <span className="px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-700 font-semibold shadow-2xs hidden sm:inline">
+                {formatCurrency(totals.totalInicial)} {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
+              </span>
+            </div>
+          </div>
+
           {/* Tabla de la Matriz con las 12 Columnas Requeridas */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
@@ -563,8 +633,8 @@ export const BudgetView: React.FC = () => {
                     <th className="px-3 py-3 whitespace-nowrap text-center">2. Renglón</th>
                     <th className="px-3.5 py-3 whitespace-nowrap min-w-[180px]">3. Nombre del Renglón</th>
                     <th className="px-3 py-3 text-right whitespace-nowrap">4. Presupuesto Inicial</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap">5. Modif. Aprobadas</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap bg-blue-50/50 text-blue-950">6. Presupuesto Vigente</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap" title="Modificaciones Aprobadas por DAF: Ampliaciones (+) o Disminuciones (-)">5. Modif. Aprobadas (±)</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap bg-blue-50/70 text-blue-950 border-x border-blue-200/60 font-black" title="Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas">6. Presupuesto Vigente</th>
                     <th className="px-3 py-3 text-right whitespace-nowrap text-blue-800">7. Pagado Rebaja</th>
                     <th className="px-3 py-3 text-right whitespace-nowrap">8. Disponible Real</th>
                     <th className="px-3 py-3 text-right whitespace-nowrap text-amber-800">9. Comprometido Pendiente</th>
@@ -737,43 +807,234 @@ export const BudgetView: React.FC = () => {
                   )}
                 </tbody>
 
-                {/* Pie de Totales Oficiales */}
+                {/* Pie de Totales Oficiales de la Matriz */}
                 <tfoot className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
-                  <tr>
-                    <td colSpan={3} className="px-3.5 py-3 text-right font-extrabold uppercase">
-                      Totales Consolidados Gerencia de Informática:
+                  {/* Si hay filtros activos, mostrar primero el Subtotal de los renglones filtrados */}
+                  {filteredLines.length !== budgetAvailability.length && (
+                    <tr className="bg-amber-50/70 border-b border-amber-200">
+                      <td colSpan={3} className="px-3.5 py-3 text-right font-black uppercase text-amber-900 tracking-wider">
+                        Subtotal Renglones Filtrados ({filteredTotals.count} de {totals.count}):
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
+                        {formatCurrency(filteredTotals.totalInicial)}
+                      </td>
+                      <td className={`px-3 py-3 text-right font-mono font-bold whitespace-nowrap ${filteredTotals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {filteredTotals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(filteredTotals.totalModificaciones)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-blue-100/60 text-blue-950">
+                        {formatCurrency(filteredTotals.totalVigente)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold text-blue-800 whitespace-nowrap">
+                        {formatCurrency(filteredTotals.totalPagado)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap text-slate-900">
+                        {formatCurrency(filteredTotals.totalDisponibleReal)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
+                        {formatCurrency(filteredTotals.totalComprometido)}
+                      </td>
+                      <td className={`px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-emerald-100/60 ${filteredTotals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
+                        {formatCurrency(filteredTotals.totalDisponibleProyectado)}
+                      </td>
+                      <td className="px-3 py-3 text-center whitespace-nowrap">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <span className="font-mono font-bold text-xs text-slate-900">
+                            {filteredTotals.porcentajeGlobal.toFixed(1)}%
+                          </span>
+                          <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${
+                                filteredTotals.porcentajeGlobal > 85 ? 'bg-red-500' : 
+                                filteredTotals.porcentajeGlobal > 70 ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(0, filteredTotals.porcentajeGlobal))}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center whitespace-nowrap">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            {filteredTotals.conDisponibilidadCount} Con Saldo
+                          </span>
+                          {filteredTotals.alertaCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              {filteredTotals.alertaCount} Alerta
+                            </span>
+                          )}
+                          {filteredTotals.sinDisponibilidadCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              <XCircle className="w-2.5 h-2.5" />
+                              {filteredTotals.sinDisponibilidadCount} Agotados
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center whitespace-nowrap">
+                        <span className="px-2 py-1 rounded bg-amber-100 text-amber-900 font-extrabold text-[11px] border border-amber-300">
+                          {filteredTotals.count} Renglones
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Fila Principal de Totales Consolidados Institucionales */}
+                  <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
+                    <td colSpan={3} className="px-3.5 py-3.5 text-right font-black uppercase text-slate-900 tracking-wider">
+                      {filteredLines.length !== budgetAvailability.length 
+                        ? `Gran Total Institucional (${totals.count} Renglones):` 
+                        : `Totales Consolidados Gerencia de Informática (${totals.count} Renglones):`}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900">
                       {formatCurrency(totals.totalInicial)}
                     </td>
-                    <td className={`px-3 py-3 text-right font-mono whitespace-nowrap ${totals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    <td className={`px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap ${totals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                       {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono whitespace-nowrap bg-blue-100/50 text-blue-950">
+                    <td className="px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-blue-100/70 text-blue-950">
                       {formatCurrency(totals.totalVigente)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-blue-800 whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-right font-mono font-bold text-blue-800 whitespace-nowrap">
                       {formatCurrency(totals.totalPagado)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900">
                       {formatCurrency(totals.totalDisponibleReal)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-amber-800 whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
                       {formatCurrency(totals.totalComprometido)}
                     </td>
-                    <td className={`px-3 py-3 text-right font-mono whitespace-nowrap bg-emerald-100/50 ${totals.totalDisponibleProyectado >= 0 ? 'text-emerald-900' : 'text-red-700'}`}>
+                    <td className={`px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-emerald-100/70 ${totals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
                       {formatCurrency(totals.totalDisponibleProyectado)}
                     </td>
-                    <td className="px-3 py-3 text-center font-mono">
-                      {totals.porcentajeGlobal.toFixed(1)}%
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        <span className="font-mono font-bold text-xs text-slate-900">
+                          {totals.porcentajeGlobal.toFixed(1)}%
+                        </span>
+                        <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${
+                              totals.porcentajeGlobal > 85 ? 'bg-red-500' : 
+                              totals.porcentajeGlobal > 70 ? 'bg-amber-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(0, totals.porcentajeGlobal))}%` }}
+                          />
+                        </div>
+                      </div>
                     </td>
-                    <td colSpan={2} className="px-3 py-3 text-center text-[11px] font-bold text-slate-600">
-                      {totals.conDisponibilidadCount} con saldo / {totals.sinDisponibilidadCount} agotados
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          {totals.conDisponibilidadCount} Con Saldo
+                        </span>
+                        {totals.alertaCount > 0 && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            {totals.alertaCount} Alerta
+                          </span>
+                        )}
+                        {totals.sinDisponibilidadCount > 0 && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                            <XCircle className="w-2.5 h-2.5" />
+                            {totals.sinDisponibilidadCount} Agotados
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                      <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 font-extrabold text-[11px] border border-slate-300">
+                        {totals.count} Renglones
+                      </span>
                     </td>
                   </tr>
                 </tfoot>
 
               </table>
+            </div>
+          </div>
+
+          {/* Tarjeta de Resumen Rápido de Totales Consolidados al Final de la Matriz */}
+          <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 shadow-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Resumen Totalizado al Final de la Matriz de Disponibilidad
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    {filteredLines.length !== budgetAvailability.length 
+                      ? `Mostrando totales de ${filteredLines.length} renglones seleccionados y gran total institucional.` 
+                      : `Totalización completa de los ${totals.count} renglones presupuestarios activos.`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-mono">
+                <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                  {totals.conDisponibilidadCount} con saldo activo
+                </span>
+                {totals.sinDisponibilidadCount > 0 && (
+                  <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                    {totals.sinDisponibilidadCount} agotados
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 pt-4">
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">4. Presupuesto Inicial</div>
+                <div className="text-sm font-black font-mono text-white mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}
+                </div>
+              </div>
+
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">5. Modif. Aprobadas</div>
+                <div className={`text-sm font-black font-mono mt-0.5 truncate ${(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones >= 0 ? 'text-emerald-400' : 'text-rose-400'}`} title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones)}>
+                  {(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones >= 0 ? '+' : ''}{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones)}
+                </div>
+              </div>
+
+              <div className="bg-blue-950/60 p-3 rounded-xl border border-blue-800/50">
+                <div className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">6. Presupuesto Vigente</div>
+                <div className="text-sm font-black font-mono text-blue-200 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}
+                </div>
+              </div>
+
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">7. Pagado que Rebaja</div>
+                <div className="text-sm font-black font-mono text-blue-400 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalPagado)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalPagado)}
+                </div>
+              </div>
+
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">8. Disponible Real</div>
+                <div className="text-sm font-black font-mono text-white mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleReal)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleReal)}
+                </div>
+              </div>
+
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">9. Comprometido</div>
+                <div className="text-sm font-black font-mono text-amber-400 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalComprometido)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalComprometido)}
+                </div>
+              </div>
+
+              <div className="bg-emerald-950/60 p-3 rounded-xl border border-emerald-800/50 col-span-2 sm:col-span-1">
+                <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">10. Disp. Proyectado</div>
+                <div className={`text-sm font-black font-mono mt-0.5 truncate ${(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado >= 0 ? 'text-emerald-300' : 'text-rose-400'}`} title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado)}
+                </div>
+              </div>
             </div>
           </div>
 

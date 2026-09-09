@@ -12,32 +12,41 @@ export function calculateBudgetAvailability(
   purchases: PurchaseRecord[]
 ): BudgetLineItem[] {
   return lines.map((line) => {
-    // 1. Calcular Modificaciones Aprobadas netas para este renglón
-    const modsAfectadas = modifications.filter(m => m.estado === 'aprobada');
+    const cleanLineRenglon = String(line.renglonPresupuestario || '').trim();
+
+    // 1. Calcular Modificaciones Aprobadas netas para este renglón (+ ampliaciones/transferencias destino, - disminuciones/transferencias origen)
     let modNeta = 0;
     let hasExplicitMods = false;
 
-    for (const mod of modsAfectadas) {
+    for (const mod of modifications) {
+      const estado = String(mod.estado || '').toLowerCase().trim();
+      if (estado !== 'aprobada') continue;
+
+      const modDestino = String(mod.renglonPresupuestario || '').trim();
+      const modOrigen = String(mod.renglonOrigenPresupuestario || '').trim();
+      const tipo = String(mod.tipo || '').toLowerCase().trim();
+      const monto = Math.abs(Number(mod.monto) || 0);
+
       // Ampliación o Incremento al renglón (+)
-      if ((mod.tipo === 'ampliacion' || (mod.tipo as string) === 'incremento') && mod.renglonPresupuestario === line.renglonPresupuestario) {
-        modNeta += Number(mod.monto) || 0;
+      if ((tipo === 'ampliacion' || tipo === 'ampliación' || tipo === 'incremento' || tipo === 'aumento') && modDestino === cleanLineRenglon) {
+        modNeta += monto;
         hasExplicitMods = true;
       }
-      // Disminución al renglón (-)
-      else if (mod.tipo === 'disminucion' && mod.renglonPresupuestario === line.renglonPresupuestario) {
-        modNeta -= Number(mod.monto) || 0;
+      // Disminución o Reducción al renglón (-)
+      else if ((tipo === 'disminucion' || tipo === 'disminución' || tipo === 'reduccion' || tipo === 'reducción') && modDestino === cleanLineRenglon) {
+        modNeta -= monto;
         hasExplicitMods = true;
       }
       // Transferencia
-      else if (mod.tipo === 'transferencia') {
+      else if (tipo === 'transferencia') {
         // Si este renglón es el destino recibe (+)
-        if (mod.renglonPresupuestario === line.renglonPresupuestario) {
-          modNeta += Number(mod.monto) || 0;
+        if (modDestino === cleanLineRenglon) {
+          modNeta += monto;
           hasExplicitMods = true;
         }
-        // Si este renglón es el origen entrega (-)
-        if (mod.renglonOrigenPresupuestario === line.renglonPresupuestario) {
-          modNeta -= Number(mod.monto) || 0;
+        // Si este renglón es el origen entrega/cede (-)
+        if (modOrigen === cleanLineRenglon) {
+          modNeta -= monto;
           hasExplicitMods = true;
         }
       }
@@ -45,17 +54,17 @@ export function calculateBudgetAvailability(
 
     // Si hay modificaciones explícitas en el módulo, usamos la suma calculada.
     // De lo contrario, conservamos el valor base provisto en la ficha o importado de Excel.
-    const modificacionesAprobadas = hasExplicitMods ? modNeta : (Number(line.modificacionesAprobadas) || 0);
+    const modificacionesAprobadas = Math.round((hasExplicitMods ? modNeta : (Number(line.modificacionesAprobadas) || 0)) * 100) / 100;
 
-    // 2. Presupuesto Vigente = Inicial + Modificaciones Aprobadas
-    const presupuestoInicial = Number(line.presupuestoInicial) || 0;
-    const presupuestoVigente = presupuestoInicial + modificacionesAprobadas;
+    // 2. REGLA INSTITUCIONAL: Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas (+/-)
+    const presupuestoInicial = Math.round((Number(line.presupuestoInicial) || 0) * 100) / 100;
+    const presupuestoVigente = Math.round((presupuestoInicial + modificacionesAprobadas) * 100) / 100;
 
     // 3. Compras asociadas activas según regla institucional: Afecta Disponibilidad (Sí / No)
     // Se excluyen eventos Anulados, Rechazados, Desiertos y Prescindidos
     const activePurchases = purchases.filter(p => {
-      // Coincidencia por asignación directa o por código en descripción
-      const matchRenglon = p.renglonPresupuestario === line.renglonPresupuestario;
+      const pRenglon = String(p.renglonPresupuestario || '').trim();
+      const matchRenglon = pRenglon === cleanLineRenglon;
       const affects = doesStatusAffectBudget(p.estatusEvento);
       return matchRenglon && affects;
     });
@@ -72,18 +81,18 @@ export function calculateBudgetAvailability(
 
     // 4. Pagado que Rebaja: Base histórica/manual + adquisiciones pagadas en el sistema
     const pagadoBase = Number(line.pagadoQueRebaja) || 0;
-    const pagadoQueRebaja = pagadoBase + purchasesPaidTotal;
+    const pagadoQueRebaja = Math.round((pagadoBase + purchasesPaidTotal) * 100) / 100;
 
     // 5. Disponible Real = Presupuesto Vigente - Pagado que Rebaja
     // Se descuenta únicamente cuando se marca como pagado
-    const disponibleReal = presupuestoVigente - pagadoQueRebaja;
+    const disponibleReal = Math.round((presupuestoVigente - pagadoQueRebaja) * 100) / 100;
 
     // 6. Comprometido Pendiente: Base histórica/manual + adquisiciones pendientes de pago asignadas
     const comprometidoBase = Number(line.comprometidoPendiente) || 0;
-    const comprometidoPendiente = comprometidoBase + purchasesPendingTotal;
+    const comprometidoPendiente = Math.round((comprometidoBase + purchasesPendingTotal) * 100) / 100;
 
     // 7. Disponible Proyectado = Disponible Real - Comprometido Pendiente
-    const disponibleProyectado = disponibleReal - comprometidoPendiente;
+    const disponibleProyectado = Math.round((disponibleReal - comprometidoPendiente) * 100) / 100;
 
     // 8. Porcentaje Usado/Comprometido = ((Pagado + Comprometido) / Vigente) * 100
     const totalAfectado = pagadoQueRebaja + comprometidoPendiente;
@@ -189,10 +198,19 @@ export function downloadBudgetExcelTemplate() {
 }
 
 /**
- * Exporta la matriz actual de disponibilidad presupuestaria a Excel
+ * Exporta la matriz actual de disponibilidad presupuestaria a Excel (incluyendo fila de totales consolidados)
  */
 export function exportBudgetLinesToExcel(lines: BudgetLineItem[], filename = 'Matriz_Disponibilidad_Presupuestaria_GIT.xlsx') {
-  const data = lines.map(line => ({
+  const sumInicial = Math.round(lines.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0) * 100) / 100;
+  const sumMods = Math.round(lines.reduce((s, l) => s + (Number(l.modificacionesAprobadas) || 0), 0) * 100) / 100;
+  const sumVigente = Math.round(lines.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0) * 100) / 100;
+  const sumPagado = Math.round(lines.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0) * 100) / 100;
+  const sumReal = Math.round(lines.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0) * 100) / 100;
+  const sumComp = Math.round(lines.reduce((s, l) => s + (Number(l.comprometidoPendiente) || 0), 0) * 100) / 100;
+  const sumProy = Math.round(lines.reduce((s, l) => s + (Number(l.disponibleProyectado) || 0), 0) * 100) / 100;
+  const pctGlobal = sumVigente > 0 ? (((sumPagado + sumComp) / sumVigente) * 100).toFixed(2) + '%' : '0.00%';
+
+  const data: any[] = lines.map(line => ({
     'Grupo Presupuestario': line.grupoPresupuestario,
     'Renglón Presupuestario': line.renglonPresupuestario,
     'Nombre del Renglón': line.nombreRenglon,
@@ -206,6 +224,22 @@ export function exportBudgetLinesToExcel(lines: BudgetLineItem[], filename = 'Ma
     'Porcentaje Usado/Comprometido': `${line.porcentajeUsadoComprometido.toFixed(2)}%`,
     'Estatus': line.estatusDisponibilidad
   }));
+
+  // Fila de Totales Consolidados al final
+  data.push({
+    'Grupo Presupuestario': 'TOTALES CONSOLIDADOS',
+    'Renglón Presupuestario': `(${lines.length} RENGLONES)`,
+    'Nombre del Renglón': 'SUMATORIA CONSOLIDADA GERENCIA DE INFORMÁTICA',
+    'Presupuesto Inicial': sumInicial,
+    'Modificaciones Aprobadas': sumMods,
+    'Presupuesto Vigente': sumVigente,
+    'Pagado que Rebaja': sumPagado,
+    'Disponible Real': sumReal,
+    'Comprometido Pendiente': sumComp,
+    'Disponible Proyectado': sumProy,
+    'Porcentaje Usado/Comprometido': pctGlobal,
+    'Estatus': `${lines.filter(l => l.disponibleProyectado > 0).length} CON DISPONIBILIDAD`
+  });
 
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();

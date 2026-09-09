@@ -97,10 +97,16 @@ export const ImportBudgetExcelModal: React.FC<ImportBudgetExcelModalProps> = ({ 
         const estatusKey = Object.keys(row).find(k => /estatus/i.test(k) || /estado/i.test(k) || /disponibilidad/i.test(k));
 
         const presupuestoInicial = parseNumber(pInicialKey ? row[pInicialKey] : 0);
-        const modificacionesAprobadas = parseNumber(modKey ? row[modKey] : 0);
-        const presupuestoVigente = vigKey && row[vigKey] !== '' 
-          ? parseNumber(row[vigKey]) 
-          : (presupuestoInicial + modificacionesAprobadas);
+        let modificacionesAprobadas = parseNumber(modKey ? row[modKey] : 0);
+        const rawVigente = vigKey && row[vigKey] !== '' && row[vigKey] !== null ? parseNumber(row[vigKey]) : null;
+
+        // Si no venía columna explícita de modificaciones pero sí venía presupuesto vigente:
+        if (!modKey && rawVigente !== null && rawVigente !== presupuestoInicial) {
+          modificacionesAprobadas = Math.round((rawVigente - presupuestoInicial) * 100) / 100;
+        }
+
+        // REGLA INSTITUCIONAL: Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas (+/-)
+        const presupuestoVigente = Math.round((presupuestoInicial + modificacionesAprobadas) * 100) / 100;
 
         const pagadoQueRebaja = parseNumber(pagKey ? row[pagKey] : 0);
         const disponibleReal = dispRealKey && row[dispRealKey] !== '' 

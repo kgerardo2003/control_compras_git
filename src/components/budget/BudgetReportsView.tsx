@@ -102,13 +102,15 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
     if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit') {
       const source = activeVariant === 'matriz_consolidada' ? dataMatriz : dataAlertas;
       return source.reduce((acc, l) => {
+        acc.inicial += l.presupuestoInicial || 0;
+        acc.modificaciones += l.modificacionesAprobadas || 0;
         acc.vigente += l.presupuestoVigente || 0;
         acc.pagado += l.pagadoQueRebaja || 0;
         acc.comprometido += l.comprometidoPendiente || 0;
         acc.disponibleReal += l.disponibleReal || 0;
         acc.disponibleProyectado += l.disponibleProyectado || 0;
         return acc;
-      }, { vigente: 0, pagado: 0, comprometido: 0, disponibleReal: 0, disponibleProyectado: 0 });
+      }, { inicial: 0, modificaciones: 0, vigente: 0, pagado: 0, comprometido: 0, disponibleReal: 0, disponibleProyectado: 0 });
     } else {
       const source = activeVariant === 'compras_por_renglon' ? dataCompras :
                      activeVariant === 'comprometido_pendiente' ? dataComprometido : dataPagado;
@@ -142,6 +144,23 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
         '% Usado/Comprometido': `${l.porcentajeUsadoComprometido}%`,
         'Estatus Oficial': l.estatusDisponibilidad
       }));
+
+      if ('vigente' in variantTotals) {
+        wsData.push({
+          'Grupo Presupuestario': 'TOTALES CONSOLIDADOS',
+          'Renglón': `(${source.length} Renglones)`,
+          'Nombre del Renglón': 'SUMATORIA CONSOLIDADA OFICIAL',
+          'Presupuesto Inicial (Q)': Math.round(variantTotals.inicial * 100) / 100,
+          'Modificaciones (+/-) (Q)': Math.round(variantTotals.modificaciones * 100) / 100,
+          'Presupuesto Vigente (Q)': Math.round(variantTotals.vigente * 100) / 100,
+          'Pagado que Rebaja (Q)': Math.round(variantTotals.pagado * 100) / 100,
+          'Disponible Real (Q)': Math.round(variantTotals.disponibleReal * 100) / 100,
+          'Comprometido Pendiente (Q)': Math.round(variantTotals.comprometido * 100) / 100,
+          'Disponible Proyectado (Q)': Math.round(variantTotals.disponibleProyectado * 100) / 100,
+          '% Usado/Comprometido': variantTotals.vigente > 0 ? `${(((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(2)}%` : '0.00%',
+          'Estatus Oficial': 'CONSOLIDADO'
+        });
+      }
     } else {
       const source = activeVariant === 'compras_por_renglon' ? dataCompras :
                      activeVariant === 'comprometido_pendiente' ? dataComprometido : dataPagado;
@@ -206,6 +225,7 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
 
     let head: string[][] = [];
     let body: any[][] = [];
+    let foot: any[][] | undefined;
 
     if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit') {
       const source = activeVariant === 'matriz_consolidada' ? dataMatriz : dataAlertas;
@@ -238,6 +258,23 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
         `${l.porcentajeUsadoComprometido}%`,
         l.estatusDisponibilidad === 'Con Disponibilidad' ? 'DISPONIBLE' : (l.disponibleProyectado <= 0 ? 'DÉFICIT' : 'ALERTA')
       ]);
+
+      if ('vigente' in variantTotals) {
+        foot = [[
+          'TOTALES',
+          `Consolidado (${source.length} Renglones)`,
+          '-',
+          variantTotals.inicial.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          (variantTotals.modificaciones >= 0 ? '+' : '') + variantTotals.modificaciones.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.vigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.pagado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.disponibleReal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.comprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.vigente > 0 ? `${(((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(1)}%` : '0%',
+          'CONSOLIDADO'
+        ]];
+      }
     } else {
       const source = activeVariant === 'compras_por_renglon' ? dataCompras :
                      activeVariant === 'comprometido_pendiente' ? dataComprometido : dataPagado;
@@ -262,16 +299,36 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
         p.estatusEvento || 'Registrada',
         (p.proveedorAdjudicado || 'N/A').slice(0, 25)
       ]);
+
+      if ('totalMonto' in variantTotals) {
+        foot = [[
+          'TOTALES',
+          `${source.length} Compras`,
+          '-',
+          '-',
+          variantTotals.totalMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          '-',
+          '-',
+          '-'
+        ]];
+      }
     }
 
     autoTable(doc, {
       startY: 33,
       head,
       body,
+      foot,
       theme: 'grid',
       headStyles: {
         fillColor: [30, 41, 59],
         textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold'
+      },
+      footStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [15, 23, 42],
         fontSize: 7.5,
         fontStyle: 'bold'
       },
@@ -542,6 +599,45 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
                   ))
                 )}
               </tbody>
+              <tfoot className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
+                <tr>
+                  <td colSpan={3} className="px-3 py-3 text-right uppercase font-black text-slate-900 tracking-wider">
+                    Totales Consolidados ({(activeVariant === 'matriz_consolidada' ? dataMatriz : dataAlertas).length} Renglones):
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
+                    {formatQuetzales('inicial' in variantTotals ? variantTotals.inicial : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap text-slate-800">
+                    {'modificaciones' in variantTotals && variantTotals.modificaciones >= 0 ? '+' : ''}
+                    {formatQuetzales('modificaciones' in variantTotals ? variantTotals.modificaciones : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-black text-blue-950 bg-blue-100/60 whitespace-nowrap">
+                    {formatQuetzales('vigente' in variantTotals ? variantTotals.vigente : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold text-blue-800 whitespace-nowrap">
+                    {formatQuetzales('pagado' in variantTotals ? variantTotals.pagado : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold text-emerald-900 bg-emerald-100/40 whitespace-nowrap">
+                    {formatQuetzales('disponibleReal' in variantTotals ? variantTotals.disponibleReal : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
+                    {formatQuetzales('comprometido' in variantTotals ? variantTotals.comprometido : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-black bg-amber-100/60 whitespace-nowrap">
+                    <span className={'disponibleProyectado' in variantTotals && variantTotals.disponibleProyectado >= 0 ? 'text-emerald-800' : 'text-rose-700'}>
+                      {formatQuetzales('disponibleProyectado' in variantTotals ? variantTotals.disponibleProyectado : 0)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-center font-mono font-bold whitespace-nowrap">
+                    {'vigente' in variantTotals && variantTotals.vigente > 0
+                      ? `${(((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(1)}%`
+                      : '0.0%'}
+                  </td>
+                  <td className="px-3 py-3 text-center whitespace-nowrap text-[11px] font-bold text-slate-600">
+                    {(activeVariant === 'matriz_consolidada' ? dataMatriz : dataAlertas).filter(l => l.disponibleProyectado > 0).length} con saldo
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           ) : (
             <table className="w-full text-xs text-left border-collapse">
@@ -608,6 +704,19 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
                   })
                 )}
               </tbody>
+              <tfoot className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
+                <tr>
+                  <td colSpan={4} className="px-3 py-3 text-right uppercase font-black text-slate-900 tracking-wider">
+                    Total Acumulado ({'cantidad' in variantTotals ? variantTotals.cantidad : 0} Adquisiciones):
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold text-blue-900 whitespace-nowrap">
+                    {formatQuetzales('totalMonto' in variantTotals ? variantTotals.totalMonto : 0)}
+                  </td>
+                  <td colSpan={3} className="px-3 py-3 text-left text-slate-500 font-semibold text-[11px]">
+                    Monto total calculado para la categoría activa
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           )}
         </div>

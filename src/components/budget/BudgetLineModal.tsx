@@ -38,6 +38,7 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
   const [renglon, setRenglon] = useState('');
   const [nombre, setNombre] = useState('');
   const [presupuestoInicial, setPresupuestoInicial] = useState<string>('');
+  const [modificacionesAprobadas, setModificacionesAprobadas] = useState<string>('0');
   const [pagadoQueRebaja, setPagadoQueRebaja] = useState<string>('0');
   const [comprometidoPendiente, setComprometidoPendiente] = useState<string>('0');
   const [observaciones, setObservaciones] = useState('');
@@ -61,6 +62,11 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
       setPresupuestoInicial(
         lineToEdit.presupuestoInicial !== undefined && lineToEdit.presupuestoInicial !== null
           ? String(lineToEdit.presupuestoInicial)
+          : '0'
+      );
+      setModificacionesAprobadas(
+        lineToEdit.modificacionesAprobadas !== undefined && lineToEdit.modificacionesAprobadas !== null
+          ? String(lineToEdit.modificacionesAprobadas)
           : '0'
       );
       setPagadoQueRebaja(
@@ -168,10 +174,10 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
       return;
     }
 
-    const modAprobadas = lineToEdit ? (Number(lineToEdit.modificacionesAprobadas) || 0) : 0;
-    const vigente = pInicial + modAprobadas;
-    const dispReal = vigente - pagado;
-    const dispProy = dispReal - comprometido;
+    const modAprobadas = parseFloat(modificacionesAprobadas) || 0;
+    const vigente = Math.round((pInicial + modAprobadas) * 100) / 100;
+    const dispReal = Math.round((vigente - pagado) * 100) / 100;
+    const dispProy = Math.round((dispReal - comprometido) * 100) / 100;
     const totalAfectado = pagado + comprometido;
     const pct = vigente > 0 ? (totalAfectado / vigente) * 100 : 0;
 
@@ -188,6 +194,7 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
           renglonPresupuestario: cleanRenglon,
           nombreRenglon: cleanNombre,
           presupuestoInicial: pInicial,
+          modificacionesAprobadas: modAprobadas,
           presupuestoVigente: vigente,
           pagadoQueRebaja: pagado,
           disponibleReal: dispReal,
@@ -203,12 +210,12 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
           renglonPresupuestario: cleanRenglon,
           nombreRenglon: cleanNombre,
           presupuestoInicial: pInicial,
-          modificacionesAprobadas: 0,
-          presupuestoVigente: pInicial,
+          modificacionesAprobadas: modAprobadas,
+          presupuestoVigente: vigente,
           pagadoQueRebaja: pagado,
-          disponibleReal: pInicial - pagado,
+          disponibleReal: dispReal,
           comprometidoPendiente: comprometido,
-          disponibleProyectado: (pInicial - pagado) - comprometido,
+          disponibleProyectado: dispProy,
           porcentajeUsadoComprometido: Math.round(pct * 100) / 100,
           estatusDisponibilidad: estatus,
           ejercicioFiscal: 2026,
@@ -339,27 +346,78 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
             </div>
           </div>
 
-          {/* Presupuesto Inicial */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Presupuesto Inicial Aprobado (Q.) *
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-slate-400">
-                Q.
-              </span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={presupuestoInicial}
-                onChange={(e) => setPresupuestoInicial(e.target.value)}
-                placeholder="0.00"
-                required
-                className="w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              />
+          {/* Presupuesto Inicial y Modificaciones Aprobadas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                4. Presupuesto Inicial Aprobado (Q.) *
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-slate-400">
+                  Q.
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={presupuestoInicial}
+                  onChange={(e) => setPresupuestoInicial(e.target.value)}
+                  placeholder="0.00"
+                  required
+                  className="w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+              <span className="text-[10px] text-slate-400">Asignación decretada oficial</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span>5. Modificaciones Aprobadas (Q.)</span>
+                <span className="text-[10px] text-slate-400 font-normal">Ampliación (+) / Disminución (-)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-slate-400">
+                  Q.
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={modificacionesAprobadas}
+                  onChange={(e) => setModificacionesAprobadas(e.target.value)}
+                  placeholder="0.00"
+                  className={`w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none ${
+                    (parseFloat(modificacionesAprobadas) || 0) > 0 ? 'text-emerald-700' : (parseFloat(modificacionesAprobadas) || 0) < 0 ? 'text-red-700' : 'text-slate-700'
+                  }`}
+                />
+              </div>
+              <span className="text-[10px] text-slate-400">Suma o resta neta de resoluciones</span>
             </div>
           </div>
+
+          {/* Tarjeta de Cálculo: Presupuesto Vigente = Inicial ± Modificaciones */}
+          {(() => {
+            const pIni = parseFloat(presupuestoInicial) || 0;
+            const pMod = parseFloat(modificacionesAprobadas) || 0;
+            const pVig = Math.round((pIni + pMod) * 100) / 100;
+            return (
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-blue-900">
+                    6. Presupuesto Vigente Resultante
+                  </div>
+                  <div className="text-[11px] text-blue-700 font-medium">
+                    Fórmula oficial: Inicial (Q. {pIni.toLocaleString('es-GT', { minimumFractionDigits: 2 })}) {pMod >= 0 ? '+' : '-'} Modificaciones (Q. {Math.abs(pMod).toLocaleString('es-GT', { minimumFractionDigits: 2 })})
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-base font-black font-mono text-blue-950">
+                    Q. {pVig.toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-600 uppercase">Techo presupuestario</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Pagado Base y Comprometido Base */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

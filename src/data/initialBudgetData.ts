@@ -319,5 +319,22 @@ export const INITIAL_BUDGET_MODIFICATIONS: BudgetModification[] = [
     estado: 'en_tramite',
     creadoPor: 'Administrador GIT',
     fechaCreacion: '2026-03-15T16:00:00.000Z'
+  },
+  {
+    id: 'mod-2026-007',
+    correlativo: 'MOD-2026-007',
+    tipo: 'disminucion',
+    renglonPresupuestario: '299',
+    nombreRenglon: 'Otros Materiales y Suministros Eléctricos',
+    grupoPresupuestario: 'Grupo 200 - Materiales y Suministros',
+    monto: 15000.00,
+    fecha: '2026-03-08',
+    noResolucion: 'Resolución DAF-OJ-2026-041',
+    descripcion: 'Disminución presupuestaria por reprogramación en materiales y accesorios.',
+    estado: 'aprobada',
+    aprobadoPor: 'Dirección Financiera DAF',
+    fechaAprobacion: '2026-03-10',
+    creadoPor: 'Administrador GIT',
+    fechaCreacion: '2026-03-08T10:00:00.000Z'
   }
 ];
