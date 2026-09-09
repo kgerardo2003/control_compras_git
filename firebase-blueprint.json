@@ -71,6 +71,21 @@
         "ultimoAcceso": { "type": "string", "description": "Último acceso" }
       },
       "required": ["id", "nombre", "email", "rol"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil de rol y permisos de acceso a módulos del sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID único del perfil" },
+        "codigo": { "type": "string", "description": "Código identificador" },
+        "nombre": { "type": "string", "description": "Nombre legible del perfil" },
+        "descripcion": { "type": "string", "description": "Descripción del perfil" },
+        "modulosPermitidos": { "type": "array", "description": "Lista de módulos habilitados" },
+        "esSistema": { "type": "boolean", "description": "Perfil base protegido" },
+        "activo": { "type": "boolean", "description": "Estado de actividad" }
+      },
+      "required": ["id", "codigo", "nombre", "modulosPermitidos"]
     }
   },
   "firestore": {
@@ -89,6 +104,10 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "Directorio de usuarios autorizados del sistema"
+    },
+    "/user_profiles/{profileId}": {
+      "schema": "UserProfile",
+      "description": "Perfiles institucionales y control de acceso a módulos"
     }
   }
 }

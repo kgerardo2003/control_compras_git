@@ -1,5 +1,63 @@
-import { PurchaseRecord, User, Catalog, AuditLogEntry, AppNotification } from '../types';
+import { PurchaseRecord, User, UserProfile, Catalog, AuditLogEntry, AppNotification } from '../types';
 import { generateOfficialF56PdfDataUrl } from '../utils/documentUtils';
+
+export const INITIAL_USER_PROFILES: UserProfile[] = [
+  {
+    id: 'prof-admin',
+    codigo: 'administrador',
+    nombre: 'Administrador General',
+    descripcion: 'Control total de la plataforma, configuración global, gestión de compras, disponibilidad presupuestaria, usuarios, perfiles y bitácoras.',
+    esSistema: true,
+    color: 'rose',
+    modulosPermitidos: ['dashboard', 'compras', 'presupuesto', 'catalogos', 'auditoria', 'usuarios', 'reportes', 'personalizacion', 'correo'],
+    activo: true,
+    fechaCreacion: '2024-01-01T08:00:00Z'
+  },
+  {
+    id: 'prof-auditor',
+    codigo: 'auditor',
+    nombre: 'Auditor de Control Interno',
+    descripcion: 'Supervisión y fiscalización sin alteración. Acceso a paneles ejecutivos, compras, presupuesto, reportes y bitácora de auditoría inmutable.',
+    esSistema: true,
+    color: 'amber',
+    modulosPermitidos: ['dashboard', 'compras', 'presupuesto', 'reportes', 'auditoria'],
+    activo: true,
+    fechaCreacion: '2024-01-01T08:00:00Z'
+  },
+  {
+    id: 'prof-compras',
+    codigo: 'operador_compras',
+    nombre: 'Operador de Compras GIT',
+    descripcion: 'Gestión técnica y administrativa de procesos de adquisiciones de tecnología, solicitudes F56-e, seguimiento de NOG y ofertas.',
+    esSistema: true,
+    color: 'blue',
+    modulosPermitidos: ['dashboard', 'compras', 'reportes'],
+    activo: true,
+    fechaCreacion: '2024-01-01T08:00:00Z'
+  },
+  {
+    id: 'prof-presupuesto',
+    codigo: 'gestor_presupuesto',
+    nombre: 'Gestor Presupuestario y Financiero',
+    descripcion: 'Administración de la matriz de disponibilidad presupuestaria institucional, registro de modificaciones y asignación de renglones.',
+    esSistema: true,
+    color: 'emerald',
+    modulosPermitidos: ['dashboard', 'presupuesto', 'compras', 'reportes'],
+    activo: true,
+    fechaCreacion: '2024-01-01T08:00:00Z'
+  },
+  {
+    id: 'prof-consulta',
+    codigo: 'consulta_gerencial',
+    nombre: 'Consulta Gerencial / Presidencia',
+    descripcion: 'Visualización ejecutiva de indicadores clave, estadísticas de adquisiciones y dictámenes emitidos para toma de decisiones.',
+    esSistema: true,
+    color: 'purple',
+    modulosPermitidos: ['dashboard', 'reportes'],
+    activo: true,
+    fechaCreacion: '2024-01-01T08:00:00Z'
+  }
+];
 
 export const INITIAL_USERS: User[] = [
   {
@@ -9,6 +67,7 @@ export const INITIAL_USERS: User[] = [
     email: 'klopez@oj.gob.gt',
     password: 'Guate2026*',
     rol: 'administrador',
+    perfilId: 'prof-admin',
     cargo: 'Gerente de Informática',
     departamento: 'Gerencia de Informática - OJ',
     activo: true,
@@ -22,6 +81,7 @@ export const INITIAL_USERS: User[] = [
     email: 'pmorales@oj.gob.gt',
     password: 'audit',
     rol: 'auditor',
+    perfilId: 'prof-auditor',
     cargo: 'Auditora Gubernamental Senior',
     departamento: 'Dirección de Auditoría Interna - OJ',
     activo: true,
@@ -35,6 +95,7 @@ export const INITIAL_USERS: User[] = [
     email: 'mgomez@oj.gob.gt',
     password: 'user123',
     rol: 'usuario_estandar',
+    perfilId: 'prof-compras',
     cargo: 'Analista de Compras de Tecnología',
     departamento: 'Unidad de Gestión de Adquisiciones GIT',
     activo: true,
@@ -48,6 +109,7 @@ export const INITIAL_USERS: User[] = [
     email: 'jfuentes@oj.gob.gt',
     password: 'user123',
     rol: 'usuario_estandar',
+    perfilId: 'prof-compras',
     cargo: 'Especialista en Infraestructura Informática',
     departamento: 'Subgerencia de Redes y Telecomunicaciones',
     activo: true,

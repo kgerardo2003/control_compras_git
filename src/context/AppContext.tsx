@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   User, 
+  UserProfile,
   PurchaseRecord, 
   Catalog, 
   AuditLogEntry, 
@@ -21,6 +22,7 @@ import {
 } from '../types';
 import { 
   INITIAL_USERS, 
+  INITIAL_USER_PROFILES,
   INITIAL_CATALOGS, 
   INITIAL_PURCHASES, 
   INITIAL_AUDIT_LOGS, 
@@ -54,6 +56,9 @@ import {
   removeCatalogFromFirestore,
   saveUserToFirestore,
   removeUserFromFirestore,
+  saveUserProfileToFirestore,
+  deleteUserProfileFromFirestore,
+  onUserProfilesSnapshot,
   seedInitialDataIfEmpty,
   forceFetchPurchasesFromServer,
   saveBudgetLineToFirestore,
@@ -149,6 +154,14 @@ interface AppContextType {
   toggleUserStatus: (id: string) => void;
   deleteUser: (id: string) => void;
 
+  // Perfiles de Usuario y Permisos de Acceso a Módulos
+  userProfiles: UserProfile[];
+  addUserProfile: (data: Omit<UserProfile, 'id' | 'esSistema' | 'fechaCreacion'>) => UserProfile;
+  updateUserProfile: (id: string, data: Partial<UserProfile>) => void;
+  deleteUserProfile: (id: string) => void;
+  hasModuleAccess: (tab: ActiveTab) => boolean;
+  getUserProfile: (user?: User | null) => UserProfile | undefined;
+
   // Auditoría
   logAudit: (
     accion: AuditAction, 
@@ -201,6 +214,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
   USERS: 'oj_git_users_v1',
+  USER_PROFILES: 'oj_git_user_profiles_v1',
   PURCHASES: 'oj_git_purchases_v1',
   CATALOGS: 'oj_git_catalogs_v1',
   AUDIT_LOGS: 'oj_git_audit_v1',
@@ -253,6 +267,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return INITIAL_USERS;
+  });
+
+  const [userProfiles, setUserProfiles] = useState<UserProfile[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.USER_PROFILES);
+    if (saved) {
+      try {
+        const parsed: UserProfile[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.warn("Error leyendo userProfiles de localStorage:", e);
+      }
+    }
+    return INITIAL_USER_PROFILES;
   });
 
   const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => {
@@ -507,6 +534,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn("No se pudo iniciar listener de modificaciones presupuestarias:", err);
     }
 
+    // Suscripción reactiva a Perfiles de Usuario
+    let unsubUserProfiles: (() => void) | undefined;
+    try {
+      unsubUserProfiles = onUserProfilesSnapshot((cloudProfiles) => {
+        if (cloudProfiles && cloudProfiles.length > 0) {
+          setUserProfiles(cloudProfiles);
+          localStorage.setItem(STORAGE_KEYS.USER_PROFILES, JSON.stringify(cloudProfiles));
+        }
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de perfiles de usuario:", err);
+    }
+
     return () => {
       if (unsubPurchases) unsubPurchases();
       if (unsubLogs) unsubLogs();
@@ -514,8 +554,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (unsubUsers) unsubUsers();
       if (unsubBudgetLines) unsubBudgetLines();
       if (unsubBudgetMods) unsubBudgetMods();
+      if (unsubUserProfiles) unsubUserProfiles();
     };
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.USER_PROFILES, JSON.stringify(userProfiles));
+  }, [userProfiles]);
 
   const refreshPurchases = useCallback(async () => {
     try {
@@ -1675,6 +1720,112 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit('EDITAR_USUARIO', 'Usuarios', `Eliminación de usuario: ${user?.username}`, id);
   };
 
+  // Perfiles de Usuario CRUD y Control de Acceso
+  const addUserProfile = (data: Omit<UserProfile, 'id' | 'esSistema' | 'fechaCreacion'>): UserProfile => {
+    const newProfile: UserProfile = {
+      ...data,
+      id: `prof-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      esSistema: false,
+      fechaCreacion: new Date().toISOString(),
+    };
+    setUserProfiles(prev => [...prev, newProfile]);
+    saveUserProfileToFirestore(newProfile);
+    logAudit('CREAR_PERFIL_USUARIO', 'Perfiles', `Creación de nuevo perfil: ${newProfile.nombre} (${newProfile.codigo}) con ${newProfile.modulosPermitidos.length} módulos asignados`, newProfile.id);
+    showToast({
+      type: 'success',
+      title: 'Perfil Creado Exitosamente',
+      message: `El perfil institucional "${newProfile.nombre}" ha sido registrado.`,
+      duration: 4500
+    });
+    return newProfile;
+  };
+
+  const updateUserProfile = (id: string, data: Partial<UserProfile>) => {
+    const current = userProfiles.find(p => p.id === id);
+    if (!current) return;
+    const updated: UserProfile = { ...current, ...data };
+    setUserProfiles(prev => prev.map(p => p.id === id ? updated : p));
+    saveUserProfileToFirestore(updated);
+    logAudit('EDITAR_PERFIL_USUARIO', 'Perfiles', `Actualización de perfil ID: ${id} - ${updated.nombre}`, id, current, data);
+    showToast({
+      type: 'success',
+      title: 'Perfil Actualizado',
+      message: `Permisos y datos del perfil "${updated.nombre}" guardados.`,
+      duration: 4000
+    });
+  };
+
+  const deleteUserProfile = (id: string) => {
+    const profile = userProfiles.find(p => p.id === id);
+    if (!profile) return;
+    if (profile.esSistema) {
+      showToast({
+        type: 'alerta',
+        title: 'Acción Protegida',
+        message: 'No es posible eliminar perfiles base del sistema.',
+        duration: 4000
+      });
+      return;
+    }
+    // Verificar si algún usuario tiene asignado este perfil
+    const assignedUsers = users.filter(u => u.perfilId === id || u.rol === profile.codigo);
+    if (assignedUsers.length > 0) {
+      showToast({
+        type: 'alerta',
+        title: 'Perfil en Uso',
+        message: `No se puede eliminar porque hay ${assignedUsers.length} usuario(s) asignados a este perfil. Reasígnelos primero.`,
+        duration: 5000
+      });
+      return;
+    }
+    setUserProfiles(prev => prev.filter(p => p.id !== id));
+    deleteUserProfileFromFirestore(id);
+    logAudit('ELIMINAR_PERFIL_USUARIO', 'Perfiles', `Eliminación de perfil de usuario: ${profile.nombre} (${profile.codigo})`, id);
+    showToast({
+      type: 'info',
+      title: 'Perfil Eliminado',
+      message: `El perfil "${profile.nombre}" ha sido eliminado del sistema.`,
+      duration: 4000
+    });
+  };
+
+  const hasModuleAccess = useCallback((tab: ActiveTab): boolean => {
+    if (!currentUser) return false;
+    // Administrador general siempre tiene acceso total
+    if (currentUser.rol === 'administrador') return true;
+
+    // Buscar perfil asignado (por perfilId o por código de rol)
+    const profile = userProfiles.find(p => 
+      (currentUser.perfilId && (p.id === currentUser.perfilId || p.codigo === currentUser.perfilId)) ||
+      p.codigo === currentUser.rol ||
+      p.id === currentUser.rol
+    );
+
+    if (profile && Array.isArray(profile.modulosPermitidos)) {
+      return profile.modulosPermitidos.includes(tab);
+    }
+
+    // Reglas de respaldo si el perfil no fue cargado
+    if (currentUser.rol === 'auditor') {
+      return ['dashboard', 'compras', 'presupuesto', 'reportes', 'auditoria'].includes(tab);
+    }
+    if (currentUser.rol === 'usuario_estandar') {
+      return ['dashboard', 'compras', 'reportes'].includes(tab);
+    }
+
+    return tab === 'dashboard';
+  }, [currentUser, userProfiles]);
+
+  const getUserProfile = useCallback((user?: User | null): UserProfile | undefined => {
+    const target = user || currentUser;
+    if (!target) return undefined;
+    return userProfiles.find(p => 
+      (target.perfilId && (p.id === target.perfilId || p.codigo === target.perfilId)) ||
+      p.codigo === target.rol ||
+      p.id === target.rol
+    );
+  }, [currentUser, userProfiles]);
+
   // Notificaciones
   const markNotificationRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, leida: true } : n));
@@ -2161,6 +2312,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateUser,
         toggleUserStatus,
         deleteUser,
+        userProfiles,
+        addUserProfile,
+        updateUserProfile,
+        deleteUserProfile,
+        hasModuleAccess,
+        getUserProfile,
         logAudit,
         markNotificationRead,
         markAllNotificationsRead,

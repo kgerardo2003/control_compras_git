@@ -178,7 +178,9 @@ export const BudgetView: React.FC = () => {
   // Totales consolidados de la matriz institucional completa
   const totals = useMemo(() => {
     const totalInicial = budgetAvailability.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
-    const totalModificaciones = budgetAvailability.reduce((s, l) => s + (Number(l.modificacionesAprobadas) || 0), 0);
+    const totalModificacionesPositivas = budgetAvailability.reduce((s, l) => s + (Number(l.modificacionesPositivas) || 0), 0);
+    const totalModificacionesNegativas = budgetAvailability.reduce((s, l) => s + (Number(l.modificacionesNegativas) || 0), 0);
+    const totalModificaciones = totalModificacionesPositivas - totalModificacionesNegativas;
     const totalVigente = budgetAvailability.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
     const totalPagado = budgetAvailability.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
     const totalDisponibleReal = budgetAvailability.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
@@ -195,6 +197,8 @@ export const BudgetView: React.FC = () => {
     return {
       count: budgetAvailability.length,
       totalInicial,
+      totalModificacionesPositivas,
+      totalModificacionesNegativas,
       totalModificaciones,
       totalVigente,
       totalPagado,
@@ -211,7 +215,9 @@ export const BudgetView: React.FC = () => {
   // Totales de las líneas actualmente filtradas y visibles en la tabla
   const filteredTotals = useMemo(() => {
     const totalInicial = filteredLines.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
-    const totalModificaciones = filteredLines.reduce((s, l) => s + (Number(l.modificacionesAprobadas) || 0), 0);
+    const totalModificacionesPositivas = filteredLines.reduce((s, l) => s + (Number(l.modificacionesPositivas) || 0), 0);
+    const totalModificacionesNegativas = filteredLines.reduce((s, l) => s + (Number(l.modificacionesNegativas) || 0), 0);
+    const totalModificaciones = totalModificacionesPositivas - totalModificacionesNegativas;
     const totalVigente = filteredLines.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
     const totalPagado = filteredLines.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
     const totalDisponibleReal = filteredLines.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
@@ -228,6 +234,8 @@ export const BudgetView: React.FC = () => {
     return {
       count: filteredLines.length,
       totalInicial,
+      totalModificacionesPositivas,
+      totalModificacionesNegativas,
       totalModificaciones,
       totalVigente,
       totalPagado,
@@ -595,30 +603,33 @@ export const BudgetView: React.FC = () => {
           </div>
 
           {/* Banner de Verificación y Regla de Cálculo Institucional */}
-          <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-slate-50 border border-blue-200/80 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
-            <div className="flex items-center gap-2.5 text-blue-950 font-medium">
-              <div className="p-1.5 rounded-lg bg-blue-600 text-white shrink-0 shadow-2xs">
+          <div className="bg-gradient-to-r from-blue-50/95 via-indigo-50/70 to-slate-50 border border-blue-200 rounded-xl p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs shadow-2xs">
+            <div className="flex items-start sm:items-center gap-2.5 text-blue-950 font-medium">
+              <div className="p-2 rounded-lg bg-blue-700 text-white shrink-0 shadow-2xs">
                 <Calculator className="w-4 h-4" />
               </div>
-              <div>
-                <span className="font-bold text-blue-950">Fórmula de Cálculo Oficial:</span>{' '}
-                <span className="text-blue-900 font-medium">
-                  <strong>Presupuesto Vigente (Col. 6)</strong> = Presupuesto Inicial (Col. 4) ± Modificaciones Aprobadas (Col. 5)
-                </span>
-                <span className="mx-2 text-blue-400">|</span>
-                <span className="text-blue-800 font-medium">
-                  <strong>Total Vigente</strong> = Sumatoria de toda la Columna Vigente
-                </span>
+              <div className="space-y-0.5">
+                <div className="font-bold text-blue-950 flex flex-wrap items-center gap-1.5 text-xs">
+                  <span>Regla Presupuestaria Oficial:</span>
+                  <span className="text-blue-900 font-semibold bg-white/80 px-2 py-0.5 rounded border border-blue-200/60">
+                    Presupuesto Vigente (Col. 6) = Inicial (Col. 4) + Incrementos (+) - Disminuciones (-)
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  Total Vigente = Sumatoria de toda la columna Vigente: <strong className="text-blue-950 font-mono">{formatCurrency(totals.totalVigente)}</strong>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] font-mono">
-              <span className="px-2.5 py-1 rounded-md bg-white border border-blue-200 text-blue-950 font-bold shadow-2xs">
-                Total Vigente: {formatCurrency(totals.totalVigente)}
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold shadow-2xs" title="Total de Modificaciones que incrementan el presupuesto (Ampliaciones)">
+                (+) Incrementos: +{formatCurrency(totals.totalModificacionesPositivas)}
               </span>
-              <span className="text-slate-400 text-xs hidden sm:inline">=</span>
-              <span className="px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-700 font-semibold shadow-2xs hidden sm:inline">
-                {formatCurrency(totals.totalInicial)} {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
+              <span className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-300 text-rose-900 font-bold shadow-2xs" title="Total de Modificaciones que disminuyen el presupuesto (Disminuciones)">
+                (-) Disminuciones: -{formatCurrency(totals.totalModificacionesNegativas)}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-blue-900 text-white font-black shadow-2xs" title="Presupuesto Vigente Institucional Oficial">
+                = Vigente: {formatCurrency(totals.totalVigente)}
               </span>
             </div>
           </div>
@@ -633,7 +644,9 @@ export const BudgetView: React.FC = () => {
                     <th className="px-3 py-3 whitespace-nowrap text-center">2. Renglón</th>
                     <th className="px-3.5 py-3 whitespace-nowrap min-w-[180px]">3. Nombre del Renglón</th>
                     <th className="px-3 py-3 text-right whitespace-nowrap">4. Presupuesto Inicial</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap" title="Modificaciones Aprobadas por DAF: Ampliaciones (+) o Disminuciones (-)">5. Modif. Aprobadas (±)</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap" title="Modificaciones Aprobadas: Incrementos (+), Disminuciones (-) y Neto">
+                      5. Modif. Aprobadas (±)
+                    </th>
                     <th className="px-3 py-3 text-right whitespace-nowrap bg-blue-50/70 text-blue-950 border-x border-blue-200/60 font-black" title="Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas">6. Presupuesto Vigente</th>
                     <th className="px-3 py-3 text-right whitespace-nowrap text-blue-800">7. Pagado Rebaja</th>
                     <th className="px-3 py-3 text-right whitespace-nowrap">8. Disponible Real</th>
@@ -694,11 +707,32 @@ export const BudgetView: React.FC = () => {
                             {formatCurrency(line.presupuestoInicial)}
                           </td>
 
-                          {/* 5. Modificaciones Aprobadas */}
-                          <td className="px-3 py-2.5 text-right font-mono font-semibold whitespace-nowrap">
-                            <span className={line.modificacionesAprobadas > 0 ? 'text-emerald-700' : line.modificacionesAprobadas < 0 ? 'text-red-700' : 'text-slate-400'}>
-                              {line.modificacionesAprobadas > 0 ? '+' : ''}{formatCurrency(line.modificacionesAprobadas)}
-                            </span>
+                          {/* 5. Modificaciones Aprobadas (Desglose de Positivas y Negativas) */}
+                          <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">
+                            {line.modificacionesPositivas > 0 || line.modificacionesNegativas > 0 ? (
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className={`font-bold ${line.modificacionesAprobadas > 0 ? 'text-emerald-700' : line.modificacionesAprobadas < 0 ? 'text-red-700' : 'text-slate-600'}`}>
+                                  {line.modificacionesAprobadas > 0 ? '+' : ''}{formatCurrency(line.modificacionesAprobadas)}
+                                </span>
+                                <div className="flex items-center gap-1 text-[9px]">
+                                  {line.modificacionesPositivas > 0 && (
+                                    <span className="text-emerald-700 font-semibold" title="Ampliación / Incremento Aprobado">
+                                      +{formatCurrency(line.modificacionesPositivas)}
+                                    </span>
+                                  )}
+                                  {line.modificacionesPositivas > 0 && line.modificacionesNegativas > 0 && (
+                                    <span className="text-slate-300">/</span>
+                                  )}
+                                  {line.modificacionesNegativas > 0 && (
+                                    <span className="text-rose-700 font-semibold" title="Disminución / Reducción Aprobada">
+                                      -{formatCurrency(line.modificacionesNegativas)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-medium">Q. 0.00</span>
+                            )}
                           </td>
 
                           {/* 6. Presupuesto Vigente */}
@@ -818,8 +852,21 @@ export const BudgetView: React.FC = () => {
                       <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
                         {formatCurrency(filteredTotals.totalInicial)}
                       </td>
-                      <td className={`px-3 py-3 text-right font-mono font-bold whitespace-nowrap ${filteredTotals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                        {filteredTotals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(filteredTotals.totalModificaciones)}
+                      <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className={`font-bold ${filteredTotals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {filteredTotals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(filteredTotals.totalModificaciones)}
+                          </span>
+                          <div className="flex items-center gap-1 text-[9px] font-semibold">
+                            <span className="text-emerald-700" title="Subtotal Ampliaciones (+) Filtradas">
+                              +{formatCurrency(filteredTotals.totalModificacionesPositivas)}
+                            </span>
+                            <span className="text-slate-300">/</span>
+                            <span className="text-rose-700" title="Subtotal Disminuciones (-) Filtradas">
+                              -{formatCurrency(filteredTotals.totalModificacionesNegativas)}
+                            </span>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-blue-100/60 text-blue-950">
                         {formatCurrency(filteredTotals.totalVigente)}
@@ -890,8 +937,21 @@ export const BudgetView: React.FC = () => {
                     <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900">
                       {formatCurrency(totals.totalInicial)}
                     </td>
-                    <td className={`px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap ${totals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
+                    <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className={`font-black ${totals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
+                        </span>
+                        <div className="flex items-center gap-1 text-[9px] font-bold">
+                          <span className="text-emerald-700" title="Total Ampliaciones (+) Global">
+                            +{formatCurrency(totals.totalModificacionesPositivas)}
+                          </span>
+                          <span className="text-slate-300">/</span>
+                          <span className="text-rose-700" title="Total Disminuciones (-) Global">
+                            -{formatCurrency(totals.totalModificacionesNegativas)}
+                          </span>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-blue-100/70 text-blue-950">
                       {formatCurrency(totals.totalVigente)}
@@ -957,7 +1017,7 @@ export const BudgetView: React.FC = () => {
           </div>
 
           {/* Tarjeta de Resumen Rápido de Totales Consolidados al Final de la Matriz */}
-          <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 shadow-md">
+          <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 shadow-md space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
@@ -986,56 +1046,182 @@ export const BudgetView: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 pt-4">
+            {/* Barra de Cuadre y Ecuación Oficial */}
+            <div className="bg-slate-800/90 rounded-xl p-3 border border-slate-700/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-xs font-mono">
+              <div className="text-slate-300 flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-400 font-sans font-bold">Ecuación de Cuadre:</span>
+                <span className="text-white font-bold">{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}</span>
+                <span className="text-emerald-400 font-bold">+{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesPositivas)}</span>
+                <span className="text-rose-400 font-bold">-{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesNegativas)}</span>
+                <span className="text-blue-400 font-bold">= {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}</span>
+              </div>
+              <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Vigente cuadra al 100% con la sumatoria de la columna
+              </div>
+            </div>
+
+            {/* Cuadrícula de Tarjetas de Totales con Separación de Modificaciones */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-1">
+              
+              {/* 4. Presupuesto Inicial */}
               <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">4. Presupuesto Inicial</div>
                 <div className="text-sm font-black font-mono text-white mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}>
                   {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}
                 </div>
+                <div className="text-[10px] text-slate-500 mt-1">Asignación aprobada DAF</div>
               </div>
 
+              {/* 5a. Ampliaciones (+) */}
+              <div className="bg-emerald-950/40 p-3 rounded-xl border border-emerald-800/40">
+                <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider flex items-center justify-between">
+                  <span>5a. (+) Incrementos</span>
+                  <TrendingUp className="w-3 h-3 text-emerald-400" />
+                </div>
+                <div className="text-sm font-black font-mono text-emerald-300 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesPositivas)}>
+                  +{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesPositivas)}
+                </div>
+                <div className="text-[10px] text-emerald-400/70 mt-1">Ampliaciones que suman</div>
+              </div>
+
+              {/* 5b. Disminuciones (-) */}
+              <div className="bg-rose-950/40 p-3 rounded-xl border border-rose-800/40">
+                <div className="text-[10px] font-bold text-rose-300 uppercase tracking-wider flex items-center justify-between">
+                  <span>5b. (-) Disminuciones</span>
+                  <TrendingDown className="w-3 h-3 text-rose-400" />
+                </div>
+                <div className="text-sm font-black font-mono text-rose-300 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesNegativas)}>
+                  -{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesNegativas)}
+                </div>
+                <div className="text-[10px] text-rose-400/70 mt-1">Reducciones que restan</div>
+              </div>
+
+              {/* 5c. Modif. Neta */}
               <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">5. Modif. Aprobadas</div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">5. Modif. Neta (±)</div>
                 <div className={`text-sm font-black font-mono mt-0.5 truncate ${(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones >= 0 ? 'text-emerald-400' : 'text-rose-400'}`} title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones)}>
                   {(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones >= 0 ? '+' : ''}{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones)}
                 </div>
+                <div className="text-[10px] text-slate-500 mt-1">Incrementos - Disminuciones</div>
               </div>
 
-              <div className="bg-blue-950/60 p-3 rounded-xl border border-blue-800/50">
+              {/* 6. Presupuesto Vigente */}
+              <div className="bg-blue-950/60 p-3 rounded-xl border border-blue-700/60">
                 <div className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">6. Presupuesto Vigente</div>
                 <div className="text-sm font-black font-mono text-blue-200 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}>
                   {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}
                 </div>
+                <div className="text-[10px] text-blue-300/80 mt-1 font-semibold">Suma de columna Vigente</div>
               </div>
 
+              {/* 7. Pagado que Rebaja */}
               <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">7. Pagado que Rebaja</div>
                 <div className="text-sm font-black font-mono text-blue-400 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalPagado)}>
                   {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalPagado)}
                 </div>
+                <div className="text-[10px] text-slate-500 mt-1">Rebaja disponible real</div>
               </div>
 
+              {/* 8. Disponible Real */}
               <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">8. Disponible Real</div>
                 <div className="text-sm font-black font-mono text-white mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleReal)}>
                   {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleReal)}
                 </div>
+                <div className="text-[10px] text-slate-500 mt-1">Vigente - Pagado</div>
               </div>
 
+              {/* 9. Comprometido */}
               <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">9. Comprometido</div>
                 <div className="text-sm font-black font-mono text-amber-400 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalComprometido)}>
                   {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalComprometido)}
                 </div>
+                <div className="text-[10px] text-slate-500 mt-1">Compras en trámite</div>
               </div>
 
-              <div className="bg-emerald-950/60 p-3 rounded-xl border border-emerald-800/50 col-span-2 sm:col-span-1">
+              {/* 10. Disp. Proyectado */}
+              <div className="bg-emerald-950/60 p-3 rounded-xl border border-emerald-800/50 col-span-2">
                 <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">10. Disp. Proyectado</div>
                 <div className={`text-sm font-black font-mono mt-0.5 truncate ${(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado >= 0 ? 'text-emerald-300' : 'text-rose-400'}`} title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado)}>
                   {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado)}
                 </div>
+                <div className="text-[10px] text-emerald-400/80 mt-1">Disponible Real - Comprometido</div>
+              </div>
+
+            </div>
+
+            {/* Desglose Detallado de Renglones con Modificaciones (Incrementos vs Disminuciones) */}
+            <div className="pt-3 border-t border-slate-800">
+              <div className="text-xs font-bold text-slate-300 mb-2 flex items-center justify-between">
+                <span>Renglones con Modificaciones Aprobadas en este ejercicio:</span>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  {budgetAvailability.filter(l => (l.modificacionesPositivas || 0) > 0 || (l.modificacionesNegativas || 0) > 0).length} renglones afectados
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Lista Incrementos */}
+                <div className="bg-slate-950/60 rounded-xl p-3 border border-emerald-900/30">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                    <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      Ampliaciones / Incrementos (+):
+                    </span>
+                    <span className="text-xs font-mono font-bold text-emerald-400">
+                      +{formatCurrency(totals.totalModificacionesPositivas)}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {budgetAvailability.filter(l => (l.modificacionesPositivas || 0) > 0).length === 0 ? (
+                      <div className="text-[11px] text-slate-500 py-1">No hay ampliaciones registradas.</div>
+                    ) : (
+                      budgetAvailability.filter(l => (l.modificacionesPositivas || 0) > 0).map(l => (
+                        <div key={`pos-${l.id}`} className="flex items-center justify-between text-[11px] bg-slate-900/80 px-2 py-1 rounded">
+                          <span className="text-slate-300 truncate max-w-[200px]" title={`[${l.renglonPresupuestario}] ${l.nombreRenglon}`}>
+                            <strong className="text-emerald-400 font-mono">[{l.renglonPresupuestario}]</strong> {l.nombreRenglon}
+                          </span>
+                          <span className="font-mono font-bold text-emerald-400 shrink-0">
+                            +{formatCurrency(l.modificacionesPositivas)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Lista Disminuciones */}
+                <div className="bg-slate-950/60 rounded-xl p-3 border border-rose-900/30">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                    <span className="text-[11px] font-bold text-rose-400 flex items-center gap-1.5">
+                      <TrendingDown className="w-3.5 h-3.5" />
+                      Disminuciones / Reducciones (-):
+                    </span>
+                    <span className="text-xs font-mono font-bold text-rose-400">
+                      -{formatCurrency(totals.totalModificacionesNegativas)}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {budgetAvailability.filter(l => (l.modificacionesNegativas || 0) > 0).length === 0 ? (
+                      <div className="text-[11px] text-slate-500 py-1">No hay disminuciones registradas.</div>
+                    ) : (
+                      budgetAvailability.filter(l => (l.modificacionesNegativas || 0) > 0).map(l => (
+                        <div key={`neg-${l.id}`} className="flex items-center justify-between text-[11px] bg-slate-900/80 px-2 py-1 rounded">
+                          <span className="text-slate-300 truncate max-w-[200px]" title={`[${l.renglonPresupuestario}] ${l.nombreRenglon}`}>
+                            <strong className="text-rose-400 font-mono">[{l.renglonPresupuestario}]</strong> {l.nombreRenglon}
+                          </span>
+                          <span className="font-mono font-bold text-rose-400 shrink-0">
+                            -{formatCurrency(l.modificacionesNegativas)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
+
           </div>
 
         </div>

@@ -1,4 +1,19 @@
-export type UserRole = 'administrador' | 'auditor' | 'usuario_estandar';
+export type UserRole = 'administrador' | 'auditor' | 'usuario_estandar' | string;
+
+export interface UserProfile {
+  id: string;
+  codigo: string; // ej: 'administrador', 'auditor', 'operador_compras', 'gestor_presupuesto', 'consulta_gerencial', etc.
+  nombre: string; // ej: 'Administrador General', 'Auditor de Control Interno'
+  descripcion: string;
+  esSistema: boolean; // Si es un rol predeterminado protegido contra borrado
+  color: string; // color identificador ej: 'blue', 'emerald', 'amber', 'rose', 'purple', 'indigo'
+  modulosPermitidos: ActiveTab[]; // Módulos a los que este perfil tiene acceso
+  activo: boolean;
+  fechaCreacion: string;
+  creadoPor?: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
 
 export interface User {
   id: string;
@@ -7,6 +22,7 @@ export interface User {
   email: string;
   password?: string;
   rol: UserRole;
+  perfilId?: string; // ID o código del perfil de usuario asignado
   cargo: string;
   departamento: string;
   activo: boolean;
@@ -118,6 +134,8 @@ export interface BudgetLineItem {
   nombreRenglon: string;          // 3. Nombre del Renglón (Ej: "Arrendamiento de Equipo de Cómputo")
   presupuestoInicial: number;     // 4. Presupuesto Inicial (GTQ)
   modificacionesAprobadas: number; // 5. Modificaciones Aprobadas (+ o - netas)
+  modificacionesPositivas?: number; // Suma de Incrementos / Ampliaciones / Aumentos (+)
+  modificacionesNegativas?: number; // Suma de Disminuciones / Reducciones / Bajas (-)
   presupuestoVigente: number;     // 6. Presupuesto Vigente (Inicial + Modificaciones)
   pagadoQueRebaja: number;        // 7. Pagado que Rebaja (Total ejecutado/pagado)
   disponibleReal: number;         // 8. Disponible Real (Vigente - Pagado que Rebaja)
@@ -185,6 +203,9 @@ export type AuditAction =
   | 'EDITAR_CATALOGO' 
   | 'CREAR_USUARIO' 
   | 'EDITAR_USUARIO' 
+  | 'CREAR_PERFIL_USUARIO'
+  | 'EDITAR_PERFIL_USUARIO'
+  | 'ELIMINAR_PERFIL_USUARIO'
   | 'EXPORTAR_DATOS'
   | 'RESTAURAR_DATOS'
   | 'IMPORTAR_DATOS'
@@ -201,7 +222,7 @@ export interface AuditLogEntry {
   usuario: string;
   rol: UserRole;
   accion: AuditAction;
-  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema';
+  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema' | 'Perfiles';
   detalles: string;
   registroId?: string;
   ip: string;
@@ -222,7 +243,7 @@ export interface AppNotification {
   categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema';
 }
 
-export type ActiveTab = 'dashboard' | 'compras' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'reportes' | 'personalizacion' | 'correo';
+export type ActiveTab = 'dashboard' | 'compras' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo';
 
 export interface GmailConfig {
   userEmail: string;

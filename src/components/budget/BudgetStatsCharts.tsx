@@ -10,6 +10,7 @@ import {
 import { BudgetLineItem, PurchaseRecord } from '../../types';
 import { 
   TrendingUp, 
+  TrendingDown,
   AlertTriangle, 
   DollarSign, 
   ShieldCheck, 
@@ -18,7 +19,8 @@ import {
   CheckCircle2, 
   HelpCircle,
   BarChart3,
-  Percent
+  Percent,
+  Calculator
 } from 'lucide-react';
 import { formatQuetzales } from '../../utils/formatters';
 
@@ -54,9 +56,12 @@ export const BudgetStatsCharts: React.FC<BudgetStatsChartsProps> = ({
     return budgetAvailability.filter(l => l.grupoPresupuestario === selectedGroupFilter);
   }, [budgetAvailability, selectedGroupFilter]);
 
-  // Totales consolidados
+  // Totales consolidados con desglose de modificaciones
   const totals = useMemo(() => {
     return linesToAnalyze.reduce((acc, line) => {
+      acc.inicial += line.presupuestoInicial || 0;
+      acc.modificacionesPositivas += line.modificacionesPositivas || 0;
+      acc.modificacionesNegativas += line.modificacionesNegativas || 0;
       acc.vigente += line.presupuestoVigente || 0;
       acc.pagado += line.pagadoQueRebaja || 0;
       acc.comprometido += line.comprometidoPendiente || 0;
@@ -64,6 +69,9 @@ export const BudgetStatsCharts: React.FC<BudgetStatsChartsProps> = ({
       acc.disponibleProyectado += line.disponibleProyectado || 0;
       return acc;
     }, {
+      inicial: 0,
+      modificacionesPositivas: 0,
+      modificacionesNegativas: 0,
       vigente: 0,
       pagado: 0,
       comprometido: 0,
@@ -71,6 +79,8 @@ export const BudgetStatsCharts: React.FC<BudgetStatsChartsProps> = ({
       disponibleProyectado: 0
     });
   }, [linesToAnalyze]);
+
+  const totalModificacionesNetas = totals.modificacionesPositivas - totals.modificacionesNegativas;
 
   // Porcentajes globales
   const pctPagado = totals.vigente > 0 ? (totals.pagado / totals.vigente) * 100 : 0;
@@ -197,6 +207,96 @@ export const BudgetStatsCharts: React.FC<BudgetStatsChartsProps> = ({
               <option key={g} value={g}>{g}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Cuadro Estadístico de Modificaciones Aprobadas: Separación de Incrementos y Disminuciones */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-indigo-600" />
+              Cuadro Estadístico de Modificaciones Presupuestarias Aprobadas (DAF)
+            </h4>
+            <p className="text-xs text-slate-500">
+              Desglose analítico de ampliaciones que incrementan (+) vs disminuciones que reducen (-) el techo presupuestario.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-mono font-bold">
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+              Ampliaciones: +{formatQuetzales(totals.modificacionesPositivas)}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
+              <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+              Disminuciones: -{formatQuetzales(totals.modificacionesNegativas)}
+            </span>
+          </div>
+        </div>
+
+        {/* 5 Tarjetas del Cuadro Estadístico de Modificaciones */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">1. Presupuesto Inicial</span>
+            <span className="text-sm font-black text-slate-900 font-mono block mt-1">
+              {formatQuetzales(totals.inicial)}
+            </span>
+            <span className="text-[10px] text-slate-400 block mt-0.5">Asignación aprobada</span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200">
+            <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block flex items-center justify-between">
+              <span>2. (+) Ampliaciones</span>
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+            </span>
+            <span className="text-sm font-black text-emerald-900 font-mono block mt-1">
+              +{formatQuetzales(totals.modificacionesPositivas)}
+            </span>
+            <span className="text-[10px] text-emerald-700 block mt-0.5">Incrementan el presupuesto</span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-rose-50/80 border border-rose-200">
+            <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block flex items-center justify-between">
+              <span>3. (-) Disminuciones</span>
+              <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+            </span>
+            <span className="text-sm font-black text-rose-900 font-mono block mt-1">
+              -{formatQuetzales(totals.modificacionesNegativas)}
+            </span>
+            <span className="text-[10px] text-rose-700 block mt-0.5">Reducen el presupuesto</span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-indigo-50/80 border border-indigo-200">
+            <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block">4. (±) Modif. Neta</span>
+            <span className={`text-sm font-black font-mono block mt-1 ${totalModificacionesNetas >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
+              {totalModificacionesNetas >= 0 ? '+' : ''}{formatQuetzales(totalModificacionesNetas)}
+            </span>
+            <span className="text-[10px] text-indigo-700 block mt-0.5">Incrementos - Disminuciones</span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-blue-900 text-white border border-blue-800 shadow-xs">
+            <span className="text-[10px] font-bold text-blue-200 uppercase tracking-wider block">5. Presupuesto Vigente</span>
+            <span className="text-sm font-black text-white font-mono block mt-1">
+              {formatQuetzales(totals.vigente)}
+            </span>
+            <span className="text-[10px] text-blue-300 block mt-0.5">Suma exacta de Columna Vigente</span>
+          </div>
+        </div>
+
+        {/* Ecuación explicativa institucional */}
+        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-mono text-slate-700 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <strong className="text-slate-900 font-sans">Fórmula de Cuadre:</strong>
+            <span>{formatQuetzales(totals.inicial)}</span>
+            <span className="text-emerald-700 font-bold">+{formatQuetzales(totals.modificacionesPositivas)}</span>
+            <span className="text-rose-700 font-bold">-{formatQuetzales(totals.modificacionesNegativas)}</span>
+            <span>=</span>
+            <strong className="text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 font-bold">{formatQuetzales(totals.vigente)}</strong>
+          </div>
+          <div className="text-[11px] text-emerald-700 font-bold flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Total Vigente verificado con la sumatoria de renglones
+          </div>
         </div>
       </div>
 

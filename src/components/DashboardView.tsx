@@ -24,7 +24,11 @@ import {
   Briefcase,
   X,
   FileText,
-  CheckCircle
+  CheckCircle,
+  Scale,
+  Landmark,
+  Table as TableIcon,
+  Percent
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -41,6 +45,7 @@ import {
   Sector
 } from 'recharts';
 import { formatQuetzales, formatDate, exportToCSV, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
+import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 
 // Formateador institucional para el eje Y de valores monetarios
 const formatYAxisCurrency = (val: number): string => {
@@ -227,6 +232,85 @@ const CustomPieTooltip: React.FC<PieTooltipProps> = ({ active, payload }) => {
   return null;
 };
 
+// Tooltip estilizado para el gráfico comparativo de Presupuesto Vigente vs Comprometido
+interface ComparativeTooltipProps {
+  active?: boolean;
+  payload?: any[];
+  label?: string;
+}
+
+const CustomComparativeTooltip: React.FC<ComparativeTooltipProps> = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-slate-900 text-white p-4 rounded-xl shadow-2xl border border-slate-700 text-xs min-w-[280px] max-w-sm z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center gap-2 pb-2 mb-2.5 border-b border-slate-700/80">
+          <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: data.color }} />
+          <div className="truncate">
+            <p className="font-bold text-white text-xs truncate leading-snug">{data.nombre}</p>
+            {data.grupo && (
+              <span className="text-[10px] text-slate-400 block truncate">{data.grupo}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {/* Presupuesto Vigente */}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-300 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-xs bg-[#1c39bb] shrink-0 inline-block shadow-2xs" />
+              Presupuesto Vigente:
+            </span>
+            <span className="font-mono font-bold text-blue-300 text-xs">
+              {formatQuetzales(data.presupuestoVigente)}
+            </span>
+          </div>
+
+          {/* Presupuesto Comprometido */}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-300 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-xs bg-[#d97706] shrink-0 inline-block shadow-2xs" />
+              Comprometido:
+            </span>
+            <span className="font-mono font-bold text-amber-300 text-xs">
+              {formatQuetzales(data.comprometido)}
+            </span>
+          </div>
+
+          {/* Barra de Porcentaje Comprometido */}
+          <div className="pt-1">
+            <div className="flex items-center justify-between text-[11px] mb-1">
+              <span className="text-slate-400 font-medium">Tasa de Compromiso:</span>
+              <span className="font-bold font-mono text-amber-400">{data.porcentajeComprometido}%</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+              <div 
+                className="bg-gradient-to-r from-amber-500 to-amber-400 h-full rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, data.porcentajeComprometido)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Saldo Disponible */}
+          <div className="flex items-center justify-between gap-4 pt-1 border-t border-slate-800">
+            <span className="text-slate-400">Saldo Disponible:</span>
+            <span className="font-mono font-semibold text-emerald-400">
+              {formatQuetzales(data.disponible)}
+            </span>
+          </div>
+
+          {/* Eventos */}
+          <div className="flex items-center justify-between gap-4 text-[11px] text-slate-400">
+            <span>Eventos Asociados:</span>
+            <span className="font-bold text-slate-200">{data.eventosCount} proceso(s)</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
   'Evaluación': 'bg-amber-100 text-amber-700',
@@ -252,6 +336,7 @@ const ACTION_BADGE_STYLES: Record<string, { bg: string; text: string; border: st
 export const DashboardView: React.FC = () => {
   const {
     purchases,
+    budgetAvailability,
     catalogs,
     setActiveTab,
     setIsPurchaseModalOpen,
@@ -273,6 +358,36 @@ export const DashboardView: React.FC = () => {
   // Estado para el sector activo en hover de la gráfica de pastel
   const [activePieIndex, setActivePieIndex] = useState<number | null>(null);
 
+  // Estados para el Panel Visual Comparativo: Presupuesto Vigente vs Comprometido
+  const [comparativeGrouping, setComparativeGrouping] = useState<'departamento' | 'dependencia' | 'renglon'>('departamento');
+  const [comparativeViewMode, setComparativeViewMode] = useState<'grafico' | 'tabla'>('grafico');
+
+  // Baseline institucional de techos presupuestarios vigentes para centros de costo / departamentos de la GIT
+  const DEPARTMENT_BASE_BUDGETS: Record<string, number> = {
+    'Departamento de Servicios Informáticos': 2400000,
+    'Dirección de Servicios Informáticos': 2400000,
+    'Servicios Informáticos': 2400000,
+    'Desarrollo y Administración de Sistemas': 2800000,
+    'Redes y Telecomunicaciones': 1600000,
+    'Soporte técnico': 1500000,
+    'Soporte Técnico': 1500000,
+    'Soporte Técnico Remoto': 600000,
+    'Seguridad Informática': 1200000,
+    'Sección de Videoaudiencias': 800000,
+    'Gestión de Adquisiciones TIC': 500000,
+    'Gerencia de Informática': 1800000,
+    'Centro de Cómputo': 1200000,
+  };
+
+  const DEPENDENCIA_BASE_BUDGETS: Record<string, number> = {
+    'Subgerencia de Infraestructura GIT': 3600000,
+    'Subgerencia de Desarrollo de Sistemas GIT': 2800000,
+    'Unidad de Seguridad de la Información': 1200000,
+    'Unidad de Soporte Técnico Departamental': 1500000,
+    'Salas de Vistas y Tribunales Penales': 800000,
+    'Centro de Cómputo Principal Torre de Tribunales': 1345000,
+  };
+
   // Control de acceso: solo perfiles Administrador y Auditor pueden ver la bitácora
   const canViewAudit = currentUser?.rol === 'administrador' || currentUser?.rol === 'auditor';
 
@@ -287,6 +402,227 @@ export const DashboardView: React.FC = () => {
       return true;
     });
   }, [purchases, selectedYear, filterGIT]);
+
+  // Datos calculados para el Gráfico de Barras Comparativo: Presupuesto Vigente vs Comprometido
+  const comparativeChartData = useMemo(() => {
+    if (comparativeGrouping === 'renglon') {
+      // 1. Agrupación por Renglón Presupuestario (Centros de Costo Financieros oficiales)
+      const lines = budgetAvailability && budgetAvailability.length > 0 ? budgetAvailability : [];
+      return lines.map((line, index) => {
+        const vigente = Number(line.presupuestoVigente) || 0;
+        const comprometido = Number(line.comprometidoPendiente) || 0;
+        const pagado = Number(line.pagadoQueRebaja) || 0;
+        const disponible = Number(line.disponibleReal) !== undefined ? Number(line.disponibleReal) : Math.max(0, vigente - pagado);
+        const porcentajeComprometido = vigente > 0 ? Math.min(100, Math.round((comprometido / vigente) * 100)) : 0;
+        
+        // Compras asociadas
+        const rCode = String(line.renglonPresupuestario || '').trim();
+        const evCount = filteredPurchases.filter(p => String(p.renglonPresupuestario || '').trim() === rCode).length;
+
+        return {
+          id: line.id || `renglon-${rCode}`,
+          nombre: `Renglón ${rCode} - ${line.nombreRenglon || ''}`,
+          nombreCorto: `R-${rCode}`,
+          grupo: line.grupoPresupuestario || '',
+          presupuestoVigente: Math.round(vigente * 100) / 100,
+          comprometido: Math.round(comprometido * 100) / 100,
+          pagado: Math.round(pagado * 100) / 100,
+          disponible: Math.round(disponible * 100) / 100,
+          porcentajeComprometido,
+          eventosCount: evCount,
+          color: getDepartmentColor(line.nombreRenglon || rCode, index)
+        };
+      }).sort((a, b) => b.presupuestoVigente - a.presupuestoVigente);
+    }
+
+    if (comparativeGrouping === 'dependencia') {
+      // 2. Agrupación por Dependencia Solicitante
+      const depMap: Record<string, {
+        nombre: string;
+        nombreCorto: string;
+        comprometido: number;
+        pagado: number;
+        totalMontoPurchases: number;
+        eventosCount: number;
+      }> = {};
+
+      const depCat = catalogs.find(c => c.codigo === 'DEPENDENCIA_SOLICITANTE');
+      if (depCat && depCat.items) {
+        depCat.items.forEach(it => {
+          if (it.activo) {
+            depMap[it.valor] = {
+              nombre: it.valor,
+              nombreCorto: getShortDeptName(it.valor),
+              comprometido: 0,
+              pagado: 0,
+              totalMontoPurchases: 0,
+              eventosCount: 0
+            };
+          }
+        });
+      }
+
+      filteredPurchases.forEach(p => {
+        const depName = p.dependenciaSolicitante || p.areaSolicitante || 'Otras Dependencias';
+        if (!depMap[depName]) {
+          depMap[depName] = {
+            nombre: depName,
+            nombreCorto: getShortDeptName(depName),
+            comprometido: 0,
+            pagado: 0,
+            totalMontoPurchases: 0,
+            eventosCount: 0
+          };
+        }
+        const m = Number(p.monto) || 0;
+        depMap[depName].totalMontoPurchases += m;
+        depMap[depName].eventosCount += 1;
+
+        const isPaid = p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada';
+        const affects = doesStatusAffectBudget(p.estatusEvento);
+
+        if (isPaid) {
+          depMap[depName].pagado += (Number(p.montoPagado) || m);
+        } else if (affects) {
+          depMap[depName].comprometido += m;
+        }
+      });
+
+      return Object.values(depMap).map((dep, index) => {
+        const base = DEPENDENCIA_BASE_BUDGETS[dep.nombre] || 850000;
+        const totalUsed = dep.comprometido + dep.pagado;
+        const presupuestoVigente = Math.round(Math.max(base, totalUsed > 0 ? totalUsed * 1.2 : 0) * 100) / 100;
+        const disponible = Math.max(0, Math.round((presupuestoVigente - dep.comprometido - dep.pagado) * 100) / 100);
+        const porcentajeComprometido = presupuestoVigente > 0 
+          ? Math.min(100, Math.round((dep.comprometido / presupuestoVigente) * 100)) 
+          : 0;
+
+        return {
+          id: `dep-${index}`,
+          nombre: dep.nombre,
+          nombreCorto: dep.nombreCorto,
+          presupuestoVigente,
+          comprometido: Math.round(dep.comprometido * 100) / 100,
+          pagado: Math.round(dep.pagado * 100) / 100,
+          disponible,
+          porcentajeComprometido,
+          eventosCount: dep.eventosCount,
+          color: getDepartmentColor(dep.nombre, index)
+        };
+      }).sort((a, b) => b.presupuestoVigente - a.presupuestoVigente);
+    }
+
+    // 3. Agrupación por Centro de Costo / Departamento Solicitante (default)
+    const deptMap: Record<string, {
+      nombre: string;
+      nombreCorto: string;
+      comprometido: number;
+      pagado: number;
+      totalMontoPurchases: number;
+      eventosCount: number;
+    }> = {};
+
+    const areaCat = catalogs.find(c => c.codigo === 'AREA_SOLICITANTE');
+    if (areaCat && areaCat.items) {
+      areaCat.items.forEach(it => {
+        if (it.activo) {
+          deptMap[it.valor] = {
+            nombre: it.valor,
+            nombreCorto: getShortDeptName(it.valor),
+            comprometido: 0,
+            pagado: 0,
+            totalMontoPurchases: 0,
+            eventosCount: 0
+          };
+        }
+      });
+    }
+
+    filteredPurchases.forEach(p => {
+      const deptName = p.areaSolicitante || p.dependenciaSolicitante || 'Otras Dependencias';
+      if (!deptMap[deptName]) {
+        deptMap[deptName] = {
+          nombre: deptName,
+          nombreCorto: getShortDeptName(deptName),
+          comprometido: 0,
+          pagado: 0,
+          totalMontoPurchases: 0,
+          eventosCount: 0
+        };
+      }
+      const m = Number(p.monto) || 0;
+      deptMap[deptName].totalMontoPurchases += m;
+      deptMap[deptName].eventosCount += 1;
+
+      const isPaid = p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada';
+      const affects = doesStatusAffectBudget(p.estatusEvento);
+
+      if (isPaid) {
+        deptMap[deptName].pagado += (Number(p.montoPagado) || m);
+      } else if (affects) {
+        deptMap[deptName].comprometido += m;
+      }
+    });
+
+    return Object.values(deptMap).map((dept, index) => {
+      let base = 750000;
+      for (const [key, val] of Object.entries(DEPARTMENT_BASE_BUDGETS)) {
+        if (dept.nombre.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(dept.nombre.toLowerCase())) {
+          base = val;
+          break;
+        }
+      }
+      const totalUsed = dept.comprometido + dept.pagado;
+      const presupuestoVigente = Math.round(Math.max(base, totalUsed > 0 ? totalUsed * 1.25 : 0) * 100) / 100;
+      const disponible = Math.max(0, Math.round((presupuestoVigente - dept.comprometido - dept.pagado) * 100) / 100);
+      const porcentajeComprometido = presupuestoVigente > 0 
+        ? Math.min(100, Math.round((dept.comprometido / presupuestoVigente) * 100)) 
+        : 0;
+
+      return {
+        id: `dept-${index}`,
+        nombre: dept.nombre,
+        nombreCorto: dept.nombreCorto,
+        presupuestoVigente,
+        comprometido: Math.round(dept.comprometido * 100) / 100,
+        pagado: Math.round(dept.pagado * 100) / 100,
+        disponible,
+        porcentajeComprometido,
+        eventosCount: dept.eventosCount,
+        color: getDepartmentColor(dept.nombre, index)
+      };
+    }).sort((a, b) => b.presupuestoVigente - a.presupuestoVigente);
+  }, [filteredPurchases, comparativeGrouping, budgetAvailability, catalogs]);
+
+  // Totales consolidados para el panel comparativo
+  const comparativeTotals = useMemo(() => {
+    let totalVigente = 0;
+    let totalComprometido = 0;
+    let totalPagado = 0;
+    let totalDisponible = 0;
+    let totalEventos = 0;
+
+    comparativeChartData.forEach(item => {
+      totalVigente += item.presupuestoVigente;
+      totalComprometido += item.comprometido;
+      totalPagado += item.pagado;
+      totalDisponible += item.disponible;
+      totalEventos += item.eventosCount;
+    });
+
+    const porcentajeComprometido = totalVigente > 0 
+      ? Math.round((totalComprometido / totalVigente) * 1000) / 10 
+      : 0;
+
+    return {
+      totalVigente,
+      totalComprometido,
+      totalPagado,
+      totalDisponible,
+      porcentajeComprometido,
+      totalEventos
+    };
+  }, [comparativeChartData]);
 
   // Métricas Clave para los 3 Indicadores Principales
   const metrics = useMemo(() => {
@@ -848,6 +1184,445 @@ export const DashboardView: React.FC = () => {
             </span>
           </div>
         </div>
+
+      </div>
+
+      {/* ========================================================================= */}
+      {/* PANEL VISUAL: COMPARATIVA PRESUPUESTO VIGENTE VS COMPROMETIDO           */}
+      {/* POR CADA CENTRO DE COSTO O DEPARTAMENTO (CON RECHARTS)                  */}
+      {/* ========================================================================= */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 shadow-xs space-y-6">
+        
+        {/* Encabezado del Panel: Título, Filtro de Agrupación y Vista */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-blue-50 text-[#1c39bb] border border-blue-200/80 shadow-2xs shrink-0">
+              <Scale className="w-5 h-5 text-[#1c39bb]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Comparativa: Presupuesto Vigente vs. Comprometido</span>
+                </h3>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-[#1c39bb] border border-blue-200">
+                  {comparativeChartData.length} {comparativeGrouping === 'renglon' ? 'renglones' : 'centros de costo'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Evaluación comparativa de techos presupuestarios vigentes y compromisos adquiridos en adquisiciones institucionales
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto">
+            {/* Selector de Agrupación / Dimensión */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+              <button
+                type="button"
+                onClick={() => setComparativeGrouping('departamento')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  comparativeGrouping === 'departamento'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Agrupar por Área Solicitante / Centro de Costo Operativo"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Departamentos</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setComparativeGrouping('dependencia')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  comparativeGrouping === 'dependencia'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Agrupar por Dependencia Solicitante Institucional"
+              >
+                <Landmark className="w-3.5 h-3.5" />
+                <span>Dependencias</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setComparativeGrouping('renglon')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  comparativeGrouping === 'renglon'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Agrupar por Renglón Presupuestario Oficial (Centros de Costo Financieros)"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Renglones</span>
+              </button>
+            </div>
+
+            {/* Alternador de Modo: Gráfico vs Tabla */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+              <button
+                type="button"
+                onClick={() => setComparativeViewMode('grafico')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  comparativeViewMode === 'grafico'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Ver Gráfico de Barras con Recharts"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Gráfico</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setComparativeViewMode('tabla')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  comparativeViewMode === 'tabla'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Ver Tabla Comparativa Detallada"
+              >
+                <TableIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Tabla</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Franja de Métricas Consolidadas: Resumen Ejecutivo */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+          {/* Card 1: Total Presupuesto Vigente */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5">
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-xs bg-[#1c39bb]" /> Presupuesto Vigente
+              </span>
+              <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                Techo Total
+              </span>
+            </div>
+            <div className="text-base sm:text-xl font-black font-mono text-slate-900">
+              {formatQuetzales(comparativeTotals.totalVigente)}
+            </div>
+            <span className="text-[11px] text-slate-500 font-medium block mt-0.5">
+              Asignación oficial aprobada
+            </span>
+          </div>
+
+          {/* Card 2: Total Comprometido */}
+          <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-3.5">
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-xs bg-[#d97706]" /> Comprometido
+              </span>
+              <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                En Trámite
+              </span>
+            </div>
+            <div className="text-base sm:text-xl font-black font-mono text-amber-950">
+              {formatQuetzales(comparativeTotals.totalComprometido)}
+            </div>
+            <span className="text-[11px] text-amber-700/90 font-medium block mt-0.5">
+              Procesos con reserva formal
+            </span>
+          </div>
+
+          {/* Card 3: Tasa de Compromiso Global */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5">
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                <Percent className="w-3 h-3 text-slate-600" /> Tasa Compromiso
+              </span>
+              <span className="text-[10px] font-bold text-slate-700 bg-slate-200/80 px-1.5 py-0.5 rounded">
+                Global
+              </span>
+            </div>
+            <div className="text-base sm:text-xl font-black font-mono text-slate-900 flex items-baseline gap-1.5">
+              <span>{comparativeTotals.porcentajeComprometido}%</span>
+              <span className="text-xs font-normal text-slate-400">del vigente</span>
+            </div>
+            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1.5">
+              <div 
+                className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, comparativeTotals.porcentajeComprometido)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Card 4: Saldo Disponible Remanente */}
+          <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3.5">
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-700" /> Saldo Disponible
+              </span>
+              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200">
+                Remanente
+              </span>
+            </div>
+            <div className="text-base sm:text-xl font-black font-mono text-emerald-950">
+              {formatQuetzales(comparativeTotals.totalDisponible)}
+            </div>
+            <span className="text-[11px] text-emerald-700/90 font-medium block mt-0.5">
+              Capacidad para nuevas compras
+            </span>
+          </div>
+        </div>
+
+        {/* CONTENIDO DEL PANEL: MODO GRÁFICO O MODO TABLA */}
+        {comparativeViewMode === 'grafico' ? (
+          <div>
+            {comparativeChartData.length === 0 ? (
+              <div className="py-20 flex flex-col items-center justify-center text-slate-400 text-center">
+                <Scale className="w-12 h-12 stroke-1 text-slate-300 mb-2" />
+                <p className="text-xs font-medium">No se encontraron datos para la dimensión seleccionada.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Contenedor del Gráfico de Barras con Recharts */}
+                <div className="w-full h-96">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={comparativeChartData}
+                      margin={{ top: 20, right: 20, left: 10, bottom: 55 }}
+                      onClick={(state: any) => {
+                        if (state && state.activePayload && state.activePayload.length) {
+                          const clickedItem = state.activePayload[0].payload;
+                          if (comparativeGrouping !== 'renglon') {
+                            setSelectedDepartment(prev => prev === clickedItem.nombre ? null : clickedItem.nombre);
+                          }
+                        }
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis
+                        dataKey="nombreCorto"
+                        tick={{ fill: '#334155', fontSize: 11, fontWeight: 700 }}
+                        interval={0}
+                        angle={-22}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis
+                        tickFormatter={formatYAxisCurrency}
+                        tick={{ fill: '#64748b', fontSize: 11 }}
+                        width={75}
+                      />
+                      <Tooltip content={<CustomComparativeTooltip />} />
+                      <Legend
+                        verticalAlign="top"
+                        align="right"
+                        wrapperStyle={{ paddingBottom: 16 }}
+                        content={() => (
+                          <div className="flex items-center justify-end gap-5 text-xs font-bold pb-2 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-3.5 h-3.5 rounded-xs bg-[#1c39bb] shadow-xs" />
+                              <span className="text-slate-700">Presupuesto Vigente (Q)</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-3.5 h-3.5 rounded-xs bg-[#d97706] shadow-xs" />
+                              <span className="text-slate-700">Presupuesto Comprometido (Q)</span>
+                            </div>
+                          </div>
+                        )}
+                      />
+                      <Bar
+                        dataKey="presupuestoVigente"
+                        name="Presupuesto Vigente"
+                        fill="#1c39bb"
+                        radius={[5, 5, 0, 0]}
+                        maxBarSize={34}
+                        cursor="pointer"
+                      />
+                      <Bar
+                        dataKey="comprometido"
+                        name="Presupuesto Comprometido"
+                        fill="#d97706"
+                        radius={[5, 5, 0, 0]}
+                        maxBarSize={34}
+                        cursor="pointer"
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Desglose rápido por Departamento / Renglón en la parte inferior del gráfico */}
+                <div className="pt-4 border-t border-slate-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {comparativeChartData.slice(0, 8).map((item) => {
+                      const isSelected = selectedDepartment === item.nombre;
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            if (comparativeGrouping !== 'renglon') {
+                              setSelectedDepartment(prev => prev === item.nombre ? null : item.nombre);
+                            }
+                          }}
+                          className={`p-3 rounded-xl border transition-all text-xs cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-400/40 shadow-xs'
+                              : 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-100/70'
+                          }`}
+                          title={`Haga clic para ${isSelected ? 'quitar filtro' : 'filtrar por'} ${item.nombre}`}
+                        >
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span 
+                                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" 
+                                style={{ backgroundColor: item.color }} 
+                              />
+                              <span className="font-bold text-slate-800 truncate" title={item.nombre}>
+                                {item.nombreCorto}
+                              </span>
+                            </div>
+                            <span className="font-bold font-mono text-[11px] text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded shrink-0">
+                              {item.porcentajeComprometido}%
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 pt-1 border-t border-slate-200/60 font-mono text-[11px]">
+                            <div className="flex items-center justify-between text-slate-600">
+                              <span className="font-sans text-[10px] text-slate-400">Vigente:</span>
+                              <span className="font-bold text-slate-900">{formatQuetzales(item.presupuestoVigente)}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-amber-700">
+                              <span className="font-sans text-[10px] text-amber-600">Comprometido:</span>
+                              <span className="font-bold">{formatQuetzales(item.comprometido)}</span>
+                            </div>
+                          </div>
+
+                          {/* Mini barra de compromiso */}
+                          <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden mt-2">
+                            <div 
+                              className="bg-amber-500 h-full rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min(100, item.porcentajeComprometido)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* MODO TABLA COMPARATIVA */
+          <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-600 text-[11px] font-bold uppercase border-b border-slate-200 tracking-wider">
+                <tr>
+                  <th className="px-3.5 py-3">
+                    {comparativeGrouping === 'renglon' ? 'Renglón Presupuestario' : 'Centro de Costo / Departamento'}
+                  </th>
+                  <th className="px-3.5 py-3 text-right">Presupuesto Vigente (Q)</th>
+                  <th className="px-3.5 py-3 text-right">Comprometido (Q)</th>
+                  <th className="px-3.5 py-3 text-center">Tasa Compromiso</th>
+                  <th className="px-3.5 py-3 text-right">Pagado (Q)</th>
+                  <th className="px-3.5 py-3 text-right">Saldo Disponible (Q)</th>
+                  <th className="px-3.5 py-3 text-center">Eventos</th>
+                  {comparativeGrouping !== 'renglon' && (
+                    <th className="px-3.5 py-3 text-center">Acción</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {comparativeChartData.map((row) => {
+                  const isSelected = selectedDepartment === row.nombre;
+                  return (
+                    <tr 
+                      key={row.id} 
+                      className={`transition-colors ${
+                        isSelected ? 'bg-blue-50/70 font-semibold' : 'hover:bg-slate-50/80'
+                      }`}
+                    >
+                      <td className="px-3.5 py-3 font-medium text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <span 
+                            className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" 
+                            style={{ backgroundColor: row.color }} 
+                          />
+                          <div>
+                            <span className="font-bold text-slate-800 block">{row.nombre}</span>
+                            {row.grupo && (
+                              <span className="text-[10px] text-slate-400 block">{row.grupo}</span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-3 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {formatQuetzales(row.presupuestoVigente)}
+                      </td>
+                      <td className="px-3.5 py-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
+                        {formatQuetzales(row.comprometido)}
+                      </td>
+                      <td className="px-3.5 py-3 text-center whitespace-nowrap">
+                        <div className="inline-flex flex-col items-center">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200">
+                            {row.porcentajeComprometido}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-3 text-right font-mono text-purple-700 whitespace-nowrap">
+                        {formatQuetzales(row.pagado)}
+                      </td>
+                      <td className="px-3.5 py-3 text-right font-mono font-semibold text-emerald-700 whitespace-nowrap">
+                        {formatQuetzales(row.disponible)}
+                      </td>
+                      <td className="px-3.5 py-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap">
+                        {row.eventosCount}
+                      </td>
+                      {comparativeGrouping !== 'renglon' && (
+                        <td className="px-3.5 py-3 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDepartment(prev => prev === row.nombre ? null : row.nombre)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                            }`}
+                          >
+                            {isSelected ? 'Filtrado' : 'Analizar'}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot className="bg-slate-900 text-white font-bold text-xs border-t-2 border-slate-700">
+                <tr>
+                  <td className="px-3.5 py-3 text-slate-300 uppercase tracking-wider">
+                    Total Institucional Consolidado
+                  </td>
+                  <td className="px-3.5 py-3 text-right font-mono text-cyan-300">
+                    {formatQuetzales(comparativeTotals.totalVigente)}
+                  </td>
+                  <td className="px-3.5 py-3 text-right font-mono text-amber-300">
+                    {formatQuetzales(comparativeTotals.totalComprometido)}
+                  </td>
+                  <td className="px-3.5 py-3 text-center font-mono text-amber-300">
+                    {comparativeTotals.porcentajeComprometido}%
+                  </td>
+                  <td className="px-3.5 py-3 text-right font-mono text-purple-300">
+                    {formatQuetzales(comparativeTotals.totalPagado)}
+                  </td>
+                  <td className="px-3.5 py-3 text-right font-mono text-emerald-400">
+                    {formatQuetzales(comparativeTotals.totalDisponible)}
+                  </td>
+                  <td className="px-3.5 py-3 text-center font-mono text-slate-200">
+                    {comparativeTotals.totalEventos}
+                  </td>
+                  {comparativeGrouping !== 'renglon' && (
+                    <td className="px-3.5 py-3 text-center">—</td>
+                  )}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
 
       </div>
 

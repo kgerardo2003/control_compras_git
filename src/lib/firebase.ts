@@ -16,7 +16,7 @@ import {
   limit
 } from 'firebase/firestore';
 import firebaseConfigFile from '../../firebase-applet-config.json';
-import { PurchaseRecord, AuditLogEntry, Catalog, User, BudgetLineItem, BudgetModification } from '../types';
+import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification } from '../types';
 
 export const FIREBASE_CONFIG = {
   apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || firebaseConfigFile.apiKey,
@@ -72,6 +72,7 @@ export const PURCHASES_COLLECTION = 'purchases';
 export const AUDIT_LOGS_COLLECTION = 'audit_logs';
 export const CATALOGS_COLLECTION = 'catalogs';
 export const USERS_COLLECTION = 'users';
+export const USER_PROFILES_COLLECTION = 'user_profiles';
 export const BUDGET_LINES_COLLECTION = 'budget_lines';
 export const BUDGET_MODIFICATIONS_COLLECTION = 'budget_modifications';
 
@@ -196,17 +197,6 @@ export async function removeCatalogFromFirestore(catalogId: string): Promise<voi
     await deleteDoc(docRef);
   } catch (err) {
     console.error("Error eliminando catálogo en Firestore:", err);
-  }
-}
-
-export async function saveUserToFirestore(user: User): Promise<void> {
-  try {
-    const docRef = doc(db, USERS_COLLECTION, user.id);
-    const cleaned = cleanUndefined(user);
-    await setDoc(docRef, cleaned, { merge: true });
-    console.log("Usuario actualizado en Firestore:", user.id);
-  } catch (err) {
-    console.error("Error guardando usuario en Firestore:", err);
   }
 }
 
@@ -465,6 +455,111 @@ export function onBudgetModificationsSnapshot(
     );
   } catch (err) {
     console.warn("Excepción al iniciar listener de modificaciones:", err);
+    onError?.(err as Error);
+    return () => {};
+  }
+}
+
+// ==========================================
+// OPERACIONES FIRESTORE PARA PERFILES Y USUARIOS
+// ==========================================
+
+export async function saveUserProfileToFirestore(profile: UserProfile): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docId = String(profile.id || `prof-${profile.codigo || Date.now()}`).replace(/[\/\\]/g, '-');
+    const docRef = doc(db, USER_PROFILES_COLLECTION, docId);
+    await setDoc(docRef, cleanUndefined({ ...profile, id: docId }), { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error guardando perfil de usuario en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteUserProfileFromFirestore(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, USER_PROFILES_COLLECTION, id);
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error eliminando perfil de usuario de Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export function onUserProfilesSnapshot(
+  onData: (profiles: UserProfile[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  try {
+    const colRef = collection(db, USER_PROFILES_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: UserProfile[] = [];
+        snapshot.forEach((d) => {
+          items.push(d.data() as UserProfile);
+        });
+        items.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+        onData(items);
+      },
+      (err) => {
+        console.warn("Error en listener de perfiles de usuario:", err);
+        onError?.(err);
+      }
+    );
+  } catch (err) {
+    console.warn("Excepción al iniciar listener de perfiles de usuario:", err);
+    onError?.(err as Error);
+    return () => {};
+  }
+}
+
+export async function saveUserToFirestore(user: User): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, USERS_COLLECTION, user.id);
+    await setDoc(docRef, cleanUndefined(user), { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error guardando usuario en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteUserFromFirestore(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, USERS_COLLECTION, id);
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error eliminando usuario de Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export function onUsersSnapshot(
+  onData: (users: User[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  try {
+    const colRef = collection(db, USERS_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: User[] = [];
+        snapshot.forEach((d) => {
+          items.push(d.data() as User);
+        });
+        items.sort((a, b) => (a.nombreCompleto || '').localeCompare(b.nombreCompleto || ''));
+        onData(items);
+      },
+      (err) => {
+        console.warn("Error en listener de usuarios:", err);
+        onError?.(err);
+      }
+    );
+  } catch (err) {
+    console.warn("Excepción al iniciar listener de usuarios:", err);
     onError?.(err as Error);
     return () => {};
   }

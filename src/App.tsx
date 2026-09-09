@@ -13,6 +13,7 @@ import { PurchasesView } from './components/PurchasesView';
 import { CatalogsView } from './components/CatalogsView';
 import { AuditLogView } from './components/AuditLogView';
 import { UsersView } from './components/UsersView';
+import { ProfilesView } from './components/ProfilesView';
 import { ReportsView } from './components/ReportsView';
 import { BudgetView } from './components/budget/BudgetView';
 import { CustomizationView } from './components/CustomizationView';
@@ -27,15 +28,19 @@ import { ImportExcelModal } from './components/ImportExcelModal';
 import { ToastContainer } from './components/ToastContainer';
 
 const AppContent: React.FC = () => {
-  const { activeTab, setActiveTab, themeConfig, currentUser } = useApp();
+  const { activeTab, setActiveTab, themeConfig, currentUser, hasModuleAccess } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Redireccionar si un usuario estándar intenta ingresar al módulo de auditoría
+  // Redireccionar si el usuario actual no tiene permiso sobre la pestaña activa
   useEffect(() => {
-    if (currentUser?.rol === 'usuario_estandar' && activeTab === 'auditoria') {
-      setActiveTab('dashboard');
+    if (currentUser && !hasModuleAccess(activeTab)) {
+      if (hasModuleAccess('dashboard')) {
+        setActiveTab('dashboard');
+      } else if (hasModuleAccess('compras')) {
+        setActiveTab('compras');
+      }
     }
-  }, [currentUser?.rol, activeTab, setActiveTab]);
+  }, [currentUser, activeTab, hasModuleAccess, setActiveTab]);
 
   // PUERTA DE AUTENTICACIÓN: Si el usuario no está autenticado, muestra el Panel de Logueo
   if (!currentUser) {
@@ -46,9 +51,6 @@ const AppContent: React.FC = () => {
       </>
     );
   }
-
-  const isAdmin = currentUser.rol === 'administrador';
-  const isAuditorOrAdmin = currentUser.rol === 'administrador' || currentUser.rol === 'auditor';
 
   return (
     <div className={`flex h-screen w-full ${themeConfig.appBackground} text-slate-800 font-sans overflow-hidden`}>
@@ -68,27 +70,58 @@ const AppContent: React.FC = () => {
         {/* Contenedor con Scroll de Vistas */}
         <main className={`flex-1 overflow-y-auto p-4 sm:p-6 ${themeConfig.appBackground}`}>
           <div className="max-w-7xl mx-auto w-full">
-            {activeTab === 'dashboard' && <DashboardView />}
-            {activeTab === 'compras' && <PurchasesView />}
-            {activeTab === 'presupuesto' && <BudgetView />}
-            {activeTab === 'reportes' && <ReportsView />}
-            
-            {/* Control & Auditoría */}
-            {activeTab === 'auditoria' && (
-              isAuditorOrAdmin ? (
-                <AuditLogView />
-              ) : (
+            {activeTab === 'dashboard' && (
+              hasModuleAccess('dashboard') ? <DashboardView /> : (
                 <AdminAccessGate 
-                  moduleTitle="Registro y Bitácora de Auditoría" 
-                  moduleDescription="Supervisión institucional y bitácora de eventos del sistema" 
-                  requiredRolesText="Acceso Exclusivo para Administrador y Auditoría"
+                  moduleTitle="Panel Principal de Disponibilidad y Compras" 
+                  moduleDescription="Métricas consolidadas, semáforos de disponibilidad y monitoreo de eventos" 
                 />
               )
             )}
 
-            {/* PANELES DE ADMINISTRACIÓN (Acceso restringido exclusivamente a Administradores) */}
+            {activeTab === 'compras' && (
+              hasModuleAccess('compras') ? <PurchasesView /> : (
+                <AdminAccessGate 
+                  moduleTitle="Compras y Eventos Tecnológicos" 
+                  moduleDescription="Gestión y seguimiento de expedientes F56-e, eventos NOG y actas GIT" 
+                />
+              )
+            )}
+
+            {activeTab === 'presupuesto' && (
+              hasModuleAccess('presupuesto') ? <BudgetView /> : (
+                <AdminAccessGate 
+                  moduleTitle="Presupuesto IT y Disponibilidad" 
+                  moduleDescription="Matriz de disponibilidad oficial (12 cols), modificaciones y catálogo de 39 renglones" 
+                />
+              )
+            )}
+
+            {activeTab === 'reportes' && (
+              hasModuleAccess('reportes') ? <ReportsView /> : (
+                <AdminAccessGate 
+                  moduleTitle="Reportes Oficiales & Dictámenes" 
+                  moduleDescription="Generación de dictámenes oficiales en PDF y reportes analíticos" 
+                />
+              )
+            )}
+            
+            {/* Control & Auditoría */}
+            {activeTab === 'auditoria' && (
+              hasModuleAccess('auditoria') ? (
+                <AuditLogView />
+              ) : (
+                <AdminAccessGate 
+                  moduleTitle="Registro y Bitácora de Auditoría" 
+                  moduleDescription="Supervisión institucional y bitácora inmutable de eventos del sistema" 
+                  requiredRolesText="Acceso Exclusivo para Perfiles con Permiso de Auditoría"
+                />
+              )
+            )}
+
+            {/* PANELES DE ADMINISTRACIÓN Y CONTROL DE ACCESO (RBAC) */}
             {activeTab === 'catalogos' && (
-              isAdmin ? (
+              hasModuleAccess('catalogos') ? (
                 <CatalogsView />
               ) : (
                 <AdminAccessGate 
@@ -99,18 +132,29 @@ const AppContent: React.FC = () => {
             )}
 
             {activeTab === 'usuarios' && (
-              isAdmin ? (
+              hasModuleAccess('usuarios') ? (
                 <UsersView />
               ) : (
                 <AdminAccessGate 
                   moduleTitle="Gestión de Usuarios" 
-                  moduleDescription="Control de cuentas, asignación de roles y permisos institucionales" 
+                  moduleDescription="Control de cuentas institucionales y credenciales del personal" 
+                />
+              )
+            )}
+
+            {activeTab === 'perfiles' && (
+              hasModuleAccess('perfiles') ? (
+                <ProfilesView />
+              ) : (
+                <AdminAccessGate 
+                  moduleTitle="Perfiles de Usuario y Permisos (RBAC)" 
+                  moduleDescription="Definición de roles institucionales y privilegios de acceso a los módulos del sistema" 
                 />
               )
             )}
 
             {activeTab === 'personalizacion' && (
-              isAdmin ? (
+              hasModuleAccess('personalizacion') ? (
                 <CustomizationView />
               ) : (
                 <AdminAccessGate 
@@ -121,12 +165,12 @@ const AppContent: React.FC = () => {
             )}
 
             {activeTab === 'correo' && (
-              isAdmin ? (
+              hasModuleAccess('correo') ? (
                 <EmailConfigView />
               ) : (
                 <AdminAccessGate 
                   moduleTitle="Configuración de Correo Electrónico" 
-                  moduleDescription="Parámetros de conexión Gmail SMTP, alertas para autoridades y despliegue en Vercel" 
+                  moduleDescription="Parámetros de conexión Gmail SMTP, alertas para autoridades y notificaciones" 
                 />
               )
             )}

@@ -15,7 +15,8 @@ export function calculateBudgetAvailability(
     const cleanLineRenglon = String(line.renglonPresupuestario || '').trim();
 
     // 1. Calcular Modificaciones Aprobadas netas para este renglón (+ ampliaciones/transferencias destino, - disminuciones/transferencias origen)
-    let modNeta = 0;
+    let modPositivas = 0;
+    let modNegativas = 0;
     let hasExplicitMods = false;
 
     for (const mod of modifications) {
@@ -29,32 +30,42 @@ export function calculateBudgetAvailability(
 
       // Ampliación o Incremento al renglón (+)
       if ((tipo === 'ampliacion' || tipo === 'ampliación' || tipo === 'incremento' || tipo === 'aumento') && modDestino === cleanLineRenglon) {
-        modNeta += monto;
+        modPositivas += monto;
         hasExplicitMods = true;
       }
       // Disminución o Reducción al renglón (-)
       else if ((tipo === 'disminucion' || tipo === 'disminución' || tipo === 'reduccion' || tipo === 'reducción') && modDestino === cleanLineRenglon) {
-        modNeta -= monto;
+        modNegativas += monto;
         hasExplicitMods = true;
       }
       // Transferencia
       else if (tipo === 'transferencia') {
         // Si este renglón es el destino recibe (+)
         if (modDestino === cleanLineRenglon) {
-          modNeta += monto;
+          modPositivas += monto;
           hasExplicitMods = true;
         }
         // Si este renglón es el origen entrega/cede (-)
         if (modOrigen === cleanLineRenglon) {
-          modNeta -= monto;
+          modNegativas += monto;
           hasExplicitMods = true;
         }
       }
     }
 
-    // Si hay modificaciones explícitas en el módulo, usamos la suma calculada.
-    // De lo contrario, conservamos el valor base provisto en la ficha o importado de Excel.
-    const modificacionesAprobadas = Math.round((hasExplicitMods ? modNeta : (Number(line.modificacionesAprobadas) || 0)) * 100) / 100;
+    // Si no hay modificaciones explícitas registradas, pero la línea traía un valor base
+    if (!hasExplicitMods) {
+      const baseVal = Number(line.modificacionesAprobadas) || 0;
+      if (baseVal > 0) {
+        modPositivas = baseVal;
+      } else if (baseVal < 0) {
+        modNegativas = Math.abs(baseVal);
+      }
+    }
+
+    const modificacionesPositivas = Math.round(modPositivas * 100) / 100;
+    const modificacionesNegativas = Math.round(modNegativas * 100) / 100;
+    const modificacionesAprobadas = Math.round((modPositivas - modNegativas) * 100) / 100;
 
     // 2. REGLA INSTITUCIONAL: Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas (+/-)
     const presupuestoInicial = Math.round((Number(line.presupuestoInicial) || 0) * 100) / 100;
@@ -114,6 +125,8 @@ export function calculateBudgetAvailability(
       ...line,
       presupuestoInicial,
       modificacionesAprobadas,
+      modificacionesPositivas,
+      modificacionesNegativas,
       presupuestoVigente,
       pagadoQueRebaja,
       disponibleReal,

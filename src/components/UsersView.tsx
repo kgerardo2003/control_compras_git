@@ -8,7 +8,9 @@ import {
   Trash2, 
   X,
   ShieldAlert,
-  Mail
+  Mail,
+  Key,
+  ShieldCheck
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
@@ -20,6 +22,9 @@ export const UsersView: React.FC = () => {
     updateUser, 
     toggleUserStatus, 
     deleteUser, 
+    userProfiles,
+    getUserProfile,
+    setActiveTab,
     currentUser,
     themeConfig,
     sendUserWelcomeEmail,
@@ -35,6 +40,7 @@ export const UsersView: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('Guate2026*');
   const [rol, setRol] = useState<UserRole>('usuario_estandar');
+  const [perfilId, setPerfilId] = useState<string>('');
   const [cargo, setCargo] = useState('');
   const [departamento, setDepartamento] = useState('Gerencia de Informática - OJ');
   const [notifyByEmail, setNotifyByEmail] = useState(true);
@@ -49,7 +55,9 @@ export const UsersView: React.FC = () => {
     setNombreCompleto('');
     setEmail('');
     setPassword('Guate2026*');
-    setRol('usuario_estandar');
+    const defaultProf = userProfiles.find(p => p.codigo === 'usuario_estandar') || userProfiles[0];
+    setRol(defaultProf ? (defaultProf.codigo as UserRole) : 'usuario_estandar');
+    setPerfilId(defaultProf ? defaultProf.id : '');
     setCargo('');
     setDepartamento('Gerencia de Informática - OJ');
     setNotifyByEmail(true);
@@ -65,6 +73,7 @@ export const UsersView: React.FC = () => {
     setEmail(user.email);
     setPassword('');
     setRol(user.rol);
+    setPerfilId(user.perfilId || '');
     setCargo(user.cargo);
     setDepartamento(user.departamento);
     setIsSubmitting(false);
@@ -122,6 +131,7 @@ export const UsersView: React.FC = () => {
         nombreCompleto: nombreCompleto.trim(),
         email: email.trim(),
         rol,
+        perfilId: perfilId || undefined,
         cargo: cargo.trim(),
         departamento: departamento.trim(),
         password: password.trim() ? password.trim() : editingUser.password,
@@ -147,6 +157,7 @@ export const UsersView: React.FC = () => {
         email: email.trim(),
         password: assignedPassword,
         rol,
+        perfilId: perfilId || undefined,
         cargo: cargo.trim() || 'Funcionario OJ',
         departamento: departamento.trim(),
         activo: true,
@@ -192,8 +203,20 @@ export const UsersView: React.FC = () => {
     }
   };
 
-  const getRoleBadge = (r: UserRole) => {
-    switch (r) {
+  const getRoleBadge = (u: User) => {
+    const profile = getUserProfile(u);
+    if (profile) {
+      return (
+        <span 
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-900 border border-blue-200"
+          title={`${profile.modulosPermitidos.length} módulos autorizados: ${profile.modulosPermitidos.join(', ')}`}
+        >
+          <Key className="w-2.5 h-2.5 text-blue-600" />
+          <span>{profile.nombre}</span>
+        </span>
+      );
+    }
+    switch (u.rol) {
       case 'administrador':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">ADMINISTRADOR</span>;
       case 'auditor':
@@ -211,29 +234,41 @@ export const UsersView: React.FC = () => {
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-800">
-            Administración de Usuarios y Perfiles
+            Administración de Usuarios y Perfiles Institucionales
           </h2>
           <p className="text-xs text-slate-500">
-            Control de cuentas y asignación de roles (Administrador, Auditor, Estándar)
+            Control de cuentas, asignación de perfiles RBAC y control de acceso a los módulos
           </p>
         </div>
 
-        {canManage ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Botón para administrar perfiles */}
           <button
-            id="btn-create-user"
             type="button"
-            onClick={handleOpenCreate}
-            className={`px-3.5 py-1.5 rounded-lg ${themeConfig.primaryBtn} text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer`}
+            onClick={() => setActiveTab('perfiles')}
+            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Crear Usuario</span>
+            <Key className="w-3.5 h-3.5 text-blue-700" />
+            <span>Configurar Perfiles ({userProfiles.length})</span>
           </button>
-        ) : (
-          <div className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-1.5">
-            <ShieldAlert className="w-4 h-4 text-amber-600" />
-            <span>Solo administradores pueden crear o modificar cuentas</span>
-          </div>
-        )}
+
+          {canManage ? (
+            <button
+              id="btn-create-user"
+              type="button"
+              onClick={handleOpenCreate}
+              className={`px-3.5 py-2 rounded-xl ${themeConfig.primaryBtn} text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer`}
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>+ Nuevo Usuario</span>
+            </button>
+          ) : (
+            <div className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600" />
+              <span>Solo administradores pueden crear o modificar cuentas</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Matriz Explicativa de Perfiles */}
@@ -312,7 +347,7 @@ export const UsersView: React.FC = () => {
 
                   {/* Rol */}
                   <td className="px-3 py-3 text-center whitespace-nowrap">
-                    {getRoleBadge(u.rol)}
+                    {getRoleBadge(u)}
                   </td>
 
                   {/* Cargo */}
@@ -457,15 +492,35 @@ export const UsersView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Perfil / Rol *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Perfil Institucional / Rol *</label>
                   <select
-                    value={rol}
-                    onChange={(e) => setRol(e.target.value as UserRole)}
-                    className="w-full p-2 border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-1 focus:ring-amber-500"
+                    value={perfilId || rol}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const selectedProf = userProfiles.find(p => p.id === val || p.codigo === val);
+                      if (selectedProf) {
+                        setPerfilId(selectedProf.id);
+                        setRol(selectedProf.codigo as UserRole);
+                      } else {
+                        setRol(val as UserRole);
+                        setPerfilId('');
+                      }
+                    }}
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-1 focus:ring-blue-500"
                   >
-                    <option value="usuario_estandar">Usuario Estándar</option>
-                    <option value="auditor">Auditor</option>
-                    <option value="administrador">Administrador</option>
+                    {userProfiles.length > 0 ? (
+                      userProfiles.map(prof => (
+                        <option key={prof.id} value={prof.id}>
+                          {prof.nombre} ({prof.modulosPermitidos.length} módulos)
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="usuario_estandar">Usuario Estándar</option>
+                        <option value="auditor">Auditor</option>
+                        <option value="administrador">Administrador</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
