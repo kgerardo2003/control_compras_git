@@ -78,6 +78,24 @@ export interface PurchaseRecord {
   nombreRenglon?: string; // Ej: "Arrendamiento de Equipo de Cómputo"
   estadoPago?: 'comprometido' | 'pagado'; // "comprometido" = pendiente de pago; "pagado" = rebaja realizada
   montoPagado?: number; // Monto que ya fue efectivamente pagado / devengado
+  fechaPago?: string; // Fecha en que se marcó como pagado
+  bitacoraCambios?: PurchaseChangeLogEntry[]; // Bitácora de cambios y auditoría de la ficha
+}
+
+export interface PurchaseChangeLogEntry {
+  id: string;
+  fechaHora: string; // Timestamp ISO
+  usuario: string; // Nombre del usuario que realizó la acción
+  rol?: string; // Rol del usuario (Administrador, etc.)
+  accion: string; // 'CREACION' | 'EDICION' | 'CAMBIO_ESTATUS' | 'ASIGNACION_RENGLON' | 'PAGO_DEVENGADO' | 'REVERSION_PAGO' | 'NOTA_SEGUIMIENTO'
+  estatus: string; // Estatus del evento al momento del cambio
+  detalles: string; // Descripción del cambio efectuado
+  cambios?: Array<{
+    campo: string;
+    anterior: any;
+    nuevo: any;
+  }>;
+  ip?: string;
 }
 
 // ==========================================

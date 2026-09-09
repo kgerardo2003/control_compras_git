@@ -23,7 +23,10 @@ import {
   ArrowRightLeft,
   Sparkles,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Plus,
+  Zap,
+  Building2
 } from 'lucide-react';
 
 interface BudgetOfficialCatalogViewProps {
@@ -37,6 +40,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
 }) => {
   const { budgetAvailability, addBudgetLine, currentUser } = useApp();
   const isAdmin = currentUser?.rol === 'administrador';
+  const canEditBudget = isAdmin || currentUser?.rol === 'operador_compras' || currentUser?.rol === 'usuario_estandar' || Boolean(currentUser);
 
   const [selectedGroupTab, setSelectedGroupTab] = useState<'all' | '100' | '200' | '300'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,11 +50,34 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
   // Map of currently registered budget lines by renglon code
   const registeredLinesMap = new Map<string, BudgetLineItem>();
   budgetAvailability.forEach(line => {
-    registeredLinesMap.set(line.renglonPresupuestario, line);
+    registeredLinesMap.set(String(line.renglonPresupuestario).trim(), line);
   });
 
+  // Extract any additional institutional lines that exist in the budget but were not in standard 39
+  const officialCodesSet = new Set(OFFICIAL_RENGLONES.map(r => String(r.renglon).trim()));
+  const customLines: (OfficialRenglon & { isOfficial: boolean })[] = budgetAvailability
+    .filter(line => !officialCodesSet.has(String(line.renglonPresupuestario).trim()))
+    .map(line => {
+      let grp: '100' | '200' | '300' = '100';
+      const r = String(line.renglonPresupuestario || '').trim();
+      if (line.grupoPresupuestario.includes('200') || r.startsWith('2')) grp = '200';
+      else if (line.grupoPresupuestario.includes('300') || r.startsWith('3')) grp = '300';
+      return {
+        grupo: grp,
+        renglon: r,
+        nombreRenglon: line.nombreRenglon,
+        descripcionDefecto: 'Renglón institucional registrado',
+        isOfficial: false
+      };
+    });
+
+  const combinedCatalog: (OfficialRenglon & { isOfficial: boolean })[] = [
+    ...OFFICIAL_RENGLONES.map(r => ({ ...r, isOfficial: true })),
+    ...customLines
+  ];
+
   // Filter renglones
-  const filteredRenglones = OFFICIAL_RENGLONES.filter(item => {
+  const filteredRenglones = combinedCatalog.filter(item => {
     const matchesGroup = selectedGroupTab === 'all' || item.grupo === selectedGroupTab;
     const matchesSearch = searchTerm === '' ||
       item.renglon.includes(searchTerm) ||
@@ -62,17 +89,40 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
   // Count active per group
   const groupStats = {
     '100': {
-      total: OFFICIAL_RENGLONES.filter(r => r.grupo === '100').length,
-      active: OFFICIAL_RENGLONES.filter(r => r.grupo === '100' && registeredLinesMap.has(r.renglon)).length
+      total: combinedCatalog.filter(r => r.grupo === '100').length,
+      active: combinedCatalog.filter(r => r.grupo === '100' && registeredLinesMap.has(r.renglon)).length
     },
     '200': {
-      total: OFFICIAL_RENGLONES.filter(r => r.grupo === '200').length,
-      active: OFFICIAL_RENGLONES.filter(r => r.grupo === '200' && registeredLinesMap.has(r.renglon)).length
+      total: combinedCatalog.filter(r => r.grupo === '200').length,
+      active: combinedCatalog.filter(r => r.grupo === '200' && registeredLinesMap.has(r.renglon)).length
     },
     '300': {
-      total: OFFICIAL_RENGLONES.filter(r => r.grupo === '300').length,
-      active: OFFICIAL_RENGLONES.filter(r => r.grupo === '300' && registeredLinesMap.has(r.renglon)).length
+      total: combinedCatalog.filter(r => r.grupo === '300').length,
+      active: combinedCatalog.filter(r => r.grupo === '300' && registeredLinesMap.has(r.renglon)).length
     }
+  };
+
+  // Quick activate single official renglon
+  const handleQuickActivate = (item: OfficialRenglon) => {
+    addBudgetLine({
+      grupoPresupuestario: getGrupoFullName(item.grupo),
+      renglonPresupuestario: item.renglon,
+      nombreRenglon: item.nombreRenglon,
+      presupuestoInicial: 0,
+      modificacionesAprobadas: 0,
+      presupuestoVigente: 0,
+      pagadoQueRebaja: 0,
+      disponibleReal: 0,
+      comprometidoPendiente: 0,
+      disponibleProyectado: 0,
+      porcentajeUsadoComprometido: 0,
+      estatusDisponibilidad: 'Sin Presupuesto',
+      ejercicioFiscal: 2026,
+      observaciones: 'Activado desde el Catálogo Presupuestario Oficial.'
+    });
+
+    setBulkSuccessMsg(`Renglón ${item.renglon} - ${item.nombreRenglon} agregado exitosamente a la matriz.`);
+    setTimeout(() => setBulkSuccessMsg(null), 3500);
   };
 
   // Bulk add all missing official lines with zero budget so the matrix has all 39 rows
@@ -110,7 +160,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
       {/* Banner de Presentación del Catálogo Oficial */}
       <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-6 shadow-md border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
               <BookOpen className="w-5 h-5" />
             </span>
@@ -118,22 +168,35 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
               Catálogo Presupuestario Oficial — Gerencia de Informática
             </h2>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-              39 Renglones Oficiales
+              {combinedCatalog.length} Renglones Registrados
             </span>
           </div>
           <p className="text-xs text-slate-300 max-w-3xl">
-            Estructura estandarizada de Grupos (100, 200, 300), 5 modalidades de compra, matriz de afectación por estatus del evento y tipos de modificación presupuestaria (+1 / -1).
+            Estructura estandarizada de Grupos (100, 200, 300), catálogo de partidas institucionales y registro directo de nuevos renglones presupuestarios sin depender únicamente de archivos Excel.
           </p>
         </div>
 
         {/* Acciones del Banner */}
         <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && (
+          {canEditBudget && (
+            <button
+              id="btn-agregar-renglon-catalogo-banner"
+              type="button"
+              onClick={() => onOpenLineModal(null, undefined)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+              title="Registrar manualmente un nuevo renglón presupuestario en la matriz y el catálogo"
+            >
+              <PlusCircle className="w-4 h-4 text-emerald-100" />
+              <span>+ Agregar Renglón</span>
+            </button>
+          )}
+
+          {canEditBudget && (
             <button
               type="button"
               onClick={handleBulkAddAllMissing}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
-              title="Asegura que todos los 39 renglones oficiales aparezcan en la Matriz Presupuestaria"
+              title="Asegura que todos los renglones del catálogo oficial aparezcan en la Matriz Presupuestaria"
             >
               <Sparkles className="w-4 h-4 text-blue-200" />
               <span>Cargar 39 Renglones a Matriz</span>
@@ -298,7 +361,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
-            Todos ({OFFICIAL_RENGLONES.length})
+            Todos ({combinedCatalog.length})
           </button>
           <button
             type="button"
@@ -309,7 +372,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
-            Grupo 100 (14 renglones)
+            Grupo 100 ({groupStats['100'].total})
           </button>
           <button
             type="button"
@@ -320,7 +383,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
-            Grupo 200 (20 renglones)
+            Grupo 200 ({groupStats['200'].total})
           </button>
           <button
             type="button"
@@ -331,24 +394,39 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
-            Grupo 300 (5 renglones)
+            Grupo 300 ({groupStats['300'].total})
           </button>
         </div>
 
-        {/* Input de Búsqueda */}
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar renglón o descripción..."
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-          />
+        {/* Input de Búsqueda y Botón Nuevo Renglón */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar renglón o descripción..."
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+            />
+          </div>
+
+          {canEditBudget && (
+            <button
+              id="btn-agregar-renglon-catalogo-toolbar"
+              type="button"
+              onClick={() => onOpenLineModal(null, undefined)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer"
+              title="Registrar nuevo renglón presupuestario"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Nuevo Renglón</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Cuadrícula de Renglones Oficiales */}
+      {/* Cuadrícula de Renglones Oficiales e Institucionales */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {filteredRenglones.map((item) => {
           const registered = registeredLinesMap.get(item.renglon);
@@ -373,6 +451,15 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                     <span className="text-[10px] uppercase font-bold text-slate-400">
                       Grupo {item.grupo}
                     </span>
+                    {item.isOfficial ? (
+                      <span className="text-[9px] uppercase font-bold text-slate-400">
+                        Oficial
+                      </span>
+                    ) : (
+                      <span className="text-[9px] uppercase font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                        Institucional
+                      </span>
+                    )}
                   </div>
 
                   {isRegistered ? (
@@ -418,7 +505,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-400 mt-2 line-clamp-2">
-                    Disponible en el catálogo institucional para asignación y control de compras.
+                    {item.descripcionDefecto || 'Disponible en el catálogo institucional para asignación y control de compras.'}
                   </p>
                 )}
               </div>
@@ -436,7 +523,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
 
-                    {isAdmin && (
+                    {canEditBudget && (
                       <button
                         type="button"
                         onClick={() => onOpenLineModal(registered)}
@@ -448,19 +535,61 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
                     )}
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => onOpenLineModal(null, item)}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-white border border-slate-300 hover:border-blue-500 hover:text-blue-700 text-xs font-semibold text-slate-700 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Activar en Matriz</span>
-                  </button>
+                  <div className="flex items-center gap-1.5 w-full">
+                    <button
+                      type="button"
+                      onClick={() => onOpenLineModal(null, item)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg bg-white border border-slate-300 hover:border-blue-500 hover:text-blue-700 text-xs font-bold text-slate-700 transition-all cursor-pointer shadow-2xs"
+                      title="Configurar presupuesto inicial y registrar"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5 text-blue-600" />
+                      <span>+ Activar en Matriz</span>
+                    </button>
+                    {canEditBudget && (
+                      <button
+                        type="button"
+                        onClick={() => handleQuickActivate(item)}
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 hover:text-emerald-800 text-slate-600 transition-colors cursor-pointer"
+                        title="Activar rápido en la matriz con Q 0.00"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
           );
         })}
+
+        {/* Estado vacío cuando no hay coincidencias en la búsqueda */}
+        {filteredRenglones.length === 0 && (
+          <div className="col-span-full p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center mx-auto">
+              <Search className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900">
+              No se encontró el renglón {searchTerm ? `"${searchTerm}"` : ''} en el catálogo
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Puede crear y registrar este renglón presupuestario directamente en el catálogo y la matriz con su código, denominación y presupuesto inicial.
+            </p>
+            {canEditBudget && (
+              <button
+                type="button"
+                onClick={() => onOpenLineModal(null, {
+                  grupo: searchTerm.startsWith('2') ? '200' : searchTerm.startsWith('3') ? '300' : '100',
+                  renglon: searchTerm.trim(),
+                  nombreRenglon: ''
+                })}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4 text-blue-200" />
+                <span>+ Registrar Renglón Presupuestario {searchTerm ? `"${searchTerm}"` : ''}</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

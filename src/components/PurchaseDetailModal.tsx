@@ -20,8 +20,8 @@ import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto 
 import { InstitutionalReportModal } from './InstitutionalReportModal';
 import { DocumentPreview } from './DocumentPreview';
 import { downloadDocumentFile } from '../utils/documentUtils';
-import { PurchaseStatusTimeline } from './PurchaseStatusTimeline';
-import { getPurchaseTimeline } from '../utils/timelineUtils';
+import { PurchaseBitacoraView } from './PurchaseBitacoraView';
+import { History } from 'lucide-react';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -50,11 +50,9 @@ export const PurchaseDetailModal: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [showDocumentPreview, setShowDocumentPreview] = useState(true);
-  const [activeTab, setActiveTab] = useState<'general' | 'timeline' | 'documento'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'bitacora' | 'documento'>('general');
 
   if (!selectedPurchase) return null;
-
-  const timelineEvents = getPurchaseTimeline(selectedPurchase);
 
   const canEdit = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
   const canDelete = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
@@ -141,17 +139,17 @@ export const PurchaseDetailModal: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setActiveTab('timeline')}
+                onClick={() => setActiveTab('bitacora')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                  activeTab === 'timeline'
-                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  activeTab === 'bitacora'
+                    ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
-                <Clock className="w-3.5 h-3.5" />
-                <span>Línea de Tiempo de Estatus</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badgeClass}`}>
-                  {selectedPurchase.estatusEvento}
+                <History className="w-3.5 h-3.5" />
+                <span>Bitácora de Cambios</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20">
+                  {selectedPurchase.bitacoraCambios?.length || 1}
                 </span>
               </button>
 
@@ -232,10 +230,10 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Vista 1: Solo Línea de Tiempo / Tracking */}
-            {activeTab === 'timeline' && (
+            {/* Vista 1: Bitácora de Cambios de la Ficha */}
+            {activeTab === 'bitacora' && (
               <div className="pt-1">
-                <PurchaseStatusTimeline purchase={selectedPurchase} canEdit={canEdit} />
+                <PurchaseBitacoraView purchase={selectedPurchase} canEdit={canEdit} />
               </div>
             )}
 
@@ -368,36 +366,6 @@ export const PurchaseDetailModal: React.FC = () => {
                     )}
                   </div>
                 )}
-              </div>
-            </div>
-
-            {/* Cronología del Proceso de Adquisición */}
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                Cronología de Fechas
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
-                <div className="p-2 rounded-lg bg-amber-50/60 border border-amber-200">
-                  <span className="text-[10px] font-bold text-amber-900 block">1. Solicitud</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{formatDate(selectedPurchase.fechaSolicitud)}</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-600 block">2. Vo.Bo.</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{formatDate(selectedPurchase.fechaVoBo)}</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-600 block">3. Autorizado</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{formatDate(selectedPurchase.fechaAutorizado)}</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-600 block">4. Publicación</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{formatDate(selectedPurchase.fechaPublicacion)}</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 col-span-2 sm:col-span-1">
-                  <span className="text-[10px] font-bold text-slate-600 block">5. Cierre Ofertas</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{formatDate(selectedPurchase.fechaOfertas)}</span>
-                </div>
               </div>
             </div>
 
@@ -563,11 +531,11 @@ export const PurchaseDetailModal: React.FC = () => {
               {canEdit && (
                 <button
                   type="button"
-                  onClick={() => setActiveTab('timeline')}
-                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-xs transition-colors cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+                  onClick={() => setActiveTab('bitacora')}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
                 >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Ver Línea de Tiempo / Cambiar Estatus</span>
+                  <History className="w-3.5 h-3.5" />
+                  <span>Ver Bitácora de Cambios</span>
                 </button>
               )}
             </div>

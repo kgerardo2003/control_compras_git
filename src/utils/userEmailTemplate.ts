@@ -11,6 +11,7 @@ export interface UserWelcomeEmailParams {
   temporaryPassword?: string;
   nombreCompleto?: string;
   rol?: string;
+  systemUrl?: string;
 }
 
 export function buildUserWelcomeEmail(params: UserWelcomeEmailParams): {
@@ -20,7 +21,13 @@ export function buildUserWelcomeEmail(params: UserWelcomeEmailParams): {
 } {
   const username = params.username.trim();
   const password = params.temporaryPassword || 'Guate2026*';
-  const systemUrl = 'https://control-compras-git.vercel.app/';
+  
+  // Obtener URL actual dinámica del navegador o variable, o el dominio principal configurado
+  let detectedUrl = 'https://control-compras-git.vercel.app';
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    detectedUrl = window.location.origin;
+  }
+  const systemUrl = (params.systemUrl || detectedUrl).replace(/\/+$/, '') + '/';
 
   const subject = `Acceso al Sistema de Control de Compras - Credenciales de Usuario (@${username})`;
 

@@ -5,7 +5,8 @@ import {
   OFFICIAL_BUDGET_GROUPS, 
   OFFICIAL_RENGLONES, 
   OfficialRenglon,
-  getOfficialRenglonName 
+  getOfficialRenglonName,
+  getGrupoFullName 
 } from '../../data/budgetStandardCatalog';
 import { X, Layers, DollarSign, AlertCircle, BookOpen, Check } from 'lucide-react';
 
@@ -47,23 +48,38 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
 
   useEffect(() => {
     if (lineToEdit) {
-      setGrupo(lineToEdit.grupoPresupuestario);
-      if (lineToEdit.grupoPresupuestario.includes('100')) setSelectedGrupoCode('100');
-      else if (lineToEdit.grupoPresupuestario.includes('200')) setSelectedGrupoCode('200');
-      else if (lineToEdit.grupoPresupuestario.includes('300')) setSelectedGrupoCode('300');
+      const g = lineToEdit.grupoPresupuestario || GRUPOS_PREDEFINIDOS[0];
+      setGrupo(g);
+      const gp = String(g);
+      if (gp.includes('100')) setSelectedGrupoCode('100');
+      else if (gp.includes('200')) setSelectedGrupoCode('200');
+      else if (gp.includes('300')) setSelectedGrupoCode('300');
       else setSelectedGrupoCode('custom');
 
-      setRenglon(lineToEdit.renglonPresupuestario);
-      setNombre(lineToEdit.nombreRenglon);
-      setPresupuestoInicial(lineToEdit.presupuestoInicial.toString());
-      setPagadoQueRebaja(lineToEdit.pagadoQueRebaja.toString());
-      setComprometidoPendiente(lineToEdit.comprometidoPendiente.toString());
+      setRenglon(String(lineToEdit.renglonPresupuestario ?? ''));
+      setNombre(String(lineToEdit.nombreRenglon ?? ''));
+      setPresupuestoInicial(
+        lineToEdit.presupuestoInicial !== undefined && lineToEdit.presupuestoInicial !== null
+          ? String(lineToEdit.presupuestoInicial)
+          : '0'
+      );
+      setPagadoQueRebaja(
+        lineToEdit.pagadoQueRebaja !== undefined && lineToEdit.pagadoQueRebaja !== null
+          ? String(lineToEdit.pagadoQueRebaja)
+          : '0'
+      );
+      setComprometidoPendiente(
+        lineToEdit.comprometidoPendiente !== undefined && lineToEdit.comprometidoPendiente !== null
+          ? String(lineToEdit.comprometidoPendiente)
+          : '0'
+      );
       setObservaciones(lineToEdit.observaciones || '');
     } else if (prefillRenglon) {
-      setGrupo(prefillRenglon.grupoNombre);
-      setSelectedGrupoCode(prefillRenglon.grupo);
-      setRenglon(prefillRenglon.renglon);
-      setNombre(prefillRenglon.nombreRenglon);
+      const grupoNom = prefillRenglon.grupoNombre || getGrupoFullName(prefillRenglon.grupo);
+      setGrupo(grupoNom);
+      setSelectedGrupoCode(prefillRenglon.grupo || '100');
+      setRenglon(String(prefillRenglon.renglon ?? ''));
+      setNombre(String(prefillRenglon.nombreRenglon ?? ''));
       setPresupuestoInicial('');
       setPagadoQueRebaja('0');
       setComprometidoPendiente('0');
@@ -121,8 +137,8 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
     e.preventDefault();
     setErrorMsg(null);
 
-    const cleanRenglon = renglon.trim();
-    const cleanNombre = nombre.trim();
+    const cleanRenglon = String(renglon || '').trim();
+    const cleanNombre = String(nombre || '').trim();
     const pInicial = parseFloat(presupuestoInicial) || 0;
     const pagado = parseFloat(pagadoQueRebaja) || 0;
     const comprometido = parseFloat(comprometidoPendiente) || 0;
@@ -142,16 +158,17 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
       return;
     }
 
-    // Validar duplicidad de renglón si es nuevo
-    if (!lineToEdit) {
-      const exists = budgetLines.some(l => l.renglonPresupuestario.toLowerCase() === cleanRenglon.toLowerCase());
-      if (exists) {
-        setErrorMsg(`El renglón ${cleanRenglon} ya existe en el presupuesto. Puede editarlo o ingresar otro código.`);
-        return;
-      }
+    // Validar duplicidad de renglón con otros registros existentes
+    const isDuplicate = budgetLines.some(l => 
+      l.id !== lineToEdit?.id && 
+      String(l.renglonPresupuestario || '').trim().toLowerCase() === cleanRenglon.toLowerCase()
+    );
+    if (isDuplicate) {
+      setErrorMsg(`El código de renglón ${cleanRenglon} ya está registrado en otra partida presupuestaria.`);
+      return;
     }
 
-    const modAprobadas = lineToEdit ? lineToEdit.modificacionesAprobadas : 0;
+    const modAprobadas = lineToEdit ? (Number(lineToEdit.modificacionesAprobadas) || 0) : 0;
     const vigente = pInicial + modAprobadas;
     const dispReal = vigente - pagado;
     const dispProy = dispReal - comprometido;
@@ -162,41 +179,48 @@ export const BudgetLineModal: React.FC<BudgetLineModalProps> = ({
     if (dispProy <= 0) estatus = 'Sin Disponibilidad';
     else if (dispProy < (vigente * 0.15)) estatus = 'Alerta Disponibilidad Baja';
 
-    if (lineToEdit) {
-      updateBudgetLine(lineToEdit.id, {
-        grupoPresupuestario: grupo,
-        renglonPresupuestario: cleanRenglon,
-        nombreRenglon: cleanNombre,
-        presupuestoInicial: pInicial,
-        presupuestoVigente: vigente,
-        pagadoQueRebaja: pagado,
-        disponibleReal: dispReal,
-        comprometidoPendiente: comprometido,
-        disponibleProyectado: dispProy,
-        porcentajeUsadoComprometido: Math.round(pct * 100) / 100,
-        estatusDisponibilidad: estatus,
-        observaciones: observaciones.trim()
-      });
-    } else {
-      addBudgetLine({
-        grupoPresupuestario: grupo,
-        renglonPresupuestario: cleanRenglon,
-        nombreRenglon: cleanNombre,
-        presupuestoInicial: pInicial,
-        modificacionesAprobadas: 0,
-        presupuestoVigente: pInicial,
-        pagadoQueRebaja: pagado,
-        disponibleReal: pInicial - pagado,
-        comprometidoPendiente: comprometido,
-        disponibleProyectado: (pInicial - pagado) - comprometido,
-        porcentajeUsadoComprometido: Math.round(pct * 100) / 100,
-        estatusDisponibilidad: estatus,
-        ejercicioFiscal: 2026,
-        observaciones: observaciones.trim()
-      });
-    }
+    try {
+      if (lineToEdit) {
+        const lineId = lineToEdit.id || `bl-${cleanRenglon}`;
+        updateBudgetLine(lineId, {
+          id: lineId,
+          grupoPresupuestario: grupo,
+          renglonPresupuestario: cleanRenglon,
+          nombreRenglon: cleanNombre,
+          presupuestoInicial: pInicial,
+          presupuestoVigente: vigente,
+          pagadoQueRebaja: pagado,
+          disponibleReal: dispReal,
+          comprometidoPendiente: comprometido,
+          disponibleProyectado: dispProy,
+          porcentajeUsadoComprometido: Math.round(pct * 100) / 100,
+          estatusDisponibilidad: estatus,
+          observaciones: observaciones.trim()
+        });
+      } else {
+        addBudgetLine({
+          grupoPresupuestario: grupo,
+          renglonPresupuestario: cleanRenglon,
+          nombreRenglon: cleanNombre,
+          presupuestoInicial: pInicial,
+          modificacionesAprobadas: 0,
+          presupuestoVigente: pInicial,
+          pagadoQueRebaja: pagado,
+          disponibleReal: pInicial - pagado,
+          comprometidoPendiente: comprometido,
+          disponibleProyectado: (pInicial - pagado) - comprometido,
+          porcentajeUsadoComprometido: Math.round(pct * 100) / 100,
+          estatusDisponibilidad: estatus,
+          ejercicioFiscal: 2026,
+          observaciones: observaciones.trim()
+        });
+      }
 
-    onClose();
+      onClose();
+    } catch (err: any) {
+      console.error("Error al procesar renglón presupuestario:", err);
+      setErrorMsg(`No se pudo procesar la solicitud: ${err?.message || 'Error inesperado'}`);
+    }
   };
 
   return (

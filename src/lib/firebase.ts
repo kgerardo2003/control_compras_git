@@ -351,8 +351,9 @@ export async function forceFetchAuditLogsFromServer(): Promise<AuditLogEntry[]> 
 
 export async function saveBudgetLineToFirestore(item: BudgetLineItem): Promise<{ success: boolean; error?: string }> {
   try {
-    const docRef = doc(db, BUDGET_LINES_COLLECTION, item.id);
-    await setDoc(docRef, cleanUndefined(item), { merge: true });
+    const docId = String(item.id || `bl-${item.renglonPresupuestario || Date.now()}`).replace(/[\/\\]/g, '-');
+    const docRef = doc(db, BUDGET_LINES_COLLECTION, docId);
+    await setDoc(docRef, cleanUndefined({ ...item, id: docId }), { merge: true });
     return { success: true };
   } catch (err: any) {
     console.error("Error guardando renglón presupuestario en Firestore:", err);
@@ -426,7 +427,7 @@ export function onBudgetLinesSnapshot(
         snapshot.forEach((d) => {
           items.push(d.data() as BudgetLineItem);
         });
-        items.sort((a, b) => a.renglonPresupuestario.localeCompare(b.renglonPresupuestario));
+        items.sort((a, b) => String(a.renglonPresupuestario || '').localeCompare(String(b.renglonPresupuestario || '')));
         onData(items);
       },
       (err) => {

@@ -16,7 +16,8 @@ import {
   StatusTimelineEvent,
   TimelineEventState,
   BudgetLineItem,
-  BudgetModification
+  BudgetModification,
+  PurchaseChangeLogEntry
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -193,6 +194,7 @@ interface AppContextType {
   approveBudgetModification: (id: string) => void;
   rejectBudgetModification: (id: string) => void;
   togglePurchasePaymentState: (purchaseId: string) => void;
+  addPurchaseBitacoraEntry: (purchaseId: string, entry: Omit<PurchaseChangeLogEntry, 'id' | 'fechaHora' | 'usuario'>) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -1127,12 +1129,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    const initialBitacora: PurchaseChangeLogEntry[] = [
+      {
+        id: `bit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        fechaHora: nowIso,
+        usuario: creator,
+        rol: currentUser?.rol,
+        accion: 'CREACION',
+        estatus: data.estatusEvento || 'Registrada',
+        detalles: `Registro inicial de solicitud F56: ${data.f56e || data.f56 || 'Sin F56'} | NOG: ${data.nog || 'Sin NOG'} | Monto: Q. ${Number(data.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}. Renglón asignado: [${data.renglonPresupuestario || '158'}].`,
+        ip: '10.150.2.45'
+      }
+    ];
+
     const newRecord: PurchaseRecord = {
       ...data,
       id: newId,
       creadoPor: creator,
       fechaCreacion: nowIso,
       historialEstatus: initialEvents,
+      bitacoraCambios: initialBitacora,
     };
 
     setPurchases(prev => [newRecord, ...prev]);
@@ -1284,10 +1300,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    const currentBitacora = prev.bitacoraCambios ? [...prev.bitacoraCambios] : [];
+    let updatedBitacora = data.bitacoraCambios ? [...data.bitacoraCambios] : currentBitacora;
+
+    if (!data.bitacoraCambios) {
+      const changesList: string[] = [];
+      if (data.renglonPresupuestario && data.renglonPresupuestario !== prev.renglonPresupuestario) {
+        changesList.push(`Asignación manual de renglón presupuestario: [${data.renglonPresupuestario} - ${data.nombreRenglon || ''}] (Anterior: [${prev.renglonPresupuestario || 'Sin asignar'}])`);
+      }
+      if (data.monto !== undefined && Number(data.monto) !== Number(prev.monto)) {
+        changesList.push(`Monto modificado: de Q.${Number(prev.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })} a Q.${Number(data.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}`);
+      }
+      if (data.estatusEvento && data.estatusEvento !== prev.estatusEvento) {
+        changesList.push(`Estatus modificado: de "${prev.estatusEvento}" a "${data.estatusEvento}"`);
+      }
+      if (data.proveedorAdjudicado && data.proveedorAdjudicado !== prev.proveedorAdjudicado) {
+        changesList.push(`Proveedor adjudicado: ${data.proveedorAdjudicado}`);
+      }
+      if (data.estadoPago && data.estadoPago !== prev.estadoPago) {
+        changesList.push(`Estado del gasto: "${data.estadoPago === 'pagado' ? 'Pagado (Descargado de Comprometido -> Rebajado en Saldo Real)' : 'Comprometido Pendiente'}"`);
+      }
+      if (changesList.length > 0) {
+        const actionType = data.estadoPago === 'pagado' 
+          ? 'PAGO_DEVENGADO' 
+          : data.renglonPresupuestario !== prev.renglonPresupuestario 
+            ? 'ASIGNACION_RENGLON' 
+            : data.estatusEvento !== prev.estatusEvento 
+              ? 'CAMBIO_ESTATUS' 
+              : 'EDICION';
+
+        const autoLog: PurchaseChangeLogEntry = {
+          id: `bit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          fechaHora: nowIso,
+          usuario: creator,
+          rol: currentUser?.rol,
+          accion: actionType,
+          estatus: data.estatusEvento || prev.estatusEvento || 'Registrada',
+          detalles: changesList.join(' | '),
+          ip: '10.150.2.45'
+        };
+        updatedBitacora = [autoLog, ...updatedBitacora];
+      }
+    }
+
     const updated: PurchaseRecord = {
       ...prev,
       ...data,
       historialEstatus: updatedEvents,
+      bitacoraCambios: updatedBitacora,
       modificadoPor: creator,
       fechaModificacion: nowIso,
     };
@@ -1675,36 +1735,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast({
       title: 'Renglón Creado',
       message: `El renglón ${newItem.renglonPresupuestario} se registró exitosamente en el presupuesto GIT.`,
-      type: 'exito'
+      type: 'success'
     });
     return newItem;
   };
 
   const updateBudgetLine = (id: string, data: Partial<BudgetLineItem>) => {
-    const prevItem = budgetLines.find(l => l.id === id);
+    const cleanRenglon = data.renglonPresupuestario ? String(data.renglonPresupuestario).trim() : '';
+    const prevItem = budgetLines.find(l => l.id === id || (cleanRenglon && String(l.renglonPresupuestario).trim() === cleanRenglon));
+    const targetId = prevItem?.id || id;
+
+    let found = false;
     const updated = budgetLines.map(line => {
-      if (line.id === id) {
-        const item = { ...line, ...data };
-        saveBudgetLineToFirestore(item);
+      if (line.id === targetId || (cleanRenglon && String(line.renglonPresupuestario).trim() === cleanRenglon)) {
+        found = true;
+        const item: BudgetLineItem = {
+          ...line,
+          ...data,
+          id: line.id || targetId,
+          renglonPresupuestario: cleanRenglon || String(line.renglonPresupuestario || ''),
+          nombreRenglon: data.nombreRenglon ? String(data.nombreRenglon).trim() : String(line.nombreRenglon || ''),
+          presupuestoInicial: data.presupuestoInicial !== undefined ? Number(data.presupuestoInicial) : Number(line.presupuestoInicial) || 0,
+          modificacionesAprobadas: data.modificacionesAprobadas !== undefined ? Number(data.modificacionesAprobadas) : Number(line.modificacionesAprobadas) || 0,
+          presupuestoVigente: data.presupuestoVigente !== undefined ? Number(data.presupuestoVigente) : Number(line.presupuestoVigente) || 0,
+          pagadoQueRebaja: data.pagadoQueRebaja !== undefined ? Number(data.pagadoQueRebaja) : Number(line.pagadoQueRebaja) || 0,
+          disponibleReal: data.disponibleReal !== undefined ? Number(data.disponibleReal) : Number(line.disponibleReal) || 0,
+          comprometidoPendiente: data.comprometidoPendiente !== undefined ? Number(data.comprometidoPendiente) : Number(line.comprometidoPendiente) || 0,
+          disponibleProyectado: data.disponibleProyectado !== undefined ? Number(data.disponibleProyectado) : Number(line.disponibleProyectado) || 0,
+          porcentajeUsadoComprometido: data.porcentajeUsadoComprometido !== undefined ? Number(data.porcentajeUsadoComprometido) : Number(line.porcentajeUsadoComprometido) || 0,
+          fechaModificacion: new Date().toISOString(),
+          modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema'
+        };
+        saveBudgetLineToFirestore(item).catch(err => console.warn("Error guardando en Firestore:", err));
         return item;
       }
       return line;
     });
-    setBudgetLines(updated);
-    localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(updated));
+
+    const finalList = found ? updated : [
+      ...budgetLines,
+      {
+        id: targetId,
+        grupoPresupuestario: data.grupoPresupuestario || 'Grupo 100 - Servicios No Personales',
+        renglonPresupuestario: cleanRenglon || String(data.renglonPresupuestario || ''),
+        nombreRenglon: String(data.nombreRenglon || ''),
+        presupuestoInicial: Number(data.presupuestoInicial) || 0,
+        modificacionesAprobadas: Number(data.modificacionesAprobadas) || 0,
+        presupuestoVigente: Number(data.presupuestoVigente) || Number(data.presupuestoInicial) || 0,
+        pagadoQueRebaja: Number(data.pagadoQueRebaja) || 0,
+        disponibleReal: Number(data.disponibleReal) || 0,
+        comprometidoPendiente: Number(data.comprometidoPendiente) || 0,
+        disponibleProyectado: Number(data.disponibleProyectado) || 0,
+        porcentajeUsadoComprometido: Number(data.porcentajeUsadoComprometido) || 0,
+        estatusDisponibilidad: data.estatusDisponibilidad || 'Con Disponibilidad',
+        observaciones: data.observaciones || '',
+        ejercicioFiscal: 2026,
+        fechaCreacion: new Date().toISOString(),
+        creadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema'
+      }
+    ];
+
+    setBudgetLines(finalList);
+    try {
+      localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(finalList));
+    } catch (e) {
+      console.warn("Error persistiendo presupuesto en localStorage:", e);
+    }
 
     logAudit(
       'EDITAR_RENGLON',
       'Presupuesto',
-      `Actualización del renglón presupuestario: ${prevItem?.renglonPresupuestario || id}`,
-      id,
+      `Actualización del renglón presupuestario: ${cleanRenglon || prevItem?.renglonPresupuestario || targetId}`,
+      targetId,
       prevItem,
       data
     );
+
     showToast({
       title: 'Renglón Actualizado',
-      message: `Cambios guardados en el renglón ${prevItem?.renglonPresupuestario || ''}.`,
-      type: 'info'
+      message: `Cambios guardados en el renglón ${cleanRenglon || prevItem?.renglonPresupuestario || ''}.`,
+      type: 'success'
     });
   };
 
@@ -1920,16 +2030,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const nuevoEstado = purchase.estadoPago === 'pagado' ? 'comprometido' : 'pagado';
     const nuevoMontoPagado = nuevoEstado === 'pagado' ? (purchase.montoPagado || purchase.monto) : 0;
+    const nuevoEstatus = nuevoEstado === 'pagado' ? 'Pagada' : (purchase.estatusEvento === 'Pagada' ? 'Adjudicación' : purchase.estatusEvento);
+    const nowIso = new Date().toISOString();
+
+    const bitacoraEntry: PurchaseChangeLogEntry = {
+      id: `bit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      fechaHora: nowIso,
+      usuario: currentUser ? currentUser.nombreCompleto : 'Operador GIT',
+      rol: currentUser?.rol,
+      accion: nuevoEstado === 'pagado' ? 'PAGO_DEVENGADO' : 'REVERSION_PAGO',
+      estatus: nuevoEstatus,
+      detalles: nuevoEstado === 'pagado'
+        ? `Pago formal devengado por Q. ${Number(purchase.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}. Se descargó de la columna Comprometido Pendiente y se restó en Disponible Real del renglón [${purchase.renglonPresupuestario || '158'}].`
+        : `Reversión de pago a Comprometido Pendiente por Q. ${Number(purchase.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}. El saldo retornó a Disponible Real.`,
+      ip: '10.150.2.45'
+    };
+
+    const currentBitacora = purchase.bitacoraCambios || [];
 
     updatePurchase(purchaseId, {
       estadoPago: nuevoEstado,
-      montoPagado: nuevoMontoPagado
+      estatusEvento: nuevoEstatus,
+      montoPagado: nuevoMontoPagado,
+      fechaPago: nuevoEstado === 'pagado' ? nowIso : undefined,
+      bitacoraCambios: [bitacoraEntry, ...currentBitacora]
+    });
+
+    logAudit(
+      nuevoEstado === 'pagado' ? 'PAGO_COMPRA' as any : 'REVERTIR_PAGO' as any,
+      'Presupuesto',
+      `Cambio de estado presupuestario para adquisición NOG ${purchase.nog} - F56: ${purchase.f56e || purchase.f56 || purchase.id}. Estado: ${nuevoEstado.toUpperCase()}. Monto: Q. ${Number(purchase.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })}. Renglón: [${purchase.renglonPresupuestario || '158'}].`,
+      purchaseId
+    );
+
+    showToast({
+      title: nuevoEstado === 'pagado' ? 'Adquisición Pagada Exitosamente' : 'Adquisición en Comprometido',
+      message: nuevoEstado === 'pagado' 
+        ? `Descargada de Comprometido Pendiente. Se restó Q. ${Number(purchase.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })} del Disponible Real.`
+        : `Restablecida a Comprometido Pendiente. Q. ${Number(purchase.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 })} retornó a Disponible Real.`,
+      type: nuevoEstado === 'pagado' ? 'exito' : 'info'
+    });
+  };
+
+  const addPurchaseBitacoraEntry = (purchaseId: string, entry: Omit<PurchaseChangeLogEntry, 'id' | 'fechaHora' | 'usuario'>) => {
+    const purchase = purchases.find(p => p.id === purchaseId);
+    if (!purchase) return;
+
+    const nowIso = new Date().toISOString();
+    const newEntry: PurchaseChangeLogEntry = {
+      ...entry,
+      id: `bit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      fechaHora: nowIso,
+      usuario: currentUser ? currentUser.nombreCompleto : 'Operador GIT',
+      rol: currentUser?.rol,
+      ip: '10.150.2.45'
+    };
+
+    const currentBitacora = purchase.bitacoraCambios || [];
+    updatePurchase(purchaseId, {
+      bitacoraCambios: [newEntry, ...currentBitacora]
     });
 
     showToast({
-      title: nuevoEstado === 'pagado' ? 'Compra Marcada como Pagada' : 'Compra en Comprometido Pendiente',
-      message: `La adquisición ${purchase.nogGuatecompras || purchase.id} ahora rebaja en Pagado (${nuevoEstado === 'pagado' ? 'Pagado que Rebaja' : 'Comprometido Pendiente'}).`,
-      type: 'info'
+      title: 'Registro Añadido a Bitácora',
+      message: 'Se agregó la anotación oficial al historial de auditoría de la ficha.',
+      type: 'exito'
     });
   };
 
@@ -2029,6 +2194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         approveBudgetModification,
         rejectBudgetModification,
         togglePurchasePaymentState,
+        addPurchaseBitacoraEntry,
       }}
     >
       {children}

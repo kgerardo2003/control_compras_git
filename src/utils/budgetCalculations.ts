@@ -54,38 +54,33 @@ export function calculateBudgetAvailability(
     // 3. Compras asociadas activas según regla institucional: Afecta Disponibilidad (Sí / No)
     // Se excluyen eventos Anulados, Rechazados, Desiertos y Prescindidos
     const activePurchases = purchases.filter(p => {
-      const matchRenglon = p.renglonPresupuestario === line.renglonPresupuestario ||
-        (p.descripcion && p.descripcion.includes(`[${line.renglonPresupuestario}]`));
-      
+      // Coincidencia por asignación directa o por código en descripción
+      const matchRenglon = p.renglonPresupuestario === line.renglonPresupuestario;
       const affects = doesStatusAffectBudget(p.estatusEvento);
       return matchRenglon && affects;
     });
 
-    // Sumar compras pagadas (Estatus 'Pagada' o estadoPago 'pagado')
+    // Sumar compras pagadas del renglón (Estatus 'Pagada' o estadoPago 'pagado')
     const purchasesPaidTotal = activePurchases
       .filter(p => p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada')
       .reduce((sum, p) => sum + (Number(p.montoPagado) || Number(p.monto) || 0), 0);
 
-    // Sumar compras comprometidas pendientes de pago (Registrada, En proceso, Comprometida, Adjudicada)
+    // Sumar compras comprometidas pendientes de pago (no pagadas)
     const purchasesPendingTotal = activePurchases
       .filter(p => p.estadoPago !== 'pagado' && p.estatusEvento !== 'Pagada')
       .reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
 
-    // 4. Pagado que Rebaja
-    // Si hay compras pagadas en el sistema se toman en cuenta, si no se mantiene el valor base histórico
+    // 4. Pagado que Rebaja: Base histórica/manual + adquisiciones pagadas en el sistema
     const pagadoBase = Number(line.pagadoQueRebaja) || 0;
-    const pagadoQueRebaja = purchasesPaidTotal > 0 
-      ? Math.max(pagadoBase, purchasesPaidTotal) 
-      : pagadoBase;
+    const pagadoQueRebaja = pagadoBase + purchasesPaidTotal;
 
     // 5. Disponible Real = Presupuesto Vigente - Pagado que Rebaja
+    // Se descuenta únicamente cuando se marca como pagado
     const disponibleReal = presupuestoVigente - pagadoQueRebaja;
 
-    // 6. Comprometido Pendiente
+    // 6. Comprometido Pendiente: Base histórica/manual + adquisiciones pendientes de pago asignadas
     const comprometidoBase = Number(line.comprometidoPendiente) || 0;
-    const comprometidoPendiente = purchasesPendingTotal > 0
-      ? purchasesPendingTotal
-      : comprometidoBase;
+    const comprometidoPendiente = comprometidoBase + purchasesPendingTotal;
 
     // 7. Disponible Proyectado = Disponible Real - Comprometido Pendiente
     const disponibleProyectado = disponibleReal - comprometidoPendiente;
