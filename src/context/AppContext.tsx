@@ -3,6 +3,7 @@ import {
   User, 
   UserProfile,
   PurchaseRecord, 
+  AttachedDocument,
   Catalog, 
   AuditLogEntry, 
   AppNotification, 
@@ -70,6 +71,7 @@ import {
   onBudgetModificationsSnapshot
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit } from 'firebase/firestore';
+import { saveAttachmentToIndexedDB, getAttachmentFromIndexedDB, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 
 export const DEFAULT_LOGO_CONFIG: CustomLogoConfig = {
   type: 'custom_image',
@@ -359,7 +361,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const has113 = parsed.some((l: BudgetLineItem) => l.renglonPresupuestario === '113');
+          if (!has113) {
+            const initial113 = INITIAL_BUDGET_LINES.find(l => l.renglonPresupuestario === '113');
+            if (initial113) {
+              return [initial113, ...parsed];
+            }
+          }
+          return parsed;
+        }
       } catch (e) {
         console.warn("Error leyendo budgetLines de localStorage:", e);
       }
@@ -440,7 +451,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         remoteItems.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
         if (remoteItems.length > 0 || snapshot.metadata.fromCache === false) {
-          setPurchases(remoteItems);
+          setPurchases(prevPurchases => {
+            const prevMap = new Map<string, PurchaseRecord>(prevPurchases.map(p => [p.id, p]));
+            return remoteItems.map(item => {
+              const prevItem = prevMap.get(item.id);
+              // Si el registro local en memoria ya contiene el documento con su dataUrl completo,
+              // preservarlo íntegro para evitar que la sincronización de metadatos de Firestore lo sobreescriba.
+              if (item.f56Documento && prevItem?.f56Documento?.dataUrl) {
+                if (!item.f56Documento.dataUrl || item.f56Documento.dataUrl.length < prevItem.f56Documento.dataUrl.length) {
+                  return {
+                    ...item,
+                    f56Documento: {
+                      ...item.f56Documento,
+                      dataUrl: prevItem.f56Documento.dataUrl,
+                      nombre: item.f56Documento.nombre || prevItem.f56Documento.nombre,
+                      tamano: item.f56Documento.tamano || prevItem.f56Documento.tamano,
+                      tipo: item.f56Documento.tipo || prevItem.f56Documento.tipo,
+                      fechaSubida: item.f56Documento.fechaSubida || prevItem.f56Documento.fechaSubida
+                    }
+                  };
+                }
+              }
+              return item;
+            });
+          });
         }
         setIsFirestoreConnected(true);
         setFirestoreStatus('conectado');
@@ -561,6 +595,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.USER_PROFILES, JSON.stringify(userProfiles));
   }, [userProfiles]);
+
+  // Hidratación reactiva de documentos adjuntos desde IndexedDB o subcolección de Firestore
+  useEffect(() => {
+    const unhydrated = purchases.filter(p => 
+      p.f56Documento && 
+      (!p.f56Documento.dataUrl || p.f56Documento.dataUrl.length < 100)
+    );
+    if (unhydrated.length === 0) return;
+
+    let isMounted = true;
+    const hydrateDocs = async () => {
+      const updatedDocs: { id: string; doc: AttachedDocument }[] = [];
+
+      for (const p of unhydrated) {
+        if (!isMounted) break;
+        try {
+          const fullDoc = await getAttachmentWithDataUrl(p.id, p.f56Documento);
+          if (fullDoc?.dataUrl && fullDoc.dataUrl.length > 100) {
+            updatedDocs.push({ id: p.id, doc: fullDoc });
+          }
+        } catch (e) {
+          // Continuar con el siguiente registro
+        }
+      }
+
+      if (isMounted && updatedDocs.length > 0) {
+        setPurchases(prev => prev.map(p => {
+          const match = updatedDocs.find(u => u.id === p.id);
+          return match ? { ...p, f56Documento: match.doc } : p;
+        }));
+        setSelectedPurchase(curr => {
+          if (!curr) return null;
+          const match = updatedDocs.find(u => u.id === curr.id);
+          return match ? { ...curr, f56Documento: match.doc } : curr;
+        });
+      }
+    };
+
+    hydrateDocs();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [purchases.length]);
 
   const refreshPurchases = useCallback(async () => {
     try {
@@ -852,7 +930,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [users]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(purchases));
+    try {
+      // Para evitar que localStorage exceda la cuota del navegador (5MB), guardamos las compras
+      // manteniendo los metadatos del documento y preservando el archivo binario pesado en IndexedDB
+      const lightweightPurchases = purchases.map(p => {
+        if (p.f56Documento?.dataUrl && p.f56Documento.dataUrl.length > 50000) {
+          return {
+            ...p,
+            f56Documento: {
+              nombre: p.f56Documento.nombre,
+              tamano: p.f56Documento.tamano,
+              tipo: p.f56Documento.tipo,
+              fechaSubida: p.f56Documento.fechaSubida,
+              storageKey: p.f56Documento.storageKey || 'indexeddb'
+            }
+          };
+        }
+        return p;
+      });
+      localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(lightweightPurchases));
+    } catch (err) {
+      console.warn("Aviso al guardar compras en localStorage (cuota protegida por IndexedDB):", err);
+    }
   }, [purchases]);
 
   useEffect(() => {
@@ -1198,6 +1297,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setPurchases(prev => [newRecord, ...prev]);
 
+    // Respaldo de alta capacidad en IndexedDB para adjuntos pesados
+    if (newRecord.f56Documento?.dataUrl) {
+      saveAttachmentToIndexedDB(newRecord.id, newRecord.f56Documento).catch(err => 
+        console.warn("Aviso al respaldar archivo en IndexedDB:", err)
+      );
+    }
+
     savePurchaseToFirestore(newRecord).then(res => {
       if (!res.success) {
         console.warn("Aviso Firestore al guardar compra:", res.error);
@@ -1388,9 +1494,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    // Si data.f56Documento viene sin dataUrl (por ser edición de otros campos), preservar el dataUrl que ya existía en prev.f56Documento
+    const preservedDocument = data.f56Documento !== undefined
+      ? (data.f56Documento ? {
+          ...data.f56Documento,
+          dataUrl: data.f56Documento.dataUrl || prev.f56Documento?.dataUrl
+        } : undefined)
+      : prev.f56Documento;
+
     const updated: PurchaseRecord = {
       ...prev,
       ...data,
+      f56Documento: preservedDocument,
       historialEstatus: updatedEvents,
       bitacoraCambios: updatedBitacora,
       modificadoPor: creator,
@@ -1400,6 +1515,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPurchases(prevList => prevList.map(p => p.id === id ? updated : p));
     setSelectedPurchase(curr => (curr && curr.id === id ? updated : curr));
     
+    // Respaldo de alta capacidad en IndexedDB para adjuntos
+    if (updated.f56Documento?.dataUrl) {
+      saveAttachmentToIndexedDB(id, updated.f56Documento).catch(err => 
+        console.warn("Aviso al actualizar archivo en IndexedDB:", err)
+      );
+    }
+
     savePurchaseToFirestore(updated).then(res => {
       if (!res.success) {
         console.warn("Aviso Firestore al actualizar compra:", res.error);

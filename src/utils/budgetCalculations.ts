@@ -73,11 +73,14 @@ export function calculateBudgetAvailability(
 
     // 3. Compras asociadas activas según regla institucional: Afecta Disponibilidad (Sí / No)
     // Se excluyen eventos Anulados, Rechazados, Desiertos y Prescindidos
+    // El Renglón 113 es administrado por Gerencia Administrativa: es solo referencial y no afecta presupuesto técnico
+    const isReferenceLine = cleanLineRenglon === '113' || Boolean(line.esReferencia);
+
     const activePurchases = purchases.filter(p => {
       const pRenglon = String(p.renglonPresupuestario || '').trim();
       const matchRenglon = pRenglon === cleanLineRenglon;
-      const affects = doesStatusAffectBudget(p.estatusEvento);
-      return matchRenglon && affects;
+      const affects = doesStatusAffectBudget(p.estatusEvento, pRenglon);
+      return matchRenglon && (affects || isReferenceLine);
     });
 
     // Sumar compras pagadas del renglón (Estatus 'Pagada' o estadoPago 'pagado')
@@ -95,25 +98,35 @@ export function calculateBudgetAvailability(
     const pagadoQueRebaja = Math.round((pagadoBase + purchasesPaidTotal) * 100) / 100;
 
     // 5. Disponible Real = Presupuesto Vigente - Pagado que Rebaja
-    // Se descuenta únicamente cuando se marca como pagado
-    const disponibleReal = Math.round((presupuestoVigente - pagadoQueRebaja) * 100) / 100;
+    // Para renglón de referencia 113 no descuenta saldo
+    const disponibleReal = isReferenceLine 
+      ? 0 
+      : Math.round((presupuestoVigente - pagadoQueRebaja) * 100) / 100;
 
     // 6. Comprometido Pendiente: Base histórica/manual + adquisiciones pendientes de pago asignadas
     const comprometidoBase = Number(line.comprometidoPendiente) || 0;
-    const comprometidoPendiente = Math.round((comprometidoBase + purchasesPendingTotal) * 100) / 100;
+    const comprometidoPendiente = isReferenceLine
+      ? 0
+      : Math.round((comprometidoBase + purchasesPendingTotal) * 100) / 100;
 
     // 7. Disponible Proyectado = Disponible Real - Comprometido Pendiente
-    const disponibleProyectado = Math.round((disponibleReal - comprometidoPendiente) * 100) / 100;
+    const disponibleProyectado = isReferenceLine
+      ? 0
+      : Math.round((disponibleReal - comprometidoPendiente) * 100) / 100;
 
     // 8. Porcentaje Usado/Comprometido = ((Pagado + Comprometido) / Vigente) * 100
     const totalAfectado = pagadoQueRebaja + comprometidoPendiente;
-    const porcentajeUsadoComprometido = presupuestoVigente > 0 
-      ? Math.min(100, Math.max(0, (totalAfectado / presupuestoVigente) * 100))
-      : 0;
+    const porcentajeUsadoComprometido = isReferenceLine
+      ? 0
+      : (presupuestoVigente > 0 
+        ? Math.min(100, Math.max(0, (totalAfectado / presupuestoVigente) * 100))
+        : 0);
 
     // 9. Estatus si hay disponibilidad o No
     let estatusDisponibilidad: BudgetDisponibilidadStatus = 'Con Disponibilidad';
-    if (disponibleProyectado <= 0) {
+    if (isReferenceLine) {
+      estatusDisponibilidad = 'Con Disponibilidad';
+    } else if (disponibleProyectado <= 0) {
       estatusDisponibilidad = 'Sin Disponibilidad';
     } else if (disponibleProyectado < (presupuestoVigente * 0.15)) {
       estatusDisponibilidad = 'Alerta Disponibilidad Baja';

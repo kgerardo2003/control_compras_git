@@ -406,8 +406,9 @@ export const DashboardView: React.FC = () => {
   // Datos calculados para el Gráfico de Barras Comparativo: Presupuesto Vigente vs Comprometido
   const comparativeChartData = useMemo(() => {
     if (comparativeGrouping === 'renglon') {
-      // 1. Agrupación por Renglón Presupuestario (Centros de Costo Financieros oficiales)
-      const lines = budgetAvailability && budgetAvailability.length > 0 ? budgetAvailability : [];
+      // 1. Agrupación por Renglón Presupuestario (Centros de Costo Financieros oficiales, excluyendo referenciales de Gerencia Administrativa)
+      const lines = (budgetAvailability && budgetAvailability.length > 0 ? budgetAvailability : [])
+        .filter(l => !l.esReferencia && l.renglonPresupuestario !== '113');
       return lines.map((line, index) => {
         const vigente = Number(line.presupuestoVigente) || 0;
         const comprometido = Number(line.comprometidoPendiente) || 0;

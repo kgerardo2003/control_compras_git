@@ -19,7 +19,11 @@ import {
   Square,
   MinusSquare,
   ShieldAlert,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
@@ -215,9 +219,45 @@ export const PurchasesView: React.FC = () => {
     }
   };
 
+  // Paginación institucional: 15 ítems por hoja
+  const ITEMS_PER_PAGE = 15;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reiniciar a página 1 al cambiar términos de búsqueda o filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterEstatus, filterGIT, filterCategory, sortBy, sortOrder]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPurchases.length / ITEMS_PER_PAGE));
+
+  // Prevenir que la página actual quede fuera de rango si se reducen los resultados
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedPurchases = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredPurchases.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredPurchases, currentPage]);
+
   // Selección múltiple y eliminación en lote
   const isAllFilteredSelected = filteredPurchases.length > 0 && filteredPurchases.every(p => selectedIds.includes(p.id));
   const isSomeFilteredSelected = filteredPurchases.some(p => selectedIds.includes(p.id)) && !isAllFilteredSelected;
+
+  const isAllPageSelected = paginatedPurchases.length > 0 && paginatedPurchases.every(p => selectedIds.includes(p.id));
+  const isSomePageSelected = paginatedPurchases.some(p => selectedIds.includes(p.id)) && !isAllPageSelected;
+
+  const toggleSelectPage = () => {
+    if (isAllPageSelected) {
+      const pageIdSet = new Set(paginatedPurchases.map(p => p.id));
+      setSelectedIds(prev => prev.filter(id => !pageIdSet.has(id)));
+    } else {
+      const combined = new Set([...selectedIds, ...paginatedPurchases.map(p => p.id)]);
+      setSelectedIds(Array.from(combined));
+    }
+  };
 
   const toggleSelectAllFiltered = () => {
     if (isAllFilteredSelected) {
@@ -584,12 +624,12 @@ export const PurchasesView: React.FC = () => {
                     <input
                       type="checkbox"
                       id="checkbox-select-all-desktop"
-                      checked={isAllFilteredSelected}
+                      checked={isAllPageSelected}
                       ref={el => {
-                        if (el) el.indeterminate = isSomeFilteredSelected;
+                        if (el) el.indeterminate = isSomePageSelected;
                       }}
-                      onChange={toggleSelectAllFiltered}
-                      title={isAllFilteredSelected ? "Deseleccionar todas" : "Seleccionar todas las adquisiciones visibles"}
+                      onChange={toggleSelectPage}
+                      title={isAllPageSelected ? "Deseleccionar adquisiciones de esta página" : "Seleccionar adquisiciones de esta página (15 máx)"}
                       className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer"
                     />
                   )}
@@ -643,7 +683,7 @@ export const PurchasesView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredPurchases.map((p) => {
+                paginatedPurchases.map((p) => {
                   const isSelected = selectedIds.includes(p.id);
                   const badgeClass = STATUS_BADGE_CLASSES[p.estatusEvento] || 'bg-slate-100 text-slate-700';
                   return (
@@ -837,7 +877,7 @@ export const PurchasesView: React.FC = () => {
           </div>
         )}
 
-        {filteredPurchases.map((p) => {
+        {paginatedPurchases.map((p) => {
           const isSelected = selectedIds.includes(p.id);
           const badgeClass = STATUS_BADGE_CLASSES[p.estatusEvento] || 'bg-slate-100 text-slate-700';
           return (
@@ -928,6 +968,110 @@ export const PurchasesView: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Componente de Paginación Institucional: 15 registros por hoja */}
+      {filteredPurchases.length > 0 && (
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="text-slate-600 font-medium text-center sm:text-left">
+            Mostrando <strong className="text-slate-900 font-semibold">{Math.min(filteredPurchases.length, (currentPage - 1) * ITEMS_PER_PAGE + 1)}</strong> al{' '}
+            <strong className="text-slate-900 font-semibold">{Math.min(filteredPurchases.length, currentPage * ITEMS_PER_PAGE)}</strong> de{' '}
+            <strong className="text-slate-900 font-semibold">{filteredPurchases.length}</strong> adquisiciones
+            <span className="mx-2 text-slate-300">|</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[11px]">
+              Página {currentPage} de {totalPages} (15 por hoja)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap justify-center">
+            {/* Primera página */}
+            <button
+              type="button"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              title="Primera página"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+
+            {/* Página anterior */}
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed font-medium flex items-center gap-1 transition-colors cursor-pointer"
+              title="Página anterior"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Anterior</span>
+            </button>
+
+            {/* Números de página */}
+            <div className="flex items-center gap-1">
+              {(() => {
+                const pages: (number | string)[] = [];
+                if (totalPages <= 7) {
+                  for (let i = 1; i <= totalPages; i++) pages.push(i);
+                } else if (currentPage <= 4) {
+                  pages.push(1, 2, 3, 4, 5, '...', totalPages);
+                } else if (currentPage >= totalPages - 3) {
+                  pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+                } else {
+                  pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
+                }
+
+                return pages.map((page, idx) => {
+                  if (typeof page === 'string') {
+                    return (
+                      <span key={`ellipsis-${idx}`} className="px-1.5 py-1 text-slate-400 font-bold">
+                        ...
+                      </span>
+                    );
+                  }
+                  const isActive = page === currentPage;
+                  return (
+                    <button
+                      key={`page-${page}`}
+                      type="button"
+                      onClick={() => setCurrentPage(page)}
+                      className={`min-w-[32px] h-8 px-2 rounded-lg font-bold transition-colors cursor-pointer text-xs ${
+                        isActive
+                          ? 'bg-amber-800 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Siguiente página */}
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed font-medium flex items-center gap-1 transition-colors cursor-pointer"
+              title="Página siguiente"
+            >
+              <span className="hidden sm:inline">Siguiente</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+
+            {/* Última página */}
+            <button
+              type="button"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              title="Última página"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal Confirmación Eliminación Individual */}
       {itemToDelete && (

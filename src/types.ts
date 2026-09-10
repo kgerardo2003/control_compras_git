@@ -40,6 +40,7 @@ export interface AttachedDocument {
   tipo?: string;
   fechaSubida?: string;
   dataUrl?: string; // Archivo base64 / blob URL para descarga y visualización
+  storageKey?: string; // Llave opcional para subcolecciones o IndexedDB
 }
 
 export type TimelineEventState = 'completado' | 'en_proceso' | 'pendiente' | 'alerta';
@@ -143,6 +144,7 @@ export interface BudgetLineItem {
   disponibleProyectado: number;   // 10. Disponible Proyectado (Disponible Real - Comprometido Pendiente)
   porcentajeUsadoComprometido: number; // 11. Porcentaje Usado/Comprometido
   estatusDisponibilidad: BudgetDisponibilidadStatus; // 12. Estatus si hay disponibilidad o No
+  esReferencia?: boolean;         // Indicador de renglón de referencia (ej: 113 Telefonía - Gerencia Administrativa)
   ejercicioFiscal?: number;       // Ej: 2026
   observaciones?: string;
   creadoPor?: string;

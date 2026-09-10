@@ -3,6 +3,26 @@ import { BudgetLineItem, BudgetModification } from '../types';
 export const INITIAL_BUDGET_LINES: BudgetLineItem[] = [
   // GRUPO 100: SERVICIOS NO PERSONALES
   {
+    id: 'bl-100-113',
+    grupoPresupuestario: 'Grupo 100 - Servicios No Personales',
+    renglonPresupuestario: '113',
+    nombreRenglon: 'Telefonía (Referencia - Gerencia Administrativa)',
+    presupuestoInicial: 0,
+    modificacionesAprobadas: 0,
+    presupuestoVigente: 0,
+    pagadoQueRebaja: 0,
+    disponibleReal: 0,
+    comprometidoPendiente: 0,
+    disponibleProyectado: 0,
+    porcentajeUsadoComprometido: 0,
+    estatusDisponibilidad: 'Con Disponibilidad',
+    esReferencia: true,
+    ejercicioFiscal: 2026,
+    observaciones: 'Renglón administrado por Gerencia Administrativa. Es de carácter referencial para compras y NO afecta la disponibilidad presupuestaria técnica.',
+    creadoPor: 'Sistema / Gerencia Administrativa',
+    fechaCreacion: '2026-01-02T08:00:00.000Z'
+  },
+  {
     id: 'bl-100-121',
     grupoPresupuestario: 'Grupo 100 - Servicios No Personales',
     renglonPresupuestario: '121',

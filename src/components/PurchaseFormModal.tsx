@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   X, 
@@ -16,12 +16,18 @@ import {
   AlertCircle, 
   Award,
   Eye,
-  EyeOff
+  EyeOff,
+  GitBranch,
+  FolderTree,
+  Loader2,
+  ListTree
 } from 'lucide-react';
-import { EvaluacionGIT, AttachedDocument } from '../types';
+import { EvaluacionGIT, AttachedDocument, PurchaseRecord } from '../types';
 import { formatQuetzales, getModalidadCompraByMonto } from '../utils/formatters';
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { DocumentPreview } from './DocumentPreview';
+import { processAttachedFile, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
+import { PurchaseActionTree } from './PurchaseActionTree';
 
 // Función para campo F56e tipo texto de 10 posiciones
 const formatF56eInput = (raw: string): string => {
@@ -65,6 +71,8 @@ export const PurchaseFormModal: React.FC = () => {
   } = useApp();
 
   // Estados del Formulario (Validaciones de longitud y tipos requeridos)
+  const [modalTab, setModalTab] = useState<'formulario' | 'arbol'>('formulario');
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [descripcion, setDescripcion] = useState('');
   const [f56e, setF56e] = useState('');
   const [f56, setF56] = useState('');
@@ -148,6 +156,13 @@ export const PurchaseFormModal: React.FC = () => {
       setF56e(purchaseToEdit.f56e || '');
       setF56(purchaseToEdit.f56 || '');
       setF56Documento(purchaseToEdit.f56Documento || null);
+      if (purchaseToEdit.f56Documento && (!purchaseToEdit.f56Documento.dataUrl || purchaseToEdit.f56Documento.dataUrl.length < 100)) {
+        getAttachmentWithDataUrl(purchaseToEdit.id, purchaseToEdit.f56Documento).then(fullDoc => {
+          if (fullDoc?.dataUrl) {
+            setF56Documento(fullDoc);
+          }
+        });
+      }
       setFechaSolicitud(purchaseToEdit.fechaSolicitud || '');
       setFechaVoBo(purchaseToEdit.fechaVoBo || '');
       setFechaAutorizado(purchaseToEdit.fechaAutorizado || '');
@@ -202,7 +217,71 @@ export const PurchaseFormModal: React.FC = () => {
     }
     setErrors({});
     setFileUploadError(null);
+    setModalTab('formulario');
   }, [purchaseToEdit, isPurchaseModalOpen]);
+
+  // Objeto reactivo para previsualización en tiempo real del Árbol de Acciones y Registro
+  const livePurchasePreview: Partial<PurchaseRecord> = useMemo(() => {
+    return {
+      ...(purchaseToEdit || {}),
+      id: purchaseToEdit?.id || 'pur-preview',
+      descripcion: descripcion.trim() || 'Nueva Adquisición en Proceso de Registro',
+      f56e: f56e.trim(),
+      f56: f56.trim(),
+      f56Documento: f56Documento || undefined,
+      fechaSolicitud,
+      fechaVoBo,
+      fechaAutorizado,
+      nog: nog.trim(),
+      fechaPublicacion,
+      fechaOfertas,
+      cantidadOfertas: Number(cantidadOfertas) || 0,
+      monto: Number(monto) || 0,
+      renglonPresupuestario,
+      estadoPago,
+      evaluadoGIT,
+      fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
+      fechaElaboracionOficioGIT: evaluadoGIT === 'Sí' ? fechaElaboracionOficioGIT : '',
+      estatusEvento,
+      fechaAdjudicacion: estatusEvento === 'Adjudicación' ? fechaAdjudicacion : undefined,
+      areaSolicitante,
+      categoriaTecnologica,
+      dependenciaSolicitante,
+      modalidadCompra: getModalidadCompraByMonto(Number(monto) || 0).nombre,
+      proveedorAdjudicado: proveedorAdjudicado.trim() || undefined,
+      observaciones: observaciones.trim() || undefined,
+      bitacoraCambios: purchaseToEdit?.bitacoraCambios || [],
+      historialEstatus: purchaseToEdit?.historialEstatus || [],
+      creadoPor: purchaseToEdit?.creadoPor || 'Operador Actual',
+      fechaCreacion: purchaseToEdit?.fechaCreacion || new Date().toISOString()
+    };
+  }, [
+    purchaseToEdit,
+    descripcion,
+    f56e,
+    f56,
+    f56Documento,
+    fechaSolicitud,
+    fechaVoBo,
+    fechaAutorizado,
+    nog,
+    fechaPublicacion,
+    fechaOfertas,
+    cantidadOfertas,
+    monto,
+    renglonPresupuestario,
+    estadoPago,
+    evaluadoGIT,
+    fechaDictamenGIT,
+    fechaElaboracionOficioGIT,
+    estatusEvento,
+    fechaAdjudicacion,
+    areaSolicitante,
+    categoriaTecnologica,
+    dependenciaSolicitante,
+    proveedorAdjudicado,
+    observaciones
+  ]);
 
   // Manejo de archivo adjunto F56
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,28 +290,34 @@ export const PurchaseFormModal: React.FC = () => {
     processFile(file);
   };
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     setFileUploadError(null);
-    if (file.size > 750 * 1024) {
-      setFileUploadError('El archivo excede el límite máximo de 750 KB para almacenamiento en Firestore.');
+    setIsProcessingFile(true);
+
+    // Límite de seguridad de 25 MB
+    if (file.size > 25 * 1024 * 1024) {
+      setFileUploadError('El archivo excede el límite máximo permitido de 25 MB.');
+      setIsProcessingFile(false);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      setF56Documento({
-        nombre: file.name,
-        tamano: file.size,
-        tipo: file.type || 'application/pdf',
-        fechaSubida: new Date().toISOString(),
-        dataUrl,
-      });
+
+    try {
+      const processed = await processAttachedFile(file);
+      if (!processed || !processed.dataUrl) {
+        throw new Error('No se pudo generar la lectura digital del archivo.');
+      }
+      setF56Documento(processed);
       setShowDocumentPreview(true);
-    };
-    reader.onerror = () => {
-      setFileUploadError('Error al procesar el archivo. Por favor intente nuevamente.');
-    };
-    reader.readAsDataURL(file);
+      setFileUploadError(null);
+    } catch (err: any) {
+      console.error('Error al procesar archivo adjunto:', err);
+      setFileUploadError(err?.message || 'Error al procesar el archivo. Por favor intente nuevamente.');
+    } finally {
+      setIsProcessingFile(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -378,11 +463,16 @@ export const PurchaseFormModal: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isProcessingFile) {
+      setFileUploadError('Por favor espere unos momentos a que termine de procesarse y optimizarse el documento adjunto.');
+      return;
+    }
     if (!validate()) return;
 
     setIsSubmitting(true);
 
     const selectedLine = budgetAvailability.find(l => l.renglonPresupuestario === renglonPresupuestario);
+    const isRenglon113 = renglonPresupuestario === '113';
 
     const recordData = {
       descripcion: descripcion.trim(),
@@ -398,8 +488,8 @@ export const PurchaseFormModal: React.FC = () => {
       cantidadOfertas: Number(cantidadOfertas),
       monto: Number(monto),
       renglonPresupuestario,
-      grupoPresupuestario: selectedLine?.grupoPresupuestario || '',
-      nombreRenglon: selectedLine?.nombreRenglon || '',
+      grupoPresupuestario: selectedLine?.grupoPresupuestario || (isRenglon113 ? 'Grupo 100 - Servicios No Personales' : ''),
+      nombreRenglon: selectedLine?.nombreRenglon || (isRenglon113 ? 'Telefonía (Referencia - Gerencia Administrativa)' : ''),
       estadoPago,
       evaluadoGIT,
       fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
@@ -415,16 +505,20 @@ export const PurchaseFormModal: React.FC = () => {
       historialEstatus: purchaseToEdit?.historialEstatus,
     };
 
-    setTimeout(() => {
+    try {
       if (purchaseToEdit) {
         updatePurchase(purchaseToEdit.id, recordData);
       } else {
         addPurchase(recordData);
       }
-      setIsSubmitting(false);
       setIsPurchaseModalOpen(false);
       setPurchaseToEdit(null);
-    }, 200);
+    } catch (err: any) {
+      console.error('Error al guardar adquisición:', err);
+      setFileUploadError('Error al guardar: ' + (err?.message || 'Intente nuevamente'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -455,8 +549,92 @@ export const PurchaseFormModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Contenido del Formulario */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        {/* Pestañas Superiores de Navegación: Ficha vs Árbol de Acciones */}
+        <div className="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setModalTab('formulario')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                modalTab === 'formulario'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Ficha de Adquisición</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setModalTab('arbol')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                modalTab === 'arbol'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+              }`}
+            >
+              <FolderTree className="w-3.5 h-3.5" />
+              <span>Historial de Acciones (Árbol)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                modalTab === 'arbol' ? 'bg-slate-900 text-amber-300' : 'bg-slate-700 text-slate-300'
+              }`}>
+                {purchaseToEdit?.bitacoraCambios?.length ? `${purchaseToEdit.bitacoraCambios.length + 5} registros` : '6 fases'}
+              </span>
+            </button>
+          </div>
+
+          <div className="hidden sm:flex items-center text-xs text-slate-300">
+            {modalTab === 'formulario' ? (
+              <button
+                type="button"
+                onClick={() => setModalTab('arbol')}
+                className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer text-xs font-semibold"
+              >
+                <GitBranch className="w-3.5 h-3.5" />
+                <span>Ver Árbol de Acciones</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setModalTab('formulario')}
+                className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer text-xs font-semibold"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Volver a la Ficha</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Contenido del Modal: Pestaña Árbol de Acciones vs Formulario */}
+        {modalTab === 'arbol' ? (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-300/40 flex items-center justify-center text-amber-600 shrink-0">
+                  <FolderTree className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">Historial y Registro de Acciones del Expediente</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Registro estructurado por fases, hitos completados y bitácora auditada en tiempo real.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalTab('formulario')}
+                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Volver al Formulario</span>
+              </button>
+            </div>
+            <PurchaseActionTree purchase={livePurchasePreview} />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           
           {/* SECCIÓN 1: Identificación del Evento */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
@@ -690,7 +868,10 @@ export const PurchaseFormModal: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
+                        onClick={() => {
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                          fileInputRef.current?.click();
+                        }}
                         className="px-2.5 py-1.5 text-slate-700 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 border border-slate-200 cursor-pointer"
                         title="Reemplazar documento F56e"
                       >
@@ -732,12 +913,25 @@ export const PurchaseFormModal: React.FC = () => {
                     />
                   )}
                 </div>
+              ) : isProcessingFile ? (
+                <div className="border-2 border-dashed border-amber-400 bg-amber-50/60 rounded-lg p-5 text-center flex flex-col items-center justify-center gap-2 animate-pulse">
+                  <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
+                  <p className="text-xs font-bold text-slate-800">
+                    Procesando y optimizando documento adjunto...
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    Comprimiendo y preparando para almacenamiento seguro en Firestore e IndexedDB
+                  </p>
+                </div>
               ) : (
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    fileInputRef.current?.click();
+                  }}
                   className={`border-2 border-dashed rounded-lg p-3 text-center cursor-pointer transition-colors ${
                     isDragging
                       ? 'border-amber-500 bg-amber-50/50'
@@ -750,7 +944,7 @@ export const PurchaseFormModal: React.FC = () => {
                       Haga clic aquí o arrastre el documento digital de la Forma F56-e
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      Formatos soportados: PDF, Word (.docx), JPG, PNG (Hasta 750 KB)
+                      Formatos soportados: PDF, Word (.docx), JPG, PNG (Hasta 15 MB con optimización automática)
                     </p>
                   </div>
                 </div>
@@ -761,6 +955,22 @@ export const PurchaseFormModal: React.FC = () => {
                   {fileUploadError}
                 </p>
               )}
+
+              {/* Botón rápido para consultar el Árbol de Acciones del expediente */}
+              <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                  <GitBranch className="w-3 h-3 text-amber-600" />
+                  ¿Desea ver el flujo y bitácora de este trámite?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setModalTab('arbol')}
+                  className="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <FolderTree className="w-3 h-3 text-amber-700" />
+                  <span>Ver Árbol de Acciones</span>
+                </button>
+              </div>
             </div>
 
           </div>
@@ -908,9 +1118,15 @@ export const PurchaseFormModal: React.FC = () => {
                       onChange={(e) => setRenglonPresupuestario(e.target.value)}
                       className="w-full p-2 text-xs font-semibold bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
                     >
+                      {/* Renglón 113 Telefonía (Referencia - Gerencia Administrativa) */}
+                      {!budgetAvailability.some(l => l.renglonPresupuestario === '113') && (
+                        <option value="113">
+                          Renglón 113 - Telefonía (Referencia - Gerencia Administrativa • No afecta presupuesto)
+                        </option>
+                      )}
                       {budgetAvailability.map((line) => (
                         <option key={line.id} value={line.renglonPresupuestario}>
-                          Renglón {line.renglonPresupuestario} - {line.nombreRenglon} (Disponible: Q. {line.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 })})
+                          Renglón {line.renglonPresupuestario} - {line.nombreRenglon} {line.esReferencia || line.renglonPresupuestario === '113' ? '(Solo Referencia - No afecta presupuesto)' : `(Disponible: Q. ${line.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 })})`}
                         </option>
                       ))}
                     </select>
@@ -930,7 +1146,24 @@ export const PurchaseFormModal: React.FC = () => {
 
                 {/* Resumen del Renglón Seleccionado y Advertencia de Disponibilidad */}
                 {(() => {
+                  const is113 = renglonPresupuestario === '113';
                   const line = budgetAvailability.find(l => l.renglonPresupuestario === renglonPresupuestario);
+                  const isReference = is113 || Boolean(line?.esReferencia);
+
+                  if (isReference) {
+                    return (
+                      <div className="mt-2 p-2.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-950 text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-indigo-900">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Renglón 113 - Telefonía (Solo Referencia Administrativa)</span>
+                        </div>
+                        <p className="text-[11px] text-indigo-800 leading-relaxed">
+                          Este renglón es gestionado y ejecutado por la <strong>Gerencia Administrativa</strong>. Esta ficha se registra exclusivamente para control referencial y trazabilidad interna; <strong>NO afecta ni descuenta la disponibilidad presupuestaria</strong> de la Gerencia de Informática.
+                        </p>
+                      </div>
+                    );
+                  }
+
                   if (!line) return null;
                   const currentMonto = Number(monto) || 0;
                   const exceeds = currentMonto > line.disponibleProyectado;
@@ -1174,6 +1407,7 @@ export const PurchaseFormModal: React.FC = () => {
           </div>
 
         </form>
+        )}
 
         {/* Footer del Modal */}
         <div className="p-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
@@ -1189,11 +1423,20 @@ export const PurchaseFormModal: React.FC = () => {
             id="btn-save-purchase"
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-black border border-slate-300 text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            disabled={isSubmitting || isProcessingFile}
+            className={`px-4 py-2 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+              isProcessingFile
+                ? 'bg-amber-50 text-amber-900 border border-amber-300'
+                : 'bg-white hover:bg-slate-100 text-black border border-slate-300'
+            }`}
           >
             {isSubmitting ? (
               <div className="w-4 h-4 border-2 border-slate-400 border-t-black rounded-full animate-spin" />
+            ) : isProcessingFile ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                <span>Procesando archivo adjunto...</span>
+              </>
             ) : (
               <>
                 <Save className="w-3.5 h-3.5 text-black" />

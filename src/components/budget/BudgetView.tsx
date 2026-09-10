@@ -175,24 +175,25 @@ export const BudgetView: React.FC = () => {
     };
   }, [purchases]);
 
-  // Totales consolidados de la matriz institucional completa
+  // Totales consolidados de la matriz institucional completa (excluyendo renglones referenciales de Gerencia Administrativa)
   const totals = useMemo(() => {
-    const totalInicial = budgetAvailability.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
-    const totalModificacionesPositivas = budgetAvailability.reduce((s, l) => s + (Number(l.modificacionesPositivas) || 0), 0);
-    const totalModificacionesNegativas = budgetAvailability.reduce((s, l) => s + (Number(l.modificacionesNegativas) || 0), 0);
+    const standardLines = budgetAvailability.filter(l => !l.esReferencia && l.renglonPresupuestario !== '113');
+    const totalInicial = standardLines.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
+    const totalModificacionesPositivas = standardLines.reduce((s, l) => s + (Number(l.modificacionesPositivas) || 0), 0);
+    const totalModificacionesNegativas = standardLines.reduce((s, l) => s + (Number(l.modificacionesNegativas) || 0), 0);
     const totalModificaciones = totalModificacionesPositivas - totalModificacionesNegativas;
-    const totalVigente = budgetAvailability.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
-    const totalPagado = budgetAvailability.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
-    const totalDisponibleReal = budgetAvailability.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
-    const totalComprometido = budgetAvailability.reduce((s, l) => s + (Number(l.comprometidoPendiente) || 0), 0);
-    const totalDisponibleProyectado = budgetAvailability.reduce((s, l) => s + (Number(l.disponibleProyectado) || 0), 0);
+    const totalVigente = standardLines.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
+    const totalPagado = standardLines.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
+    const totalDisponibleReal = standardLines.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
+    const totalComprometido = standardLines.reduce((s, l) => s + (Number(l.comprometidoPendiente) || 0), 0);
+    const totalDisponibleProyectado = standardLines.reduce((s, l) => s + (Number(l.disponibleProyectado) || 0), 0);
     
     const totalAfectado = totalPagado + totalComprometido;
     const porcentajeGlobal = totalVigente > 0 ? (totalAfectado / totalVigente) * 100 : 0;
 
-    const conDisponibilidadCount = budgetAvailability.filter(l => l.estatusDisponibilidad === 'Con Disponibilidad').length;
-    const alertaCount = budgetAvailability.filter(l => l.estatusDisponibilidad === 'Alerta Disponibilidad Baja').length;
-    const sinDisponibilidadCount = budgetAvailability.filter(l => l.estatusDisponibilidad === 'Sin Disponibilidad').length;
+    const conDisponibilidadCount = standardLines.filter(l => l.estatusDisponibilidad === 'Con Disponibilidad').length;
+    const alertaCount = standardLines.filter(l => l.estatusDisponibilidad === 'Alerta Disponibilidad Baja').length;
+    const sinDisponibilidadCount = standardLines.filter(l => l.estatusDisponibilidad === 'Sin Disponibilidad').length;
 
     return {
       count: budgetAvailability.length,
@@ -694,7 +695,14 @@ export const BudgetView: React.FC = () => {
 
                           {/* 3. Nombre del Renglón */}
                           <td className="px-3.5 py-2.5 font-semibold text-slate-900 max-w-[220px]" title={line.nombreRenglon}>
-                            <div>{line.nombreRenglon}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>{line.nombreRenglon}</span>
+                              {(line.esReferencia || line.renglonPresupuestario === '113') && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 whitespace-nowrap">
+                                  Solo Referencia (Gerencia Administrativa)
+                                </span>
+                              )}
+                            </div>
                             {line.observaciones && (
                               <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={line.observaciones}>
                                 {line.observaciones}

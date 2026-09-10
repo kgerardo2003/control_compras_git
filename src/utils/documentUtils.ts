@@ -2,22 +2,15 @@ import { jsPDF } from 'jspdf';
 import { AttachedDocument, PurchaseRecord } from '../types';
 
 /**
- * Verifica si un Data URL base64 corresponde a un PDF válido y no truncado
+ * Verifica si un Data URL base64 tiene estructura mínima válida
  */
 export function isValidBase64Pdf(dataUrl?: string): boolean {
   if (!dataUrl || typeof dataUrl !== 'string') return false;
   if (!dataUrl.startsWith('data:application/pdf')) return false;
   
   const parts = dataUrl.split(',');
-  if (parts.length < 2) return false;
-  
-  try {
-    const raw = atob(parts[1]);
-    // Debe tener encabezado PDF y fin de archivo %%EOF
-    return raw.startsWith('%PDF-') && raw.includes('%%EOF');
-  } catch {
-    return false;
-  }
+  if (parts.length < 2 || parts[1].length < 10) return false;
+  return true;
 }
 
 /**
@@ -158,11 +151,9 @@ export function getDocumentBlob(
         // Comprobar si el contenido base64 es decodificable
         const binary = atob(parts[1]);
         
-        // Si es PDF pero está truncado/corrupto sin %%EOF
-        if (mime.includes('pdf') && (!binary.startsWith('%PDF-') || !binary.includes('%%EOF'))) {
-          console.warn('PDF detectado con estructura corrupta/incompleta. Generando PDF oficial de reemplazo.');
-          const validDataUrl = generateOfficialF56PdfDataUrl(purchase, doc.nombre);
-          return getDocumentBlob({ nombre: doc.nombre, dataUrl: validDataUrl, tipo: 'application/pdf' }, purchase);
+        // Solo si el contenido está completamente vacío o corrupto
+        if (binary.length === 0) {
+          throw new Error('Archivo vacío');
         }
 
         const array = new Uint8Array(binary.length);
@@ -231,15 +222,23 @@ export function ensureValidDocument(
 ): AttachedDocument {
   if (!doc) return doc;
   
-  if (!doc.dataUrl || (doc.tipo?.includes('pdf') && !isValidBase64Pdf(doc.dataUrl))) {
-    const validDataUrl = generateOfficialF56PdfDataUrl(purchase, doc.nombre);
-    return {
-      ...doc,
-      dataUrl: validDataUrl,
-      tamano: doc.tamano || 12400,
-      tipo: doc.tipo || 'application/pdf'
-    };
+  // Si ya tiene dataUrl cargado (sea PDF, imagen u otro documento), conservarlo íntegro
+  if (doc.dataUrl && doc.dataUrl.length > 20) {
+    return doc;
   }
 
-  return doc;
+  // Si tiene un storageKey activo (ej. 'indexeddb' o 'subcollection:f56Document'),
+  // se debe preservar intacto para permitir su hidratación asíncrona real desde almacenamiento
+  if (doc.storageKey) {
+    return doc;
+  }
+
+  // Únicamente si carece totalmente de dataUrl y storageKey, generar el formato oficial F56
+  const validDataUrl = generateOfficialF56PdfDataUrl(purchase, doc.nombre);
+  return {
+    ...doc,
+    dataUrl: validDataUrl,
+    tamano: doc.tamano || 12400,
+    tipo: doc.tipo || 'application/pdf'
+  };
 }

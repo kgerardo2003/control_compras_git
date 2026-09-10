@@ -154,8 +154,12 @@ export const OFFICIAL_ESTATUS_COMPRA: OfficialEstatusCompra[] = [
   }
 ];
 
-// Función para determinar si un estatus afecta disponibilidad presupuestaria
-export function doesStatusAffectBudget(status?: string): boolean {
+// Función para determinar si un estatus o renglón afecta disponibilidad presupuestaria
+export function doesStatusAffectBudget(status?: string, renglon?: string): boolean {
+  if (renglon && String(renglon).trim() === '113') {
+    // Renglón 113 Telefonía es administrado por Gerencia Administrativa: es solo referencial y no afecta disponibilidad
+    return false;
+  }
   if (!status) return true;
   const clean = status.trim().toLowerCase();
   if (
@@ -169,9 +173,10 @@ export function doesStatusAffectBudget(status?: string): boolean {
   return true;
 }
 
-// 4 & 5. RENGLONES Y NOMBRES EDITABLES (39 RENGLONES OFICIALES)
+// 4 & 5. RENGLONES Y NOMBRES EDITABLES (RENGLONES OFICIALES)
 export const OFFICIAL_RENGLONES: OfficialRenglonPresupuestario[] = [
-  // --- GRUPO 100: SERVICIOS NO PERSONALES (14 Renglones) ---
+  // --- GRUPO 100: SERVICIOS NO PERSONALES ---
+  { grupo: '100', renglon: '113', nombreRenglon: 'Telefonía (Referencia - Gerencia Administrativa)' },
   { grupo: '100', renglon: '131', nombreRenglon: 'Viaticos al Exterior' },
   { grupo: '100', renglon: '133', nombreRenglon: 'Viaticos al Interior' },
   { grupo: '100', renglon: '134', nombreRenglon: 'Compensación por kilómetro recorrido' },

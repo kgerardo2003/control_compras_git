@@ -3,6 +3,7 @@ import {
   getFirestore, 
   Firestore,
   doc, 
+  getDoc,
   getDocFromServer,
   getDocsFromServer,
   collection,
@@ -16,7 +17,7 @@ import {
   limit
 } from 'firebase/firestore';
 import firebaseConfigFile from '../../firebase-applet-config.json';
-import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification } from '../types';
+import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument } from '../types';
 
 export const FIREBASE_CONFIG = {
   apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || firebaseConfigFile.apiKey,
@@ -100,13 +101,107 @@ export function cleanUndefined<T>(data: T): T {
 export async function savePurchaseToFirestore(purchase: PurchaseRecord): Promise<{ success: boolean; error?: string }> {
   try {
     const docRef = doc(db, PURCHASES_COLLECTION, purchase.id);
-    const cleaned = cleanUndefined(purchase);
+    const cleaned = cleanUndefined(purchase) as PurchaseRecord;
+
+    // Manejo inteligente del documento adjunto para respetar los límites estrictos de Firestore (1MB máx por documento)
+    if (cleaned.f56Documento?.dataUrl) {
+      const fullDoc = cleaned.f56Documento;
+      const dataUrlLen = fullDoc.dataUrl.length;
+
+      // Si el archivo en base64 supera ~700KB (~500KB binario), Firestore no lo aceptará en ningún documento.
+      // En ese caso, se almacena en IndexedDB local con capacidad de Gigabytes y en Firestore se preservan los metadatos.
+      if (dataUrlLen > 700000) {
+        cleaned.f56Documento = {
+          nombre: fullDoc.nombre,
+          tamano: fullDoc.tamano,
+          tipo: fullDoc.tipo,
+          fechaSubida: fullDoc.fechaSubida,
+          storageKey: 'indexeddb'
+        };
+      } else if (dataUrlLen > 250000) {
+        // Para archivos de 250KB a 700KB, guardar el payload en la subcolección dedicada
+        try {
+          const attDocRef = doc(db, PURCHASES_COLLECTION, purchase.id, 'attachments', 'f56Document');
+          await setDoc(attDocRef, {
+            nombre: fullDoc.nombre,
+            tamano: fullDoc.tamano,
+            tipo: fullDoc.tipo,
+            fechaSubida: fullDoc.fechaSubida,
+            dataUrl: fullDoc.dataUrl,
+            actualizadoEn: new Date().toISOString()
+          });
+
+          // En el documento principal se preservan los metadatos con referencia a la subcolección
+          cleaned.f56Documento = {
+            nombre: fullDoc.nombre,
+            tamano: fullDoc.tamano,
+            tipo: fullDoc.tipo,
+            fechaSubida: fullDoc.fechaSubida,
+            storageKey: 'subcollection:f56Document'
+          };
+        } catch (attErr) {
+          console.warn("Aviso al guardar adjunto en subcolección, guardando referencia IndexedDB:", attErr);
+          cleaned.f56Documento = {
+            nombre: fullDoc.nombre,
+            tamano: fullDoc.tamano,
+            tipo: fullDoc.tipo,
+            fechaSubida: fullDoc.fechaSubida,
+            storageKey: 'indexeddb'
+          };
+        }
+      }
+    }
+
     await setDoc(docRef, cleaned, { merge: true });
     console.log("Adquisición guardada exitosamente en Firestore:", purchase.id);
     return { success: true };
   } catch (err: any) {
     console.error("Error guardando adquisición en Firestore:", err);
+    // Si falló por tamaño u otro error en el documento principal, guardar garantizado sin el payload pesado
+    if (
+      err?.message?.includes('exceeds the maximum') || 
+      err?.code === 'resource-exhausted' ||
+      err?.message?.includes('longer than')
+    ) {
+      try {
+        const fallbackPurchase = { ...purchase };
+        if (fallbackPurchase.f56Documento) {
+          fallbackPurchase.f56Documento = {
+            nombre: fallbackPurchase.f56Documento.nombre,
+            tamano: fallbackPurchase.f56Documento.tamano,
+            tipo: fallbackPurchase.f56Documento.tipo,
+            fechaSubida: fallbackPurchase.f56Documento.fechaSubida,
+            storageKey: 'indexeddb'
+          };
+        }
+        const docRef = doc(db, PURCHASES_COLLECTION, purchase.id);
+        await setDoc(docRef, cleanUndefined(fallbackPurchase), { merge: true });
+        console.log("Adquisición guardada en Firestore (fallback ligero preservando metadatos):", purchase.id);
+        return { success: true };
+      } catch (retryErr: any) {
+        console.error("Reintento fallback de guardado falló:", retryErr);
+      }
+    }
     return { success: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Recupera el archivo adjunto completo desde la subcolección de Firestore si fue almacenado allí.
+ */
+export async function fetchPurchaseAttachmentFromFirestore(
+  purchaseId: string
+): Promise<AttachedDocument | null> {
+  try {
+    const attDocRef = doc(db, PURCHASES_COLLECTION, purchaseId, 'attachments', 'f56Document');
+    const snapshot = await getDoc(attDocRef);
+    if (snapshot.exists()) {
+      return snapshot.data() as AttachedDocument;
+    }
+    return null;
+  } catch (err) {
+    console.warn("No se pudo obtener adjunto de subcolección:", err);
+    return null;
   }
 }
 
