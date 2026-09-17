@@ -28,7 +28,8 @@ export type BudgetReportVariant =
   | 'compras_por_renglon'
   | 'comprometido_pendiente'
   | 'pagado_devengado'
-  | 'alertas_deficit';
+  | 'alertas_deficit'
+  | 'gasto_grupo_renglon';
 
 interface BudgetReportsViewProps {
   budgetAvailability: BudgetLineItem[];
@@ -97,10 +98,82 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
     return dataMatriz.filter(l => l.disponibleProyectado <= (l.presupuestoVigente * 0.15));
   }, [dataMatriz]);
 
+  // 6. Gasto Consolidado por Grupo y Renglón Presupuestario
+  const dataGastoGrupoRenglon = useMemo(() => {
+    const filteredLines = budgetAvailability.filter(l => {
+      const matchSearch = searchTerm === '' || 
+        l.renglonPresupuestario.includes(searchTerm) || 
+        l.nombreRenglon.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        l.grupoPresupuestario.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchRenglon = filterRenglon === 'todos' || l.renglonPresupuestario === filterRenglon;
+      return matchSearch && matchRenglon;
+    });
+
+    const groupMap = new Map<string, {
+      grupo: string;
+      presupuestoInicial: number;
+      modificaciones: number;
+      presupuestoVigente: number;
+      pagadoQueRebaja: number;
+      comprometidoPendiente: number;
+      gastoTotal: number;
+      disponibleProyectado: number;
+      comprasCount: number;
+      renglones: Array<BudgetLineItem & { gastoTotal: number; porcentajeEjecucion: number; comprasCount: number }>;
+    }>();
+
+    filteredLines.forEach(l => {
+      const grupoKey = l.grupoPresupuestario || 'Otros Grupos';
+      if (!groupMap.has(grupoKey)) {
+        groupMap.set(grupoKey, {
+          grupo: grupoKey,
+          presupuestoInicial: 0,
+          modificaciones: 0,
+          presupuestoVigente: 0,
+          pagadoQueRebaja: 0,
+          comprometidoPendiente: 0,
+          gastoTotal: 0,
+          disponibleProyectado: 0,
+          comprasCount: 0,
+          renglones: []
+        });
+      }
+
+      const g = groupMap.get(grupoKey)!;
+      const gastoTotalRenglon = (l.pagadoQueRebaja || 0) + (l.comprometidoPendiente || 0);
+      const porcentajeEjec = l.presupuestoVigente > 0 ? (gastoTotalRenglon / l.presupuestoVigente) * 100 : 0;
+      const countPurchases = purchases.filter(p => p.renglonPresupuestario === l.renglonPresupuestario).length;
+
+      g.presupuestoInicial += (l.presupuestoInicial || 0);
+      g.modificaciones += (l.modificacionesAprobadas || 0);
+      g.presupuestoVigente += (l.presupuestoVigente || 0);
+      g.pagadoQueRebaja += (l.pagadoQueRebaja || 0);
+      g.comprometidoPendiente += (l.comprometidoPendiente || 0);
+      g.gastoTotal += gastoTotalRenglon;
+      g.disponibleProyectado += (l.disponibleProyectado || 0);
+      g.comprasCount += countPurchases;
+
+      g.renglones.push({
+        ...l,
+        gastoTotal: gastoTotalRenglon,
+        porcentajeEjecucion: Math.round(porcentajeEjec * 10) / 10,
+        comprasCount: countPurchases
+      });
+    });
+
+    Array.from(groupMap.values()).forEach(g => {
+      g.renglones.sort((a, b) => a.renglonPresupuestario.localeCompare(b.renglonPresupuestario));
+    });
+
+    return Array.from(groupMap.values()).sort((a, b) => a.grupo.localeCompare(b.grupo));
+  }, [budgetAvailability, purchases, searchTerm, filterRenglon]);
+
   // Totales de la variante activa
   const variantTotals = useMemo(() => {
-    if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit') {
-      const source = activeVariant === 'matriz_consolidada' ? dataMatriz : dataAlertas;
+    if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit' || activeVariant === 'gasto_grupo_renglon') {
+      const source = activeVariant === 'matriz_consolidada' ? dataMatriz : 
+                     activeVariant === 'alertas_deficit' ? dataAlertas :
+                     dataGastoGrupoRenglon.flatMap(g => g.renglones);
       return source.reduce((acc, l) => {
         acc.inicial += l.presupuestoInicial || 0;
         acc.modificaciones += l.modificacionesAprobadas || 0;
@@ -109,22 +182,77 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
         acc.comprometido += l.comprometidoPendiente || 0;
         acc.disponibleReal += l.disponibleReal || 0;
         acc.disponibleProyectado += l.disponibleProyectado || 0;
+        acc.totalGasto += ((l.pagadoQueRebaja || 0) + (l.comprometidoPendiente || 0));
         return acc;
-      }, { inicial: 0, modificaciones: 0, vigente: 0, pagado: 0, comprometido: 0, disponibleReal: 0, disponibleProyectado: 0 });
+      }, { inicial: 0, modificaciones: 0, vigente: 0, pagado: 0, comprometido: 0, disponibleReal: 0, disponibleProyectado: 0, totalGasto: 0 });
     } else {
       const source = activeVariant === 'compras_por_renglon' ? dataCompras :
                      activeVariant === 'comprometido_pendiente' ? dataComprometido : dataPagado;
       const totalMonto = source.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
       return { totalMonto, cantidad: source.length };
     }
-  }, [activeVariant, dataMatriz, dataAlertas, dataCompras, dataComprometido, dataPagado]);
+  }, [activeVariant, dataMatriz, dataAlertas, dataGastoGrupoRenglon, dataCompras, dataComprometido, dataPagado]);
 
   // EXPORTAR A EXCEL SEGÚN VARIANTE
   const handleExportExcel = () => {
     let wsData: any[] = [];
     let filename = '';
 
-    if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit') {
+    if (activeVariant === 'gasto_grupo_renglon') {
+      filename = `Reporte_Gasto_Grupo_Renglon_OJ_${now.toISOString().slice(0, 10)}.xlsx`;
+      dataGastoGrupoRenglon.forEach(grp => {
+        // Fila de Encabezado / Subtotal del Grupo
+        wsData.push({
+          'Grupo Presupuestario': grp.grupo.toUpperCase(),
+          'Renglón': `SUBTOTAL ${grp.grupo.replace('Grupo ', 'G-')}`,
+          'Nombre del Renglón': `(Consolidado de ${grp.renglones.length} renglones)`,
+          'Presupuesto Inicial (Q)': grp.presupuestoInicial,
+          'Modificaciones (+/-) (Q)': grp.modificaciones,
+          'Presupuesto Vigente (Q)': grp.presupuestoVigente,
+          'Pagado que Rebaja (Q)': grp.pagadoQueRebaja,
+          'Disponible Real (Q)': grp.presupuestoVigente - grp.pagadoQueRebaja,
+          'Comprometido Pendiente (Q)': grp.comprometidoPendiente,
+          'Disponible Proyectado (Q)': grp.disponibleProyectado,
+          '% Usado/Comprometido': grp.presupuestoVigente > 0 ? `${((grp.gastoTotal / grp.presupuestoVigente) * 100).toFixed(2)}%` : '0.00%',
+          'Estatus Oficial': grp.disponibleProyectado <= 0 ? 'DÉFICIT' : (grp.gastoTotal > grp.presupuestoVigente * 0.85 ? 'ALERTA' : 'DISPONIBLE')
+        });
+
+        // Filas detalladas por renglón
+        grp.renglones.forEach(l => {
+          wsData.push({
+            'Grupo Presupuestario': grp.grupo,
+            'Renglón': l.renglonPresupuestario,
+            'Nombre del Renglón': l.nombreRenglon,
+            'Presupuesto Inicial (Q)': l.presupuestoInicial,
+            'Modificaciones (+/-) (Q)': l.modificacionesAprobadas,
+            'Presupuesto Vigente (Q)': l.presupuestoVigente,
+            'Pagado que Rebaja (Q)': l.pagadoQueRebaja,
+            'Disponible Real (Q)': l.disponibleReal,
+            'Comprometido Pendiente (Q)': l.comprometidoPendiente,
+            'Disponible Proyectado (Q)': l.disponibleProyectado,
+            '% Usado/Comprometido': `${l.porcentajeEjecucion}%`,
+            'Estatus Oficial': l.estatusDisponibilidad
+          });
+        });
+      });
+
+      if ('vigente' in variantTotals) {
+        wsData.push({
+          'Grupo Presupuestario': 'TOTALES GENERALES',
+          'Renglón': `(${dataGastoGrupoRenglon.length} Grupos)`,
+          'Nombre del Renglón': 'SUMATORIA GLOBAL DE GASTO EJECUTADO',
+          'Presupuesto Inicial (Q)': Math.round(variantTotals.inicial * 100) / 100,
+          'Modificaciones (+/-) (Q)': Math.round(variantTotals.modificaciones * 100) / 100,
+          'Presupuesto Vigente (Q)': Math.round(variantTotals.vigente * 100) / 100,
+          'Pagado que Rebaja (Q)': Math.round(variantTotals.pagado * 100) / 100,
+          'Disponible Real (Q)': Math.round(variantTotals.disponibleReal * 100) / 100,
+          'Comprometido Pendiente (Q)': Math.round(variantTotals.comprometido * 100) / 100,
+          'Disponible Proyectado (Q)': Math.round(variantTotals.disponibleProyectado * 100) / 100,
+          '% Usado/Comprometido': variantTotals.vigente > 0 ? `${(((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(2)}%` : '0.00%',
+          'Estatus Oficial': 'CONSOLIDADO'
+        });
+      }
+    } else if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit') {
       const source = activeVariant === 'matriz_consolidada' ? dataMatriz : dataAlertas;
       filename = activeVariant === 'matriz_consolidada' 
         ? `Matriz_Disponibilidad_OJ_${now.toISOString().slice(0, 10)}.xlsx`
@@ -204,7 +332,8 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
       compras_por_renglon: 'EJECUCIÓN DE ADQUISICIONES INSTITUCIONALES (FORMA F56-E Y NOG) POR RENGLÓN',
       comprometido_pendiente: 'RELACIÓN DE ADQUISICIONES EN COMPROMETIDO PENDIENTE DE PAGO',
       pagado_devengado: 'INFORME DE ADQUISICIONES PAGADAS / DEVENGADAS CON IMPACTO EN DISPONIBLE REAL',
-      alertas_deficit: 'DICTAMEN DE RENGLONES EN ALERTA DE DISPONIBILIDAD Y DÉFICIT PROYECTADO'
+      alertas_deficit: 'DICTAMEN DE RENGLONES EN ALERTA DE DISPONIBILIDAD Y DÉFICIT PROYECTADO',
+      gasto_grupo_renglon: 'REPORTE ANALÍTICO DE GASTO POR GRUPO Y RENGLÓN PRESUPUESTARIO'
     };
 
     // Encabezado Institucional
@@ -227,7 +356,61 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
     let body: any[][] = [];
     let foot: any[][] | undefined;
 
-    if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit') {
+    if (activeVariant === 'gasto_grupo_renglon') {
+      head = [[
+        'Grupo / Renglón',
+        'Descripción Presupuestaria',
+        'P. Vigente (Q)',
+        'Gasto Pagado (Q)',
+        'Comprometido (Q)',
+        'Gasto Total (Q)',
+        'Disponible (Q)',
+        '% Ejec.',
+        'Eventos'
+      ]];
+
+      dataGastoGrupoRenglon.forEach(grp => {
+        body.push([
+          `>> ${grp.grupo.replace('Grupo ', 'G-')}`,
+          `SUBTOTAL ${grp.grupo.toUpperCase()}`,
+          grp.presupuestoVigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.pagadoQueRebaja.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.comprometidoPendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.gastoTotal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          `${grp.presupuestoVigente > 0 ? ((grp.gastoTotal / grp.presupuestoVigente) * 100).toFixed(1) : 0}%`,
+          `${grp.comprasCount} f56/nog`
+        ]);
+
+        grp.renglones.forEach(l => {
+          body.push([
+            `    R-${l.renglonPresupuestario}`,
+            l.nombreRenglon.slice(0, 38),
+            l.presupuestoVigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            l.pagadoQueRebaja.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            l.comprometidoPendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            l.gastoTotal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            l.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            `${l.porcentajeEjecucion}%`,
+            `${l.comprasCount}`
+          ]);
+        });
+      });
+
+      if ('vigente' in variantTotals) {
+        foot = [[
+          'TOTAL CONSOLIDADO',
+          `Suma de ${dataGastoGrupoRenglon.length} Grupos Presupuestarios`,
+          variantTotals.vigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.pagado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.comprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          (variantTotals.pagado + variantTotals.comprometido).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          variantTotals.vigente > 0 ? `${(((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(1)}%` : '0%',
+          'TOTAL'
+        ]];
+      }
+    } else if (activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit') {
       const source = activeVariant === 'matriz_consolidada' ? dataMatriz : dataAlertas;
       head = [[
         'Renglón',
@@ -415,7 +598,7 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
         </div>
 
         {/* Botones de Variantes */}
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 pt-2 border-t border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 pt-2 border-t border-slate-100">
           <button
             type="button"
             onClick={() => setActiveVariant('matriz_consolidada')}
@@ -485,6 +668,20 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
             <span>Alertas y Déficit</span>
             <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Sobregiro proyectado</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveVariant('gasto_grupo_renglon')}
+            className={`p-2.5 rounded-lg text-xs font-bold text-left transition-all border cursor-pointer ${
+              activeVariant === 'gasto_grupo_renglon'
+                ? 'bg-purple-50 border-purple-400 text-purple-950 shadow-2xs'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <span className="block text-[10px] text-purple-700 uppercase font-mono font-black">Variante 6</span>
+            <span>Gasto por Grupo/Renglón</span>
+            <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Analítico jerárquico</span>
+          </button>
         </div>
       </div>
 
@@ -521,7 +718,169 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
       {/* Tabla de Datos de la Variante */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
-          {activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit' ? (
+          {activeVariant === 'gasto_grupo_renglon' ? (
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-800 text-white text-[10px] font-bold uppercase tracking-wider">
+                <tr>
+                  <th className="px-3 py-2.5">Grupo / Renglón</th>
+                  <th className="px-3 py-2.5 min-w-[200px]">Descripción Presupuestaria</th>
+                  <th className="px-3 py-2.5 text-right">P. Vigente (Q)</th>
+                  <th className="px-3 py-2.5 text-right">Pagado Dev. (Q)</th>
+                  <th className="px-3 py-2.5 text-right">Comprometido (Q)</th>
+                  <th className="px-3 py-2.5 text-right">Total Gasto (Q)</th>
+                  <th className="px-3 py-2.5 text-right">Disponible (Q)</th>
+                  <th className="px-3 py-2.5 text-center">% Ejecución</th>
+                  <th className="px-3 py-2.5 text-center">Compras</th>
+                  <th className="px-3 py-2.5 text-center">Estatus</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {dataGastoGrupoRenglon.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
+                      No se encontraron registros de gasto para los criterios seleccionados.
+                    </td>
+                  </tr>
+                ) : (
+                  dataGastoGrupoRenglon.map((grp) => {
+                    const ejecucionGrupo = grp.presupuestoVigente > 0 
+                      ? Math.min(100, Math.round((grp.gastoTotal / grp.presupuestoVigente) * 1000) / 10) 
+                      : 0;
+
+                    return (
+                      <React.Fragment key={grp.grupo}>
+                        {/* Fila Encabezado de Grupo */}
+                        <tr className="bg-slate-100/95 font-bold border-t-2 border-slate-300 text-slate-900">
+                          <td className="px-3 py-2.5 font-mono text-blue-950 uppercase text-[11px]">
+                            {grp.grupo}
+                          </td>
+                          <td className="px-3 py-2.5 font-bold text-slate-900">
+                            Subtotal Grupo ({grp.renglones.length} renglones)
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900">
+                            {formatQuetzales(grp.presupuestoVigente)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-blue-900">
+                            {formatQuetzales(grp.pagadoQueRebaja)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-amber-900">
+                            {formatQuetzales(grp.comprometidoPendiente)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-black text-purple-950 bg-purple-50/50">
+                            {formatQuetzales(grp.gastoTotal)}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right font-mono font-bold ${
+                            grp.disponibleProyectado <= 0 ? 'text-rose-700' : 'text-emerald-700'
+                          }`}>
+                            {formatQuetzales(grp.disponibleProyectado)}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <div className="w-12 bg-slate-200 h-2 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${ejecucionGrupo > 85 ? 'bg-amber-500' : 'bg-blue-600'}`} 
+                                  style={{ width: `${ejecucionGrupo}%` }}
+                                />
+                              </div>
+                              <span className="font-mono text-[10px] font-bold">{ejecucionGrupo}%</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-700">
+                            {grp.comprasCount}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                              grp.disponibleProyectado <= 0 ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {grp.disponibleProyectado <= 0 ? 'Déficit' : 'En Rango'}
+                            </span>
+                          </td>
+                        </tr>
+
+                        {/* Filas de Renglones del Grupo */}
+                        {grp.renglones.map((line) => (
+                          <tr key={line.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="px-3 py-1.5 pl-6 font-mono font-bold text-blue-900 whitespace-nowrap">
+                              R-{line.renglonPresupuestario}
+                            </td>
+                            <td className="px-3 py-1.5 font-medium text-slate-800 max-w-xs truncate" title={line.nombreRenglon}>
+                              {line.nombreRenglon}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-slate-700">
+                              {formatQuetzales(line.presupuestoVigente)}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-blue-800">
+                              {formatQuetzales(line.pagadoQueRebaja)}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-amber-800">
+                              {formatQuetzales(line.comprometidoPendiente)}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-900 bg-slate-50/50">
+                              {formatQuetzales(line.gastoTotal)}
+                            </td>
+                            <td className={`px-3 py-1.5 text-right font-mono font-semibold ${
+                              line.disponibleProyectado <= 0 ? 'text-rose-600' : 'text-slate-900'
+                            }`}>
+                              {formatQuetzales(line.disponibleProyectado)}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                line.porcentajeEjecucion > 85 ? 'bg-amber-100 text-amber-800' : 'text-slate-700'
+                              }`}>
+                                {line.porcentajeEjecucion}%
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-center font-mono text-slate-600">
+                              {line.comprasCount}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                                line.estatusDisponibilidad === 'Con Disponibilidad'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-rose-50 text-rose-700'
+                              }`}>
+                                {line.estatusDisponibilidad}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+              <tfoot className="bg-slate-900 font-black text-white text-xs">
+                <tr>
+                  <td colSpan={2} className="px-3 py-3 text-right uppercase tracking-wider">
+                    Total Consolidado ({dataGastoGrupoRenglon.length} Grupos Presupuestarios):
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold">
+                    {formatQuetzales('vigente' in variantTotals ? variantTotals.vigente : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold text-blue-300">
+                    {formatQuetzales('pagado' in variantTotals ? variantTotals.pagado : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold text-amber-300">
+                    {formatQuetzales('comprometido' in variantTotals ? variantTotals.comprometido : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-black text-emerald-300">
+                    {formatQuetzales('totalGasto' in variantTotals ? variantTotals.totalGasto : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-bold">
+                    {formatQuetzales('disponibleProyectado' in variantTotals ? variantTotals.disponibleProyectado : 0)}
+                  </td>
+                  <td className="px-3 py-3 text-center font-mono font-bold text-amber-300">
+                    {'vigente' in variantTotals && variantTotals.vigente > 0 
+                      ? `${(((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(1)}%` 
+                      : '0%'}
+                  </td>
+                  <td colSpan={2} className="px-3 py-3 text-center text-slate-400 font-medium text-[10px]">
+                    Presupuesto 2026
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit' ? (
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
                 <tr>

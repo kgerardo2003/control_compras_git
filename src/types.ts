@@ -25,6 +25,7 @@ export interface User {
   perfilId?: string; // ID o código del perfil de usuario asignado
   cargo: string;
   departamento: string;
+  area?: string; // Área o departamento técnico para control de visibilidad RBAC
   activo: boolean;
   fechaCreacion: string;
   ultimoAcceso?: string;

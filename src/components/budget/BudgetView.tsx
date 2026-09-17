@@ -1404,7 +1404,11 @@ export const BudgetView: React.FC = () => {
       {subTab === 'estadisticas' && (
         <div className="space-y-6">
           {/* Gráficos Circulares de Torta/Donut y Tarjetas de Indicadores */}
-          <BudgetStatsCharts budgetAvailability={budgetAvailability} purchases={purchases} />
+          <BudgetStatsCharts 
+            budgetAvailability={budgetAvailability} 
+            purchases={purchases} 
+            onNavigateToReports={() => setSubTab('reportes')}
+          />
 
           {/* Tarjetas por Grupo Presupuestario */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

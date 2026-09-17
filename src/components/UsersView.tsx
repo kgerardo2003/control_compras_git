@@ -10,10 +10,14 @@ import {
   ShieldAlert,
   Mail,
   Key,
-  ShieldCheck
+  ShieldCheck,
+  Building2,
+  Shield,
+  Eye
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
+import { TECHNICAL_AREAS_LIST, ALL_AREAS_LABEL, isUserGlobalAdmin } from '../utils/rbacUtils';
 
 export const UsersView: React.FC = () => {
   const { 
@@ -26,6 +30,7 @@ export const UsersView: React.FC = () => {
     getUserProfile,
     setActiveTab,
     currentUser,
+    catalogs,
     themeConfig,
     sendUserWelcomeEmail,
     showToast
@@ -43,6 +48,9 @@ export const UsersView: React.FC = () => {
   const [perfilId, setPerfilId] = useState<string>('');
   const [cargo, setCargo] = useState('');
   const [departamento, setDepartamento] = useState('Gerencia de Informática - OJ');
+  const [area, setArea] = useState<string>(TECHNICAL_AREAS_LIST[1]);
+  const [isCustomArea, setIsCustomArea] = useState(false);
+  const [customAreaText, setCustomAreaText] = useState('');
   const [notifyByEmail, setNotifyByEmail] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendingEmailUserId, setResendingEmailUserId] = useState<string | null>(null);
@@ -60,6 +68,9 @@ export const UsersView: React.FC = () => {
     setPerfilId(defaultProf ? defaultProf.id : '');
     setCargo('');
     setDepartamento('Gerencia de Informática - OJ');
+    setArea(TECHNICAL_AREAS_LIST[1]);
+    setIsCustomArea(false);
+    setCustomAreaText('');
     setNotifyByEmail(true);
     setIsSubmitting(false);
     setErrorMsg('');
@@ -76,6 +87,22 @@ export const UsersView: React.FC = () => {
     setPerfilId(user.perfilId || '');
     setCargo(user.cargo);
     setDepartamento(user.departamento);
+    
+    const assigned = user.area || user.departamento || '';
+    if (TECHNICAL_AREAS_LIST.includes(assigned as any)) {
+      setArea(assigned);
+      setIsCustomArea(false);
+      setCustomAreaText('');
+    } else if (assigned) {
+      setArea('custom');
+      setIsCustomArea(true);
+      setCustomAreaText(assigned);
+    } else {
+      setArea(user.rol === 'administrador' ? ALL_AREAS_LABEL : TECHNICAL_AREAS_LIST[1]);
+      setIsCustomArea(false);
+      setCustomAreaText('');
+    }
+
     setIsSubmitting(false);
     setErrorMsg('');
   };
@@ -126,6 +153,8 @@ export const UsersView: React.FC = () => {
       return;
     }
 
+    const resolvedArea = isCustomArea ? customAreaText.trim() : area;
+
     if (editingUser) {
       updateUser(editingUser.id, {
         nombreCompleto: nombreCompleto.trim(),
@@ -133,7 +162,8 @@ export const UsersView: React.FC = () => {
         rol,
         perfilId: perfilId || undefined,
         cargo: cargo.trim(),
-        departamento: departamento.trim(),
+        departamento: departamento.trim() || resolvedArea,
+        area: resolvedArea,
         password: password.trim() ? password.trim() : editingUser.password,
       });
       showToast({
@@ -159,7 +189,8 @@ export const UsersView: React.FC = () => {
         rol,
         perfilId: perfilId || undefined,
         cargo: cargo.trim() || 'Funcionario OJ',
-        departamento: departamento.trim(),
+        departamento: departamento.trim() || resolvedArea,
+        area: resolvedArea,
         activo: true,
       });
 
@@ -320,14 +351,18 @@ export const UsersView: React.FC = () => {
                 <th className="px-4 py-3">Nombre Completo</th>
                 <th className="px-3 py-3">Correo Institucional</th>
                 <th className="px-3 py-3 text-center">Perfil / Rol</th>
-                <th className="px-3 py-3">Cargo & Dependencia</th>
+                <th className="px-3 py-3">Área / Depto. Asignado</th>
+                <th className="px-3 py-3">Cargo</th>
                 <th className="px-3 py-3 text-center">Estado</th>
                 <th className="px-3 py-3">Último Acceso</th>
                 {canManage && <th className="px-4 py-3 text-center">Acciones</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {users.map((u) => (
+              {users.map((u) => {
+                const isAdmin = isUserGlobalAdmin(u);
+                const assignedArea = u.area || u.departamento || '';
+                return (
                 <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                   
                   {/* Usuario */}
@@ -348,6 +383,26 @@ export const UsersView: React.FC = () => {
                   {/* Rol */}
                   <td className="px-3 py-3 text-center whitespace-nowrap">
                     {getRoleBadge(u)}
+                  </td>
+
+                  {/* Área Asignada (Control de Visibilidad) */}
+                  <td className="px-3 py-3 text-[11px]">
+                    {isAdmin ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 font-bold border border-purple-200">
+                        <Shield className="w-3 h-3 text-purple-600" />
+                        <span>Acceso Global (Todas las Áreas)</span>
+                      </span>
+                    ) : (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-semibold border border-blue-200 w-fit">
+                          <Building2 className="w-3 h-3 text-blue-600 shrink-0" />
+                          <span>{assignedArea || 'Sin Área Específica'}</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Solo visualiza expedientes de su área
+                        </span>
+                      </div>
+                    )}
                   </td>
 
                   {/* Cargo */}
@@ -423,7 +478,8 @@ export const UsersView: React.FC = () => {
                   )}
 
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -539,24 +595,79 @@ export const UsersView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Asignación de Área o Departamento para control de visibilidad RBAC */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-1.5 text-slate-800 font-bold text-xs">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <span>Área o Departamento Asignado *</span>
+                </div>
+                
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Define a qué expedientes tendrá acceso el usuario. Los usuarios de áreas técnicas (ej. <strong>Desarrollo</strong>, <strong>Redes y Telecomunicaciones</strong>) únicamente podrán ver las adquisiciones de su área. Los Administradores tienen visibilidad global.
+                </p>
+
+                <select
+                  value={isCustomArea ? 'custom' : area}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'custom') {
+                      setIsCustomArea(true);
+                    } else {
+                      setIsCustomArea(false);
+                      setArea(val);
+                      if (!departamento || departamento === 'Gerencia de Informática - OJ' || TECHNICAL_AREAS_LIST.includes(departamento as any)) {
+                        setDepartamento(val === ALL_AREAS_LABEL ? 'Gerencia de Informática - OJ' : val);
+                      }
+                    }
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-semibold text-xs text-slate-800"
+                >
+                  {TECHNICAL_AREAS_LIST.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                  <option value="custom">+ Otra Área / Dependencia Personalizada...</option>
+                </select>
+
+                {isCustomArea && (
+                  <div className="pt-1">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Nombre del Área o Dependencia Técnica:
+                    </label>
+                    <input
+                      type="text"
+                      value={customAreaText}
+                      onChange={(e) => {
+                        setCustomAreaText(e.target.value);
+                        setDepartamento(e.target.value);
+                      }}
+                      placeholder="ej. Unidad de Seguridad Informática y Auditoría"
+                      className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-xs"
+                      required={isCustomArea}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Cargo Institucional</label>
                 <input
                   type="text"
                   value={cargo}
                   onChange={(e) => setCargo(e.target.value)}
-                  placeholder="ej. Analista de Sistemas / Informática"
+                  placeholder="ej. Analista de Sistemas / Ingeniero de Redes"
                   className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Departamento / Dependencia</label>
+                <label className="block font-bold text-slate-700 mb-1">Dependencia Institucional (Texto complementario)</label>
                 <input
                   type="text"
                   value={departamento}
                   onChange={(e) => setDepartamento(e.target.value)}
-                  placeholder="ej. Gerencia de Informática - OJ"
+                  placeholder="ej. Gerencia de Informática - Organismo Judicial"
                   className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
                 />
               </div>

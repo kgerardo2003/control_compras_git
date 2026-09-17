@@ -46,6 +46,7 @@ import {
 } from 'recharts';
 import { formatQuetzales, formatDate, exportToCSV, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
+import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, ALL_AREAS_LABEL } from '../utils/rbacUtils';
 
 // Formateador institucional para el eje Y de valores monetarios
 const formatYAxisCurrency = (val: number): string => {
@@ -140,6 +141,37 @@ const CustomBarTooltip: React.FC<BarTooltipProps> = ({ active, payload }) => {
           <div className="flex items-center justify-between gap-4">
             <span className="text-slate-400">En Evaluación:</span>
             <span className="font-mono text-amber-300">{formatQuetzales(data.enEvaluacion)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+// Tooltip estilizado para la gráfica analítica exclusiva del área técnica (no-administrador)
+interface AreaTooltipProps {
+  active?: boolean;
+  payload?: any[];
+}
+
+const CustomAreaTooltip: React.FC<AreaTooltipProps> = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-xl border border-slate-700 text-xs max-w-xs z-50 animate-in fade-in zoom-in-95 duration-150">
+        <p className="font-bold text-white mb-2 flex items-center gap-1.5 border-b border-slate-700 pb-1.5">
+          <span className="w-3 h-3 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: data.color }} />
+          <span className="truncate">{data.label}</span>
+        </p>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Total Eventos:</span>
+            <span className="font-bold text-slate-100">{data.cantidad} proceso(s)</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">Monto del Área:</span>
+            <span className="font-mono font-bold text-emerald-400">{formatQuetzales(data.monto)}</span>
           </div>
         </div>
       </div>
@@ -348,11 +380,15 @@ export const DashboardView: React.FC = () => {
     themeConfig
   } = useApp();
 
+  const isAdmin = isUserGlobalAdmin(currentUser);
+  const userAssignedArea = getUserAssignedArea(currentUser);
+
   const [selectedYear, setSelectedYear] = useState<string>('todos');
   const [filterGIT, setFilterGIT] = useState<string>('todos');
   const [auditSearch, setAuditSearch] = useState<string>('');
   const [auditActionFilter, setAuditActionFilter] = useState<string>('todos');
   const [barMetric, setBarMetric] = useState<'monto' | 'cantidad'>('monto');
+  const [areaBarDimension, setAreaBarDimension] = useState<'estatus' | 'modalidad' | 'categoria'>('estatus');
   // Estado interactivo para seleccionar un departamento al hacer clic en la gráfica de barras
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
   // Estado para el sector activo en hover de la gráfica de pastel
@@ -391,9 +427,14 @@ export const DashboardView: React.FC = () => {
   // Control de acceso: solo perfiles Administrador y Auditor pueden ver la bitácora
   const canViewAudit = currentUser?.rol === 'administrador' || currentUser?.rol === 'auditor';
 
+  // Filtrado RBAC: solo eventos de compras autorizados para el área del usuario (o todos para Administradores)
+  const visiblePurchases = useMemo(() => {
+    return purchases.filter(p => isPurchaseVisibleToUser(p, currentUser));
+  }, [purchases, currentUser]);
+
   // Filtrado reactivo de compras
   const filteredPurchases = useMemo(() => {
-    return purchases.filter(p => {
+    return visiblePurchases.filter(p => {
       if (selectedYear !== 'todos') {
         const year = p.fechaSolicitud ? p.fechaSolicitud.substring(0, 4) : '';
         if (year !== selectedYear) return false;
@@ -401,10 +442,11 @@ export const DashboardView: React.FC = () => {
       if (filterGIT !== 'todos' && p.evaluadoGIT !== filterGIT) return false;
       return true;
     });
-  }, [purchases, selectedYear, filterGIT]);
+  }, [visiblePurchases, selectedYear, filterGIT]);
 
   // Datos calculados para el Gráfico de Barras Comparativo: Presupuesto Vigente vs Comprometido
   const comparativeChartData = useMemo(() => {
+    if (!isAdmin) return [];
     if (comparativeGrouping === 'renglon') {
       // 1. Agrupación por Renglón Presupuestario (Centros de Costo Financieros oficiales, excluyendo referenciales de Gerencia Administrativa)
       const lines = (budgetAvailability && budgetAvailability.length > 0 ? budgetAvailability : [])
@@ -597,6 +639,16 @@ export const DashboardView: React.FC = () => {
 
   // Totales consolidados para el panel comparativo
   const comparativeTotals = useMemo(() => {
+    if (!isAdmin) {
+      return {
+        totalVigente: 0,
+        totalComprometido: 0,
+        totalPagado: 0,
+        totalDisponible: 0,
+        porcentajeComprometido: 0,
+        totalEventos: 0
+      };
+    }
     let totalVigente = 0;
     let totalComprometido = 0;
     let totalPagado = 0;
@@ -623,7 +675,73 @@ export const DashboardView: React.FC = () => {
       porcentajeComprometido,
       totalEventos
     };
-  }, [comparativeChartData]);
+  }, [comparativeChartData, isAdmin]);
+
+  // Datos analíticos específicos para el área técnica del usuario (cuando no es administrador)
+  const areaAnalyticsData = useMemo(() => {
+    if (isAdmin) return null;
+
+    // 1. Desglose por Estatus
+    const statusMap: Record<string, { label: string; cantidad: number; monto: number; color: string }> = {
+      'Adjudicación': { label: 'Adjudicados', cantidad: 0, monto: 0, color: '#059669' },
+      'Evaluación': { label: 'En Evaluación', cantidad: 0, monto: 0, color: '#d97706' },
+      'Prescindido': { label: 'Prescindidos', cantidad: 0, monto: 0, color: '#dc2626' },
+      'Desierto': { label: 'Desiertos', cantidad: 0, monto: 0, color: '#64748b' },
+    };
+
+    // 2. Desglose por Modalidad
+    const modalityMap: Record<string, { label: string; cantidad: number; monto: number; color: string }> = {};
+
+    // 3. Desglose por Categoría Tecnológica
+    const categoryMap: Record<string, { label: string; cantidad: number; monto: number; color: string }> = {};
+
+    filteredPurchases.forEach(p => {
+      const st = p.estatusEvento || 'Evaluación';
+      if (!statusMap[st]) {
+        statusMap[st] = { label: st, cantidad: 0, monto: 0, color: '#3b82f6' };
+      }
+      const m = Number(p.monto) || 0;
+      statusMap[st].cantidad += 1;
+      statusMap[st].monto += m;
+
+      // Modalidad LCE
+      const mod = getModalidadCompraByMonto(m).nombre || p.modalidadCompra || 'Otras Modalidades';
+      if (!modalityMap[mod]) {
+        modalityMap[mod] = { label: mod, cantidad: 0, monto: 0, color: '#1c39bb' };
+      }
+      modalityMap[mod].cantidad += 1;
+      modalityMap[mod].monto += m;
+
+      // Categoría TIC
+      const cat = p.categoriaTecnologica || 'Servicios y Soluciones TIC';
+      if (!categoryMap[cat]) {
+        categoryMap[cat] = { label: cat, cantidad: 0, monto: 0, color: '#0d9488' };
+      }
+      categoryMap[cat].cantidad += 1;
+      categoryMap[cat].monto += m;
+    });
+
+    const statusList = Object.values(statusMap).filter(item => item.cantidad > 0);
+    const modalityList = Object.values(modalityMap)
+      .sort((a, b) => b.monto - a.monto)
+      .map((item, idx) => ({ ...item, color: PALETTE_FALLBACK[idx % PALETTE_FALLBACK.length] }));
+    const categoryList = Object.values(categoryMap)
+      .sort((a, b) => b.monto - a.monto)
+      .map((item, idx) => ({ ...item, color: PALETTE_FALLBACK[(idx + 4) % PALETTE_FALLBACK.length] }));
+
+    return {
+      statusList,
+      modalityList,
+      categoryList,
+    };
+  }, [filteredPurchases, isAdmin]);
+
+  const currentAreaChartList = useMemo(() => {
+    if (!areaAnalyticsData) return [];
+    if (areaBarDimension === 'modalidad') return areaAnalyticsData.modalityList;
+    if (areaBarDimension === 'categoria') return areaAnalyticsData.categoryList;
+    return areaAnalyticsData.statusList;
+  }, [areaAnalyticsData, areaBarDimension]);
 
   // Métricas Clave para los 3 Indicadores Principales
   const metrics = useMemo(() => {
@@ -750,7 +868,7 @@ export const DashboardView: React.FC = () => {
 
   // Métricas y desglose exclusivo para la unidad seleccionada al hacer clic en la gráfica de barras
   const selectedDeptData = useMemo(() => {
-    if (!selectedDepartment) return null;
+    if (!isAdmin || !selectedDepartment) return null;
 
     const deptPurchases = filteredPurchases.filter(p => {
       const deptName = p.areaSolicitante || p.dependenciaSolicitante || 'Otras Dependencias';
@@ -904,24 +1022,29 @@ export const DashboardView: React.FC = () => {
   return (
     <div className="space-y-6">
 
-      {/* Barra Superior con Control de Presupuesto Global, Filtros y Acciones */}
+      {/* Barra Superior con Control de Presupuesto Global o Departamental, Filtros y Acciones */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#1c39bb] animate-pulse" />
             <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-              Control de Presupuesto y Adquisiciones
+              {isAdmin ? 'Control de Presupuesto y Adquisiciones' : `Control de Adquisiciones - ${userAssignedArea || 'Área Asignada'}`}
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Monitoreo en tiempo real de eventos NOG y formularios F56-e de la Gerencia de Informática
+            {isAdmin 
+              ? 'Monitoreo en tiempo real de eventos NOG y formularios F56-e de la Gerencia de Informática'
+              : `Monitoreo de adquisiciones y formularios F56-e autorizados para ${userAssignedArea || 'su área técnica'}`
+            }
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Indicador Rápido de Presupuesto Global */}
+          {/* Indicador Rápido de Monto Total de Adquisiciones */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-right">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Presupuesto Global</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+              {isAdmin ? 'Presupuesto Institucional' : `Total Adquisiciones (${userAssignedArea || 'Área'})`}
+            </span>
             <span className="text-xs sm:text-sm font-black text-slate-900 font-mono">{formatQuetzales(metrics.totalMonto)}</span>
           </div>
 
@@ -964,6 +1087,28 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
+      {/* Indicador de Alcance Departamental RBAC en Dashboard */}
+      {!isAdmin && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-blue-900 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 text-blue-700">
+              <Building2 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-blue-950">Panel Departamental:</span>
+                <span className="px-2 py-0.5 rounded-md bg-blue-200/70 font-bold text-[10px] text-blue-900">
+                  {userAssignedArea || 'Área Asignada'}
+                </span>
+              </div>
+              <p className="text-slate-600 text-[11px] mt-0.5">
+                Mostrando exclusivamente las adquisiciones y estadísticas autorizadas para su unidad ({visiblePurchases.length} eventos).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3 Paneles e Indicadores de Avance de Gran Visibilidad y Alto Contraste Profesional */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
@@ -985,7 +1130,7 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
               <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-700 text-white shadow-xs">
-                {metrics.adjudicadosPorcentaje}% del Total
+                {metrics.adjudicadosPorcentaje}% {isAdmin ? 'del Total' : 'del Área'}
               </span>
             </div>
 
@@ -1058,7 +1203,7 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
               <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#1c39bb] text-white shadow-xs">
-                {metrics.dictamenesGITPorcentaje}% Cobertura
+                {metrics.dictamenesGITPorcentaje}% {isAdmin ? 'Cobertura' : 'en su Área'}
               </span>
             </div>
 
@@ -1073,7 +1218,7 @@ export const DashboardView: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug">
-                  Dictámenes emitidos y avalados por la GIT
+                  {isAdmin ? 'Dictámenes emitidos y avalados por la GIT' : `Dictámenes emitidos para ${userAssignedArea || 'su área'}`}
                 </p>
               </div>
 
@@ -1131,7 +1276,7 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
               <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-600 text-white shadow-xs">
-                {metrics.enEvaluacionPorcentaje}% en Trámite
+                {metrics.enEvaluacionPorcentaje}% {isAdmin ? 'en Trámite' : 'del Área'}
               </span>
             </div>
 
@@ -1146,7 +1291,7 @@ export const DashboardView: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug">
-                  Plicas y ofertas en etapa de análisis técnico
+                  {isAdmin ? 'Plicas y ofertas en etapa de análisis técnico' : `Plicas y ofertas en etapa de evaluación para ${userAssignedArea || 'su área'}`}
                 </p>
               </div>
 
@@ -1190,9 +1335,10 @@ export const DashboardView: React.FC = () => {
 
       {/* ========================================================================= */}
       {/* PANEL VISUAL: COMPARATIVA PRESUPUESTO VIGENTE VS COMPROMETIDO           */}
-      {/* POR CADA CENTRO DE COSTO O DEPARTAMENTO (CON RECHARTS)                  */}
+      {/* POR CADA CENTRO DE COSTO O DEPARTAMENTO (CON RECHARTS) (SOLO ADMIN)     */}
       {/* ========================================================================= */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 shadow-xs space-y-6">
+      {isAdmin && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 shadow-xs space-y-6">
         
         {/* Encabezado del Panel: Título, Filtro de Agrupación y Vista */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
@@ -1626,13 +1772,16 @@ export const DashboardView: React.FC = () => {
         )}
 
       </div>
+      )}
 
       {/* SECCIÓN ANALÍTICA CON RECHARTS: GRÁFICAS DE BARRAS Y CIRCULARES */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* GRÁFICA DE BARRAS: Compras y Presupuesto por Departamento (7 columnas en escritorio) */}
+        {/* GRÁFICA DE BARRAS: Compras y Presupuesto por Departamento (Admin) / Estadísticas del Área (No-Admin) */}
         <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col justify-between">
-          <div>
+          {isAdmin ? (
+            <>
+              <div>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-xl bg-blue-50 text-[#1c39bb] border border-blue-100">
@@ -1833,6 +1982,194 @@ export const DashboardView: React.FC = () => {
               })}
             </div>
           )}
+            </>
+          ) : (
+            /* VISTA NO-ADMINISTRADOR: Estadísticas exclusivas de su Área Técnica Asignada */
+            <>
+              <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-blue-50 text-[#1c39bb] border border-blue-100">
+                      <BarChart3 className="w-5 h-5 text-[#1c39bb]" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                        <span>Estadísticas de Adquisiciones</span>
+                        <span className="text-[11px] font-bold text-white bg-[#1c39bb] px-2.5 py-0.5 rounded-full shadow-2xs">
+                          {userAssignedArea || 'Área Técnica'}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Distribución de procesos según{' '}
+                        {areaBarDimension === 'estatus' ? 'estatus administrativo' : areaBarDimension === 'modalidad' ? 'modalidad de compra LCE' : 'categoría tecnológica'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Selectores de Dimensión y Métrica */}
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                    <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setAreaBarDimension('estatus')}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          areaBarDimension === 'estatus'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Por Estatus
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAreaBarDimension('modalidad')}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          areaBarDimension === 'modalidad'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Por Modalidad
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAreaBarDimension('categoria')}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          areaBarDimension === 'categoria'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Por Categoría
+                      </button>
+                    </div>
+
+                    <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setBarMetric('monto')}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          barMetric === 'monto'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Monto (Q)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBarMetric('cantidad')}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          barMetric === 'cantidad'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Cantidad
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contenedor del Gráfico de Barras del Área */}
+                <div className="pt-4">
+                  {currentAreaChartList.length === 0 ? (
+                    <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-center">
+                      <Building2 className="w-10 h-10 stroke-1 text-slate-300 mb-2" />
+                      <p className="text-xs font-medium">No se encontraron compras para su área en el período seleccionado.</p>
+                    </div>
+                  ) : (
+                    <div className="w-full h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={currentAreaChartList}
+                          margin={{ top: 15, right: 15, left: 5, bottom: 45 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fill: '#475569', fontSize: 11, fontWeight: 600 }}
+                            interval={0}
+                            angle={-18}
+                            textAnchor="end"
+                            height={55}
+                          />
+                          <YAxis
+                            tickFormatter={barMetric === 'monto' ? formatYAxisCurrency : (val) => `${val}`}
+                            tick={{ fill: '#64748b', fontSize: 11 }}
+                            width={barMetric === 'monto' ? 70 : 35}
+                          />
+                          <Tooltip content={<CustomAreaTooltip />} />
+                          <Bar
+                            dataKey={barMetric === 'monto' ? 'monto' : 'cantidad'}
+                            name={barMetric === 'monto' ? 'Monto Solicitado (Q)' : 'Eventos Registrados'}
+                            radius={[6, 6, 0, 0]}
+                            maxBarSize={48}
+                          >
+                            {currentAreaChartList.map((entry, index) => (
+                              <Cell 
+                                key={`area-cell-${entry.label}-${index}`} 
+                                fill={entry.color}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+
+                {/* Chips informativos del Área */}
+                {currentAreaChartList.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-3 border-t border-slate-100">
+                    {currentAreaChartList.map((item) => (
+                      <div
+                        key={`area-chip-${item.label}`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] bg-slate-50 border border-slate-200/80 text-slate-700"
+                      >
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" 
+                          style={{ backgroundColor: item.color }} 
+                        />
+                        <span className="font-semibold">{item.label}:</span>
+                        <span className="font-mono text-slate-900 font-bold">{item.cantidad} ev.</span>
+                        <span className="font-mono text-slate-500 font-medium">({formatQuetzales(item.monto)})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Tarjetas resumen por dimensión para no-administradores */}
+              {currentAreaChartList.length > 0 && (
+                <div className="mt-4 pt-3.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {currentAreaChartList.slice(0, 3).map((item, idx) => (
+                    <div 
+                      key={`area-summary-card-${item.label}-${idx}`}
+                      className="text-left rounded-xl p-2.5 border bg-slate-50 border-slate-200/80"
+                    >
+                      <div className="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-600 mb-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span 
+                            className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" 
+                            style={{ backgroundColor: item.color }} 
+                          />
+                          <span className="truncate" title={item.label}>#{idx + 1} {item.label}</span>
+                        </div>
+                        <span className="font-mono text-slate-800 shrink-0">{item.cantidad} ev.</span>
+                      </div>
+                      <div 
+                        className="text-xs font-black font-mono"
+                        style={{ color: item.color }}
+                      >
+                        {formatQuetzales(item.monto)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* GRÁFICA CIRCULAR: Estado Presupuestario (5 columnas en escritorio) */}
@@ -1845,16 +2182,21 @@ export const DashboardView: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-slate-900">
-                    Estado Presupuestario
+                    {isAdmin ? 'Estado Presupuestario' : `Estatus de Adquisiciones (${userAssignedArea || 'Área'})`}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Pase el ratón sobre cada sector para ver porcentaje exacto y compras
+                    {isAdmin 
+                      ? 'Pase el ratón sobre cada sector para ver porcentaje exacto y compras'
+                      : `Distribución de procesos autorizados para ${userAssignedArea || 'su área técnica'}`
+                    }
                   </p>
                 </div>
               </div>
 
               <div className="text-right">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  {isAdmin ? 'Total' : 'Total Área'}
+                </span>
                 <span className="text-xs sm:text-sm font-black text-slate-900 font-mono">
                   {formatQuetzales(metrics.totalMonto)}
                 </span>

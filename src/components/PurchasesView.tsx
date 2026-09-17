@@ -23,13 +23,16 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Building2,
+  Shield
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
 import { ExportPdfModal } from './ExportPdfModal';
 import { generatePurchasesPDF } from '../utils/pdfExport';
 import { downloadDocumentFile } from '../utils/documentUtils';
+import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, canUserEditPurchase } from '../utils/rbacUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -60,6 +63,7 @@ export const PurchasesView: React.FC = () => {
   const [filterEstatus, setFilterEstatus] = useState('todos');
   const [filterGIT, setFilterGIT] = useState('todos');
   const [filterCategory, setFilterCategory] = useState('todos');
+  const [filterArea, setFilterArea] = useState('todos');
   const [sortBy, setSortBy] = useState<'fecha' | 'monto' | 'nog'>('fecha');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [itemToDelete, setItemToDelete] = useState<PurchaseRecord | null>(null);
@@ -74,6 +78,25 @@ export const PurchasesView: React.FC = () => {
   // Estados de sincronización en tiempo real con Firestore
   const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const isAdmin = isUserGlobalAdmin(currentUser);
+  const userAssignedArea = getUserAssignedArea(currentUser);
+
+  // 1. Filtrado RBAC estricto: usuarios no administradores SOLO ven eventos de su área
+  const rbacPurchases = useMemo(() => {
+    return purchases.filter(p => isPurchaseVisibleToUser(p, currentUser));
+  }, [purchases, currentUser]);
+
+  // Si el usuario es administrador, puede además usar el filtro interactivo de área
+  const currentPurchases = useMemo(() => {
+    if (!isAdmin) return rbacPurchases;
+    if (filterArea === 'todos') return rbacPurchases;
+    return rbacPurchases.filter(p => {
+      const pArea = (p.areaSolicitante || '').toLowerCase();
+      const targetArea = filterArea.toLowerCase();
+      return pArea.includes(targetArea) || targetArea.includes(pArea);
+    });
+  }, [rbacPurchases, isAdmin, filterArea]);
 
   useEffect(() => {
     setLastSyncTime(new Date());
@@ -98,9 +121,10 @@ export const PurchasesView: React.FC = () => {
     }
   };
 
-  const canCreate = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
-  const canEdit = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
-  const canDelete = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
+  const isAuditorOrReadOnly = currentUser?.rol === 'auditor' || currentUser?.perfilId === 'prof-auditor' || currentUser?.perfilId === 'prof-consulta' || currentUser?.rol === 'consulta_gerencial';
+  const canCreate = !isAuditorOrReadOnly && Boolean(currentUser);
+  const canEdit = canUserEditPurchase(currentUser);
+  const canDelete = isUserGlobalAdmin(currentUser) || currentUser?.rol === 'usuario_estandar' || currentUser?.rol === 'operador_compras';
 
   // Catálogos
   const statusCatalog = catalogs.find(c => c.codigo === 'ESTATUS_EVENTO');
@@ -109,9 +133,7 @@ export const PurchasesView: React.FC = () => {
   const categoryCatalog = catalogs.find(c => c.codigo === 'CATEGORIA_TECNOLOGICA');
   const categoryOptions = categoryCatalog?.items.map(it => it.valor) || [];
 
-  // Filtrado y Búsqueda sobre los datos oficiales del contexto
-  const currentPurchases = purchases;
-
+  // Filtrado y Búsqueda sobre los datos oficiales permitidos por RBAC
   const filteredPurchases = useMemo(() => {
     return currentPurchases
       .filter(p => {
@@ -140,7 +162,7 @@ export const PurchasesView: React.FC = () => {
         }
         return sortOrder === 'asc' ? comparison : -comparison;
       });
-  }, [purchases, searchTerm, filterEstatus, filterGIT, filterCategory, sortBy, sortOrder]);
+  }, [currentPurchases, searchTerm, filterEstatus, filterGIT, filterCategory, sortBy, sortOrder]);
 
   const totalFilteredMonto = useMemo(() => {
     return filteredPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -270,7 +292,7 @@ export const PurchasesView: React.FC = () => {
   };
 
   const selectAllSystemPurchases = () => {
-    setSelectedIds(purchases.map(p => p.id));
+    setSelectedIds(currentPurchases.map(p => p.id));
   };
 
   const clearSelection = () => {
@@ -283,8 +305,8 @@ export const PurchasesView: React.FC = () => {
 
   const selectedPurchasesList = useMemo(() => {
     const set = new Set(selectedIds);
-    return purchases.filter(p => set.has(p.id));
-  }, [purchases, selectedIds]);
+    return currentPurchases.filter(p => set.has(p.id));
+  }, [currentPurchases, selectedIds]);
 
   const selectedTotalMonto = useMemo(() => {
     return selectedPurchasesList.reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -320,25 +342,25 @@ export const PurchasesView: React.FC = () => {
 
         {/* Botones de Acción */}
         <div className="flex items-center gap-2 flex-wrap">
-          {canDelete && purchases.length > 0 && (
+          {canDelete && currentPurchases.length > 0 && (
             <button
               id="btn-select-all-purchases-header"
               type="button"
-              onClick={selectedIds.length === purchases.length ? clearSelection : selectAllSystemPurchases}
+              onClick={selectedIds.length === currentPurchases.length ? clearSelection : selectAllSystemPurchases}
               className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs ${
-                selectedIds.length === purchases.length
+                selectedIds.length === currentPurchases.length
                   ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
                   : selectedIds.length > 0
                   ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
                   : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
               }`}
-              title="Seleccionar o deseleccionar todas las adquisiciones del sistema"
+              title="Seleccionar o deseleccionar todas las adquisiciones autorizadas"
             >
               <CheckSquare className="w-3.5 h-3.5 text-slate-700" />
               <span>
-                {selectedIds.length === purchases.length 
-                  ? `Deseleccionar (${purchases.length})` 
-                  : `Seleccionar Todas (${purchases.length})`}
+                {selectedIds.length === currentPurchases.length 
+                  ? `Deseleccionar (${currentPurchases.length})` 
+                  : `Seleccionar Todas (${currentPurchases.length})`}
               </span>
             </button>
           )}
@@ -467,21 +489,21 @@ export const PurchasesView: React.FC = () => {
                 <span className="font-mono text-emerald-400 font-bold">{formatQuetzales(selectedTotalMonto)}</span>
               </p>
               <p className="text-[11px] text-slate-400">
-                {selectedIds.length === purchases.length 
-                  ? 'Has seleccionado todas las adquisiciones del sistema.' 
-                  : `Seleccionadas de ${purchases.length} registradas en total.`}
+                {selectedIds.length === currentPurchases.length 
+                  ? 'Has seleccionado todas las adquisiciones autorizadas.' 
+                  : `Seleccionadas de ${currentPurchases.length} disponibles.`}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-            {selectedIds.length < purchases.length && (
+            {selectedIds.length < currentPurchases.length && (
               <button
                 type="button"
                 onClick={selectAllSystemPurchases}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
               >
-                Seleccionar TODAS ({purchases.length})
+                Seleccionar TODAS ({currentPurchases.length})
               </button>
             )}
             <button
@@ -506,12 +528,38 @@ export const PurchasesView: React.FC = () => {
         </div>
       )}
 
+      {/* Banner Informativo de Restricción RBAC por Área Técnica */}
+      {!isAdmin && (
+        <div className="bg-blue-50/90 border border-blue-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-blue-900 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 text-blue-700">
+              <Building2 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-blue-950">Vista Restringida por Área Técnica:</span>
+                <span className="px-2 py-0.5 rounded-md bg-blue-200/70 font-bold text-[10px] text-blue-900">
+                  {userAssignedArea}
+                </span>
+              </div>
+              <p className="text-slate-600 text-[11px] mt-0.5">
+                Por políticas de seguridad institucional, usted visualiza únicamente los expedientes correspondientes a su departamento ({currentPurchases.length} adquisiciones autorizadas).
+              </p>
+            </div>
+          </div>
+          <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 font-bold text-[10px] text-blue-800 uppercase tracking-wide shrink-0">
+            <Shield className="w-3 h-3 text-blue-700" />
+            Acceso Departamental
+          </span>
+        </div>
+      )}
+
       {/* Barra de Búsqueda y Filtros */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           
           {/* Input de Búsqueda */}
-          <div className="md:col-span-6 relative">
+          <div className={isAdmin ? "md:col-span-4 relative" : "md:col-span-6 relative"}>
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
               <Search className="w-4 h-4" />
             </div>
@@ -526,7 +574,7 @@ export const PurchasesView: React.FC = () => {
           </div>
 
           {/* Filtro Estatus */}
-          <div className="md:col-span-3">
+          <div className={isAdmin ? "md:col-span-3" : "md:col-span-3"}>
             <select
               id="filter-select-estatus"
               value={filterEstatus}
@@ -541,7 +589,7 @@ export const PurchasesView: React.FC = () => {
           </div>
 
           {/* Filtro GIT */}
-          <div className="md:col-span-3">
+          <div className={isAdmin ? "md:col-span-2" : "md:col-span-3"}>
             <select
               id="filter-select-git"
               value={filterGIT}
@@ -554,12 +602,29 @@ export const PurchasesView: React.FC = () => {
             </select>
           </div>
 
+          {/* Filtro Área Solicitante para Administradores */}
+          {isAdmin && (
+            <div className="md:col-span-3">
+              <select
+                id="filter-select-area-admin"
+                value={filterArea}
+                onChange={(e) => setFilterArea(e.target.value)}
+                className="w-full p-2 text-xs border border-blue-200 rounded-lg bg-blue-50/50 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold text-blue-900"
+              >
+                <option value="todos">Área: Todas (Vista Global)</option>
+                {TECHNICAL_AREAS_LIST.filter(a => !a.includes('Global')).map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
         </div>
 
         {/* Resumen de Resultados y Orden */}
         <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span>Resultados: <strong>{filteredPurchases.length}</strong> de {purchases.length}</span>
+            <span>Resultados: <strong>{filteredPurchases.length}</strong> de {currentPurchases.length}</span>
             <span>•</span>
             <span>Monto Total: <strong className="text-slate-900">{formatQuetzales(totalFilteredMonto)}</strong></span>
             {canDelete && filteredPurchases.length > 0 && (
@@ -574,7 +639,7 @@ export const PurchasesView: React.FC = () => {
                     ? 'Deseleccionar filtradas' 
                     : `Seleccionar todas las filtradas (${filteredPurchases.length})`}
                 </button>
-                {purchases.length > filteredPurchases.length && (
+                {currentPurchases.length > filteredPurchases.length && (
                   <>
                     <span>•</span>
                     <button
@@ -813,7 +878,7 @@ export const PurchasesView: React.FC = () => {
                             <Eye className="w-4 h-4" />
                           </button>
 
-                          {canEdit && (
+                          {canUserEditPurchase(currentUser, p) && (
                             <button
                               type="button"
                               onClick={() => { setPurchaseToEdit(p); setIsPurchaseModalOpen(true); }}
@@ -945,7 +1010,7 @@ export const PurchasesView: React.FC = () => {
                 >
                   Ver Ficha
                 </button>
-                {canEdit && (
+                {canUserEditPurchase(currentUser, p) && (
                   <button
                     type="button"
                     onClick={() => { setPurchaseToEdit(p); setIsPurchaseModalOpen(true); }}
