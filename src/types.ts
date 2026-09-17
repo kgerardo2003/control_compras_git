@@ -29,6 +29,27 @@ export interface User {
   activo: boolean;
   fechaCreacion: string;
   ultimoAcceso?: string;
+  dobleFactorHabilitado?: boolean; // Segundo factor de autenticación 2FA requerido
+  totpSecret?: string; // Clave secreta Base32 para Google Authenticator
+  metodoPreferido2FA?: 'email' | 'totp' | 'ambos'; // Método preferido para 2FA
+}
+
+export type TwoFactorMethod = 'email' | 'totp';
+
+export interface TwoFactorState {
+  userId: string;
+  username: string;
+  nombreCompleto: string;
+  email: string;
+  maskedEmail: string;
+  code: string;
+  expiresAt: number; // Timestamp en ms (ej. 5 minutos)
+  attemptsLeft: number;
+  sentAt: number;
+  activeMethod: TwoFactorMethod;
+  totpSecret: string;
+  totpUri: string;
+  qrCodeUrl?: string;
 }
 
 export type EvaluacionGIT = 'Sí' | 'No';

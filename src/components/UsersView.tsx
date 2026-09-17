@@ -52,6 +52,7 @@ export const UsersView: React.FC = () => {
   const [isCustomArea, setIsCustomArea] = useState(false);
   const [customAreaText, setCustomAreaText] = useState('');
   const [notifyByEmail, setNotifyByEmail] = useState(true);
+  const [dobleFactorHabilitado, setDobleFactorHabilitado] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendingEmailUserId, setResendingEmailUserId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -72,6 +73,7 @@ export const UsersView: React.FC = () => {
     setIsCustomArea(false);
     setCustomAreaText('');
     setNotifyByEmail(true);
+    setDobleFactorHabilitado(true);
     setIsSubmitting(false);
     setErrorMsg('');
     setIsNewUserModalOpen(true);
@@ -89,6 +91,7 @@ export const UsersView: React.FC = () => {
     setDepartamento(user.departamento);
     
     const assigned = user.area || user.departamento || '';
+    setDobleFactorHabilitado(user.dobleFactorHabilitado !== false);
     if (TECHNICAL_AREAS_LIST.includes(assigned as any)) {
       setArea(assigned);
       setIsCustomArea(false);
@@ -164,6 +167,7 @@ export const UsersView: React.FC = () => {
         cargo: cargo.trim(),
         departamento: departamento.trim() || resolvedArea,
         area: resolvedArea,
+        dobleFactorHabilitado,
         password: password.trim() ? password.trim() : editingUser.password,
       });
       showToast({
@@ -191,6 +195,7 @@ export const UsersView: React.FC = () => {
         cargo: cargo.trim() || 'Funcionario OJ',
         departamento: departamento.trim() || resolvedArea,
         area: resolvedArea,
+        dobleFactorHabilitado,
         activo: true,
       });
 
@@ -411,26 +416,39 @@ export const UsersView: React.FC = () => {
                     <span className="text-slate-400 block">{u.departamento}</span>
                   </td>
 
-                  {/* Estado */}
+                  {/* Estado y Seguridad 2FA */}
                   <td className="px-3 py-3 text-center whitespace-nowrap">
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleUserStatus(u.id)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors ${
-                          u.activo ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                    <div className="flex flex-col items-center gap-1">
+                      {canManage ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleUserStatus(u.id)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors ${
+                            u.activo ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                          }`}
+                        >
+                          {u.activo ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                          <span>{u.activo ? 'Activo' : 'Inactivo'}</span>
+                        </button>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          u.activo ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {u.activo ? 'Activo' : 'Inactivo'}
+                        </span>
+                      )}
+                      <span 
+                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                          u.dobleFactorHabilitado !== false
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200'
                         }`}
+                        title={u.dobleFactorHabilitado !== false ? 'Doble factor de autenticación 2FA activado' : '2FA desactivado para este usuario'}
                       >
-                        {u.activo ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                        <span>{u.activo ? 'Activo' : 'Inactivo'}</span>
-                      </button>
-                    ) : (
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        u.activo ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {u.activo ? 'Activo' : 'Inactivo'}
+                        <ShieldCheck className={`w-2.5 h-2.5 ${u.dobleFactorHabilitado !== false ? 'text-blue-600' : 'text-slate-400'}`} />
+                        {u.dobleFactorHabilitado !== false ? '2FA Activo' : '2FA Inactivo'}
                       </span>
-                    )}
+                    </div>
                   </td>
 
                   {/* Último Acceso */}
@@ -593,6 +611,25 @@ export const UsersView: React.FC = () => {
                     required={!editingUser}
                   />
                 </div>
+              </div>
+
+              {/* Configuración de Seguridad 2FA */}
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl space-y-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dobleFactorHabilitado}
+                    onChange={(e) => setDobleFactorHabilitado(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                  />
+                  <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                    Exigir Doble Factor de Autenticación (2FA) por Correo
+                  </span>
+                </label>
+                <p className="text-[11px] text-slate-500 pl-6 leading-tight">
+                  Al iniciar sesión, el sistema generará y enviará un código numérico seguro de 6 dígitos con vigencia de 5 minutos al correo electrónico del usuario.
+                </p>
               </div>
 
               {/* Asignación de Área o Departamento para control de visibilidad RBAC */}

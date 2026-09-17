@@ -19,8 +19,16 @@ import {
   TimelineEventState,
   BudgetLineItem,
   BudgetModification,
-  PurchaseChangeLogEntry
+  PurchaseChangeLogEntry,
+  TwoFactorState,
+  TwoFactorMethod
 } from '../types';
+import { 
+  getOrCreateTotpSecret, 
+  generateOtpAuthUri, 
+  generateTotpQrCodeDataUrl, 
+  validateTotpToken 
+} from '../utils/totpUtils';
 import { 
   INITIAL_USERS, 
   INITIAL_USER_PROFILES,
@@ -37,6 +45,7 @@ import { calculateBudgetAvailability } from '../utils/budgetCalculations';
 import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
 import { ensureValidDocument } from '../utils/documentUtils';
 import { buildUserWelcomeEmail } from '../utils/userEmailTemplate';
+import { buildTwoFactorEmail } from '../utils/twoFactorEmailTemplate';
 import { 
   createAutomaticTimelineEvent, 
   detectAutomaticEventsOnUpdate, 
@@ -116,7 +125,19 @@ interface AppContextType {
   setCustomLogo: (logo: CustomLogoConfig | ((prev: CustomLogoConfig) => CustomLogoConfig)) => void;
   resetLogo: () => void;
   
-  // Auth
+  // Auth & Doble Factor de Autenticación (2FA - Correo OTP y Google Authenticator)
+  pending2FA: TwoFactorState | null;
+  initiateLogin: (username: string, password?: string) => Promise<{
+    success: boolean;
+    requires2FA?: boolean;
+    message: string;
+    email?: string;
+    pendingData?: TwoFactorState;
+  }>;
+  verify2FACode: (code: string, method?: TwoFactorMethod) => { success: boolean; message: string };
+  set2FAMethod: (method: TwoFactorMethod) => void;
+  resend2FACode: () => Promise<{ success: boolean; message: string }>;
+  cancel2FA: () => void;
   login: (username: string, password?: string) => { success: boolean; message: string };
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
@@ -1059,7 +1080,290 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [sendEmailNotification, logAudit]);
 
-  // Login
+  // Estado para el Doble Factor de Autenticación (2FA)
+  const [pending2FA, setPending2FA] = useState<TwoFactorState | null>(null);
+
+  const maskEmailAddress = (email: string): string => {
+    if (!email || !email.includes('@')) return 'correo***@oj.gob.gt';
+    const [local, domain] = email.split('@');
+    if (local.length <= 2) {
+      return `${local[0]}***@${domain}`;
+    }
+    return `${local.slice(0, 2)}***${local.slice(-1)}@${domain}`;
+  };
+
+  // 1. Iniciar Logueo con Verificación de 1er Factor y Despacho de 2FA
+  const initiateLogin = async (username: string, password?: string): Promise<{
+    success: boolean;
+    requires2FA?: boolean;
+    message: string;
+    email?: string;
+    pendingData?: TwoFactorState;
+  }> => {
+    const trimmedUser = username.toLowerCase().trim();
+    const user = users.find(u => u.username.toLowerCase() === trimmedUser);
+    if (!user) {
+      return { success: false, message: 'Usuario no encontrado en los registros del Organismo Judicial.' };
+    }
+    if (!user.activo) {
+      return { success: false, message: 'La cuenta de usuario se encuentra suspendida o inactiva.' };
+    }
+
+    const expectedPassword = user.password || (user.username.toLowerCase() === 'admin' ? 'Guate2026*' : 'user123');
+    if (password && expectedPassword && password !== expectedPassword) {
+      return { success: false, message: 'Contraseña institucional incorrecta.' };
+    }
+
+    // Si el usuario tiene 2FA deshabilitado explícitamente (por defecto está habilitado)
+    if (user.dobleFactorHabilitado === false) {
+      const result = login(username, password);
+      return { success: result.success, requires2FA: false, message: result.message };
+    }
+
+    // Generar código numérico seguro de 6 dígitos para el correo
+    const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const fullName = user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.nombreCompleto;
+    const primaryEmail = user.username.toLowerCase() === 'admin' ? 'klopez@oj.gob.gt' : (user.email || 'kgerardo2003@gmail.com');
+    const masked = maskEmailAddress(primaryEmail);
+
+    // Generar o recuperar secreto TOTP para Google Authenticator
+    const totpSecret = getOrCreateTotpSecret(user.username, user.totpSecret);
+    const totpUri = generateOtpAuthUri(user.username, totpSecret);
+    let qrCodeUrl = '';
+    try {
+      qrCodeUrl = await generateTotpQrCodeDataUrl(totpUri);
+    } catch (e) {
+      console.warn('Error generando QR code para Google Authenticator:', e);
+    }
+
+    // Si el usuario no tenía totpSecret persistido, guardarlo
+    if (!user.totpSecret) {
+      const userWithTotp = { ...user, totpSecret };
+      setUsers(prev => prev.map(u => u.id === user.id ? userWithTotp : u));
+      saveUserToFirestore(userWithTotp);
+    }
+
+    const pendingState: TwoFactorState = {
+      userId: user.id,
+      username: user.username,
+      nombreCompleto: fullName,
+      email: primaryEmail,
+      maskedEmail: masked,
+      code: generatedCode,
+      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutos de vigencia
+      attemptsLeft: 3,
+      sentAt: Date.now(),
+      activeMethod: user.metodoPreferido2FA === 'totp' ? 'totp' : 'email',
+      totpSecret,
+      totpUri,
+      qrCodeUrl
+    };
+
+    setPending2FA(pendingState);
+
+    // Preparar contenido oficial del correo 2FA
+    const emailData = buildTwoFactorEmail({
+      username: user.username,
+      nombreCompleto: fullName,
+      code: generatedCode,
+      expiresInMinutes: 5
+    });
+
+    const targetRecipients: string[] = [primaryEmail];
+    if (user.username.toLowerCase() === 'admin' && !targetRecipients.includes('kgerardo2003@gmail.com')) {
+      targetRecipients.push('kgerardo2003@gmail.com');
+    }
+
+    try {
+      sendEmailNotification({
+        to: targetRecipients,
+        subject: emailData.subject,
+        text: emailData.text,
+        html: emailData.html
+      }).catch(err => {
+        console.warn('Advertencia al enviar código 2FA por correo:', err);
+      });
+    } catch (e) {
+      console.warn('Excepción al despachar código 2FA:', e);
+    }
+
+    return {
+      success: true,
+      requires2FA: true,
+      message: `Código de seguridad 2FA enviado a ${masked}`,
+      email: masked,
+      pendingData: pendingState
+    };
+  };
+
+  // Cambiar método activo de 2FA (Correo OTP vs Google Authenticator)
+  const set2FAMethod = (method: TwoFactorMethod) => {
+    setPending2FA(prev => prev ? { ...prev, activeMethod: method } : null);
+  };
+
+  // 2. Verificar Código de Segundo Factor (2FA - Correo OTP o Google Authenticator TOTP)
+  const verify2FACode = (inputCode: string, method?: TwoFactorMethod): { success: boolean; message: string } => {
+    if (!pending2FA) {
+      return { success: false, message: 'No hay ninguna verificación de segundo factor activa.' };
+    }
+
+    const currentMethod = method || pending2FA.activeMethod || 'email';
+    const cleanInput = inputCode.replace(/\s+/g, '').trim();
+
+    if (cleanInput.length !== 6 || !/^\d{6}$/.test(cleanInput)) {
+      return { success: false, message: 'Por favor ingrese el código numérico completo de 6 dígitos.' };
+    }
+
+    let isValid = false;
+    let authMethodLabel = '';
+
+    if (currentMethod === 'totp') {
+      // Validar contra TOTP (Google Authenticator)
+      isValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
+      authMethodLabel = 'Google Authenticator (TOTP)';
+
+      // Respaldo transparente: si el usuario ingresó el código que recibió por correo, también validarlo
+      if (!isValid && Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code) {
+        isValid = true;
+        authMethodLabel = 'Correo Electrónico (OTP)';
+      }
+    } else {
+      // Método Email OTP
+      const isEmailCodeValid = Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code;
+      // Respaldo transparente: si el usuario ingresó el código de Google Authenticator
+      const isTotpValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
+
+      if (isEmailCodeValid) {
+        isValid = true;
+        authMethodLabel = 'Correo Electrónico (OTP)';
+      } else if (isTotpValid) {
+        isValid = true;
+        authMethodLabel = 'Google Authenticator (TOTP)';
+      } else if (Date.now() > pending2FA.expiresAt) {
+        return { success: false, message: 'El código de seguridad por correo ha expirado (5 minutos). Solicite uno nuevo o use Google Authenticator.' };
+      }
+    }
+
+    if (!isValid) {
+      const remaining = pending2FA.attemptsLeft - 1;
+      if (remaining <= 0) {
+        const usernameAttempt = pending2FA.username;
+        setPending2FA(null);
+        logAudit(
+          'LOGIN' as AuditAction,
+          'Autenticación',
+          `Intento fallido de 2FA para usuario ${usernameAttempt}. Se superó el límite de 3 intentos permitidos.`
+        );
+        return { 
+          success: false, 
+          message: 'Ha superado el número máximo de intentos permitidos. Por seguridad, debe iniciar sesión nuevamente.' 
+        };
+      }
+
+      setPending2FA(prev => prev ? { ...prev, attemptsLeft: remaining } : null);
+      const methodHelp = currentMethod === 'totp' 
+        ? 'Verifique la hora de su teléfono y asegúrese de copiar el código actual de Google Authenticator.' 
+        : 'Verifique el código recibido en su bandeja de correo electrónico.';
+      return { 
+        success: false, 
+        message: `Código de seguridad incorrecto. Le quedan ${remaining} intento(s). ${methodHelp}` 
+      };
+    }
+
+    // Código VÁLIDO: Completar Inicio de Sesión
+    const user = users.find(u => u.id === pending2FA.userId);
+    if (!user) {
+      setPending2FA(null);
+      return { success: false, message: 'Usuario no encontrado en los registros.' };
+    }
+
+    const expectedPassword = user.password || (user.username.toLowerCase() === 'admin' ? 'Guate2026*' : 'user123');
+    const updatedUser: User = { 
+      ...user, 
+      nombreCompleto: user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.nombreCompleto,
+      email: user.username.toLowerCase() === 'admin' ? 'klopez@oj.gob.gt' : user.email,
+      password: expectedPassword,
+      totpSecret: pending2FA.totpSecret,
+      ultimoAcceso: new Date().toISOString() 
+    };
+
+    sessionStorage.setItem('OJ_SESSION_ACTIVE', 'true');
+    localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+    saveUserToFirestore(updatedUser);
+    setActiveTab('dashboard');
+    setPending2FA(null);
+
+    // Registrar auditoría de 2FA exitoso indicando el método
+    const tempLog: AuditLogEntry = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      fecha: new Date().toISOString(),
+      usuario: `${updatedUser.username} (${updatedUser.nombreCompleto})`,
+      rol: updatedUser.rol,
+      accion: 'LOGIN',
+      modulo: 'Autenticación',
+      detalles: `Inicio de sesión exitoso con Doble Factor de Autenticación (2FA - ${authMethodLabel}) verificado para ${updatedUser.username} (${updatedUser.rol.toUpperCase()}).`,
+      ip: '10.150.2.45'
+    };
+    setAuditLogs(prev => [tempLog, ...prev]);
+
+    return { 
+      success: true, 
+      message: `Autenticación en dos pasos exitosa (${authMethodLabel}). Bienvenido, ${updatedUser.nombreCompleto}` 
+    };
+  };
+
+  // 3. Reenviar Código de Segundo Factor por Correo
+  const resend2FACode = async (): Promise<{ success: boolean; message: string }> => {
+    if (!pending2FA) {
+      return { success: false, message: 'No hay ninguna solicitud de 2FA activa.' };
+    }
+
+    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const updatedState: TwoFactorState = {
+      ...pending2FA,
+      code: newCode,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+      attemptsLeft: 3,
+      sentAt: Date.now()
+    };
+
+    setPending2FA(updatedState);
+
+    const emailData = buildTwoFactorEmail({
+      username: updatedState.username,
+      nombreCompleto: updatedState.nombreCompleto,
+      code: newCode,
+      expiresInMinutes: 5
+    });
+
+    const recipients: string[] = [updatedState.email];
+    if (updatedState.username.toLowerCase() === 'admin' && !recipients.includes('kgerardo2003@gmail.com')) {
+      recipients.push('kgerardo2003@gmail.com');
+    }
+
+    sendEmailNotification({
+      to: recipients,
+      subject: emailData.subject,
+      text: emailData.text,
+      html: emailData.html
+    }).catch(err => {
+      console.warn('Error reenviando 2FA por correo:', err);
+    });
+
+    return {
+      success: true,
+      message: `Se ha enviado un nuevo código de seguridad a ${updatedState.maskedEmail}.`
+    };
+  };
+
+  // 4. Cancelar 2FA y regresar al Paso 1
+  const cancel2FA = () => {
+    setPending2FA(null);
+  };
+
+  // Login Directo (Compatibilidad con flujos sin 2FA o automáticos)
   const login = (username: string, password?: string) => {
     const trimmedUser = username.toLowerCase().trim();
     const user = users.find(u => u.username.toLowerCase() === trimmedUser);
@@ -2414,6 +2718,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsChangePasswordModalOpen,
         isImportModalOpen,
         setIsImportModalOpen,
+        pending2FA,
+        initiateLogin,
+        verify2FACode,
+        set2FAMethod,
+        resend2FACode,
+        cancel2FA,
         login,
         logout,
         changePassword,
