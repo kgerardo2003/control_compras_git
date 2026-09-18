@@ -90,7 +90,8 @@ export async function generateTotpQrCodeDataUrl(otpAuthUri: string): Promise<str
 }
 
 /**
- * Valida un token de 6 dígitos contra la clave secreta TOTP usando ventana de tolerancia de ±1 paso (30s)
+ * Valida un token de 6 dígitos contra la clave secreta TOTP usando ventana de tolerancia de ±2 pasos (±60s/±90s)
+ * para garantizar funcionamiento confiable incluso con desincronización horaria entre dispositivos.
  */
 export function validateTotpToken(token: string, secret: string, username = 'usuario'): boolean {
   try {
@@ -99,12 +100,21 @@ export function validateTotpToken(token: string, secret: string, username = 'usu
       return false;
     }
     const totp = createTotpInstance(username, secret);
-    // Window = 1 permite 30 segundos antes y 30 segundos después para mitigar desincronizaciones de reloj
+    // Window = 2 permite 60 segundos antes y después para mitigar desincronizaciones de reloj entre diferentes computadoras
     const delta = totp.validate({
       token: cleanToken,
-      window: 1
+      window: 2
     });
-    return delta !== null;
+    if (delta !== null) {
+      return true;
+    }
+
+    // Ventana ampliada de contingencia (±90 segundos) en caso de ligero desfase de reloj del cliente
+    const deltaWide = totp.validate({
+      token: cleanToken,
+      window: 3
+    });
+    return deltaWide !== null;
   } catch (err) {
     console.error('Error validando token TOTP:', err);
     return false;

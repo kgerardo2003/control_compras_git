@@ -70,9 +70,25 @@ export const LoginView: React.FC = () => {
   const digitInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const handleOpenStep1QrModal = async () => {
-    const targetUser = username.trim() || 'admin';
-    const secret = getOrCreateTotpSecret(targetUser);
-    const uri = generateOtpAuthUri(targetUser, secret);
+    const inputVal = username.trim() || 'admin';
+    let canonicalUser = inputVal;
+    let existingSecret: string | undefined;
+
+    try {
+      const res = await fetch(`/api/db/users/${encodeURIComponent(inputVal)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.user) {
+          canonicalUser = json.user.username;
+          existingSecret = json.user.totpSecret;
+        }
+      }
+    } catch (e) {
+      console.warn('Nota consultando usuario para QR:', e);
+    }
+
+    const secret = getOrCreateTotpSecret(canonicalUser, existingSecret);
+    const uri = generateOtpAuthUri(canonicalUser, secret);
     setStep1Secret(secret);
     setShowStep1QrModal(true);
     try {

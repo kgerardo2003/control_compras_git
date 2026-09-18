@@ -4,8 +4,28 @@ import { createServer as createViteServer } from 'vite';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import { OJ_LOGO_CID, OJ_LOGO_PNG_BASE64 } from './src/utils/emailLogoAsset';
+import {
+  initDataStore,
+  getStoreState,
+  savePurchase,
+  deletePurchase,
+  batchDeletePurchases,
+  findUser,
+  saveUser,
+  deleteUser,
+  saveCatalog,
+  deleteCatalog,
+  saveBudgetLine,
+  deleteBudgetLine,
+  setBudgetLines,
+  addBudgetModification,
+  addAuditLog
+} from './src/server/dataStore';
 
 dotenv.config();
+
+// Inicializar de inmediato el almacén de datos persistente en disco
+initDataStore();
 
 const app = express();
 const PORT = 3000;
@@ -100,6 +120,161 @@ function createGmailTransporter(config: {
 // 1. Healthcheck
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// =============================================================
+// RUTAS DE SINCRONIZACIÓN CENTRALIZADA Y BASE DE DATOS RESILIENTE
+// =============================================================
+
+// Obtener estado sincronizado completo para cualquier equipo/dispositivo conectado
+app.get('/api/db/state', (req, res) => {
+  try {
+    const state = getStoreState();
+    res.json({ success: true, data: state });
+  } catch (err: any) {
+    console.error('Error obteniendo estado de base de datos:', err);
+    res.status(500).json({ success: false, message: 'Error interno en lectura de base de datos.' });
+  }
+});
+
+// Buscar usuario institucional (para validación de inicio de sesión o 2FA)
+app.get('/api/db/users/:query', (req, res) => {
+  try {
+    const user = findUser(req.params.query);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
+    return res.json({ success: true, user });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err?.message || 'Error consultando usuario.' });
+  }
+});
+
+// Guardar o actualizar usuario (incluye credenciales y secreto TOTP sincronizado)
+app.post('/api/db/users', (req, res) => {
+  try {
+    if (!req.body || !req.body.id || !req.body.username) {
+      return res.status(400).json({ success: false, message: 'Datos de usuario incompletos.' });
+    }
+    const saved = saveUser(req.body);
+    res.json({ success: true, user: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando usuario.' });
+  }
+});
+
+// Eliminar usuario
+app.delete('/api/db/users/:id', (req, res) => {
+  try {
+    const deleted = deleteUser(req.params.id);
+    res.json({ success: true, deleted });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando usuario.' });
+  }
+});
+
+// Guardar o actualizar adquisición / compra
+app.post('/api/db/purchases', (req, res) => {
+  try {
+    if (!req.body || !req.body.id) {
+      return res.status(400).json({ success: false, message: 'ID de compra requerida.' });
+    }
+    const saved = savePurchase(req.body);
+    res.json({ success: true, purchase: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando compra.' });
+  }
+});
+
+// Eliminar adquisición / compra individualmente (definitivo y permanente)
+app.delete('/api/db/purchases/:id', (req, res) => {
+  try {
+    const deleted = deletePurchase(req.params.id);
+    res.json({ success: true, deleted });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando compra.' });
+  }
+});
+
+// Eliminar adquisiciones en lote (definitivo y permanente)
+app.post('/api/db/purchases/batch-delete', (req, res) => {
+  try {
+    const ids: string[] = req.body?.ids || [];
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'Lista de IDs a eliminar requerida.' });
+    }
+    const count = batchDeletePurchases(ids);
+    res.json({ success: true, count });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error en eliminación en lote.' });
+  }
+});
+
+// Guardar o actualizar catálogo
+app.post('/api/db/catalogs', (req, res) => {
+  try {
+    if (!req.body || !req.body.id) {
+      return res.status(400).json({ success: false, message: 'Datos de catálogo incompletos.' });
+    }
+    const saved = saveCatalog(req.body);
+    res.json({ success: true, catalog: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando catálogo.' });
+  }
+});
+
+// Eliminar catálogo
+app.delete('/api/db/catalogs/:id', (req, res) => {
+  try {
+    const deleted = deleteCatalog(req.params.id);
+    res.json({ success: true, deleted });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando catálogo.' });
+  }
+});
+
+// Guardar o actualizar renglón presupuestario (individual o conjunto)
+app.post('/api/db/budget-lines', (req, res) => {
+  try {
+    if (Array.isArray(req.body)) {
+      const saved = setBudgetLines(req.body);
+      return res.json({ success: true, budgetLines: saved });
+    }
+    const saved = saveBudgetLine(req.body);
+    res.json({ success: true, budgetLine: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando renglón.' });
+  }
+});
+
+// Eliminar renglón presupuestario
+app.delete('/api/db/budget-lines/:id', (req, res) => {
+  try {
+    const deleted = deleteBudgetLine(req.params.id);
+    res.json({ success: true, deleted });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando renglón.' });
+  }
+});
+
+// Agregar modificación presupuestaria
+app.post('/api/db/budget-modifications', (req, res) => {
+  try {
+    const saved = addBudgetModification(req.body);
+    res.json({ success: true, modification: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando modificación.' });
+  }
+});
+
+// Agregar registro de bitácora de auditoría
+app.post('/api/db/audit-logs', (req, res) => {
+  try {
+    const saved = addAuditLog(req.body);
+    res.json({ success: true, log: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error registrando bitácora.' });
+  }
 });
 
 // 2. Verificar credenciales con el servidor SMTP de Gmail

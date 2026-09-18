@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { 
   User, 
   UserProfile,
@@ -394,13 +394,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const has113 = parsed.some((l: BudgetLineItem) => l.renglonPresupuestario === '113');
-          if (!has113) {
-            const initial113 = INITIAL_BUDGET_LINES.find(l => l.renglonPresupuestario === '113');
-            if (initial113) {
-              return [initial113, ...parsed];
-            }
-          }
           return parsed;
         }
       } catch (e) {
@@ -458,8 +451,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isGoogleAuthModalOpen, setIsGoogleAuthModalOpen] = useState<boolean>(false);
 
-  // Sincronización en Tiempo Real Multiusuario con Firebase Firestore
+  // Registro persistente de IDs de compras eliminadas para evitar resurrección por caché de Firestore
+  const deletedPurchaseIdsRef = useRef<Set<string>>((() => {
+    try {
+      const stored = localStorage.getItem('OJ_DELETED_PURCHASES_IDS');
+      return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  })());
+
+  // Función de sincronización bidireccional con el almacén institucional central
+  const syncWithCentralServer = useCallback(async () => {
+    try {
+      const res = await fetch('/api/db/state');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!json.success || !json.data) return;
+      const data = json.data;
+
+      if (Array.isArray(data.purchases)) {
+        const validPurchases = data.purchases.filter((p: PurchaseRecord) => !deletedPurchaseIdsRef.current.has(p.id));
+        setPurchases(validPurchases);
+        try {
+          localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(validPurchases));
+        } catch {}
+      }
+      if (Array.isArray(data.users) && data.users.length > 0) {
+        setUsers(data.users);
+        try {
+          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
+        } catch {}
+      }
+      if (Array.isArray(data.catalogs) && data.catalogs.length > 0) {
+        setCatalogs(data.catalogs);
+        try {
+          localStorage.setItem(STORAGE_KEYS.CATALOGS, JSON.stringify(data.catalogs));
+        } catch {}
+      }
+      if (Array.isArray(data.budgetLines) && data.budgetLines.length > 0) {
+        setBudgetLines(data.budgetLines);
+        try {
+          localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(data.budgetLines));
+        } catch {}
+      }
+      if (Array.isArray(data.budgetModifications)) {
+        setBudgetModifications(data.budgetModifications);
+        try {
+          localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(data.budgetModifications));
+        } catch {}
+      }
+      if (Array.isArray(data.auditLogs) && data.auditLogs.length > 0) {
+        setAuditLogs(data.auditLogs);
+        try {
+          localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
+        } catch {}
+      }
+      setIsFirestoreConnected(true);
+      setFirestoreStatus('conectado');
+    } catch (err) {
+      console.warn("Nota sincronizando con servidor institucional:", err);
+    }
+  }, []);
+
+  // Sincronización en Tiempo Real Multiusuario con Servidor Central y Firebase Firestore
   useEffect(() => {
+    // Sincronización inicial con el servidor central permanente
+    syncWithCentralServer();
+
+    const syncInterval = setInterval(() => {
+      syncWithCentralServer();
+    }, 7000);
+
+    const onWindowFocus = () => {
+      syncWithCentralServer();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncWithCentralServer();
+      }
+    };
+
+    window.addEventListener('focus', onWindowFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     // Sembrado inicial de contingencia si la base de datos en la nube está limpia
     seedInitialDataIfEmpty(INITIAL_PURCHASES, INITIAL_CATALOGS, INITIAL_USERS, INITIAL_AUDIT_LOGS)
       .then(() => {
@@ -477,6 +553,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const remoteItems: PurchaseRecord[] = [];
         snapshot.forEach((doc) => {
           const item = doc.data() as PurchaseRecord;
+          // Si el registro fue explícitamente eliminado, no permitir que la caché de Firestore lo reviva
+          if (deletedPurchaseIdsRef.current.has(item.id)) {
+            return;
+          }
           if (item.f56Documento) {
             item.f56Documento = ensureValidDocument(item.f56Documento, item);
           }
@@ -488,8 +568,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const prevMap = new Map<string, PurchaseRecord>(prevPurchases.map(p => [p.id, p]));
             return remoteItems.map(item => {
               const prevItem = prevMap.get(item.id);
-              // Si el registro local en memoria ya contiene el documento con su dataUrl completo,
-              // preservarlo íntegro para evitar que la sincronización de metadatos de Firestore lo sobreescriba.
               if (item.f56Documento && prevItem?.f56Documento?.dataUrl) {
                 if (!item.f56Documento.dataUrl || item.f56Documento.dataUrl.length < prevItem.f56Documento.dataUrl.length) {
                   return {
@@ -566,9 +644,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snapshot.forEach((doc) => {
             remoteUsers.push(doc.data() as User);
           });
-          // Unir usuarios remotos asegurando que no se pierdan cuentas base
+          // Unir usuarios remotos preservando la cuenta admin protegida si faltase, pero sin revivir usuarios eliminados
           const userMap = new Map<string, User>();
-          INITIAL_USERS.forEach(u => userMap.set(u.id, u));
+          const adminUser = INITIAL_USERS.find(u => u.username.toLowerCase() === 'admin');
+          if (adminUser) userMap.set(adminUser.id, adminUser);
           remoteUsers.forEach(u => userMap.set(u.id, u));
           const merged = Array.from(userMap.values());
           setUsers(merged);
@@ -578,7 +657,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             console.warn("Nota guardando usuarios en localStorage:", e);
           }
         } else {
-          // Si la colección de usuarios en Firestore estuviese vacía, sembrar usuarios base de inmediato
+          // Si la colección de usuarios en Firestore estuviese vacía, sembrar usuarios base
           seedUsersIfEmpty(INITIAL_USERS).catch(() => {});
         }
       }, (error) => {
@@ -628,6 +707,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener('focus', onWindowFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (unsubPurchases) unsubPurchases();
       if (unsubLogs) unsubLogs();
       if (unsubCatalogs) unsubCatalogs();
@@ -636,7 +718,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (unsubBudgetMods) unsubBudgetMods();
       if (unsubUserProfiles) unsubUserProfiles();
     };
-  }, []);
+  }, [syncWithCentralServer]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.USER_PROFILES, JSON.stringify(userProfiles));
@@ -1045,6 +1127,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setAuditLogs(prev => [newEntry, ...prev]);
     saveAuditLogToFirestore(newEntry);
+    fetch('/api/db/audit-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newEntry)
+    }).catch(() => {});
   }, [currentUser]);
 
   // Helper de Notificación
@@ -1127,14 +1214,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }> => {
     const trimmedUser = username.toLowerCase().trim();
 
-    // 1. Buscar primero en memoria local (por nombre de usuario o por correo registrado)
-    let user = users.find(u => 
-      u.username.toLowerCase() === trimmedUser || 
-      (u.email && u.email.toLowerCase().trim() === trimmedUser)
-    );
+    // 1. Consultar el servidor central institucional (garantiza sincronización perfecta entre cualquier equipo o navegador)
+    let user: User | undefined;
+    try {
+      const serverRes = await fetch(`/api/db/users/${encodeURIComponent(trimmedUser)}`);
+      if (serverRes.ok) {
+        const json = await serverRes.json();
+        if (json.success && json.user) {
+          user = json.user as User;
+          setUsers(prev => {
+            const idx = prev.findIndex(u => u.id === user!.id);
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = user!;
+              return copy;
+            }
+            return [...prev, user!];
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Nota consultando servidor institucional durante login:", err);
+    }
 
-    // 2. Si no se encuentra en memoria local (ej. nueva computadora, sesión limpia o sincronización inicial pendiente),
-    // consultar directamente la base de datos de Firestore en la nube
+    // 2. Si el servidor no respondió, buscar en memoria local
+    if (!user) {
+      user = users.find(u => 
+        u.username.toLowerCase() === trimmedUser || 
+        (u.email && u.email.toLowerCase().trim() === trimmedUser)
+      );
+    }
+
+    // 3. Si no se encuentra en memoria local, consultar Firestore en la nube
     if (!user) {
       try {
         const snap = await getDocs(collection(db, USERS_COLLECTION));
@@ -1143,7 +1254,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snap.forEach(doc => remoteUsers.push(doc.data() as User));
 
           const userMap = new Map<string, User>();
-          INITIAL_USERS.forEach(u => userMap.set(u.id, u));
+          const adminUser = INITIAL_USERS.find(u => u.username.toLowerCase() === 'admin');
+          if (adminUser) userMap.set(adminUser.id, adminUser);
           users.forEach(u => userMap.set(u.id, u));
           remoteUsers.forEach(u => userMap.set(u.id, u));
           const merged = Array.from(userMap.values());
@@ -1165,15 +1277,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 3. Si aún no se encuentra, verificar en INITIAL_USERS como respaldo institucional
+    // 4. Si aún no se encuentra, verificar en INITIAL_USERS como respaldo institucional
     if (!user) {
       user = INITIAL_USERS.find(u => 
         u.username.toLowerCase() === trimmedUser || 
         (u.email && u.email.toLowerCase().trim() === trimmedUser)
       );
       if (user) {
-        // Asegurar persistencia inmediata en la nube
         saveUserToFirestore(user).catch(() => {});
+        fetch('/api/db/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(user)
+        }).catch(() => {});
       }
     }
 
@@ -1193,8 +1309,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
     const fullName = user.nombreCompleto || (user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.username);
     
-    // CORREO REGISTRADO EN LA FICHA DEL USUARIO:
-    // Se utiliza el correo guardado en el perfil/ficha del usuario, sin forzar cuentas institucionales fijas
+    // CORREO REGISTRADO EN LA FICHA DEL USUARIO
     const primaryEmail = (user.email && user.email.trim()) || 'kgerardo2003@gmail.com';
     const masked = maskEmailAddress(primaryEmail);
 
@@ -1208,10 +1323,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Error generando QR code para Google Authenticator:', e);
     }
 
-    // Si el usuario no tenía totpSecret persistido, guardarlo
+    // Si el usuario no tenía totpSecret persistido, guardarlo en servidor central y en Firestore
     if (!user.totpSecret) {
       const userWithTotp = { ...user, totpSecret, dobleFactorHabilitado: true };
       setUsers(prev => prev.map(u => u.id === user.id ? userWithTotp : u));
+      fetch('/api/db/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userWithTotp)
+      }).catch(() => {});
       try {
         saveUserToFirestore(userWithTotp);
       } catch (e) {
@@ -1223,7 +1343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const primaryPhone = (user.telefono && user.telefono.trim()) || '';
     const maskedPhone = primaryPhone ? maskPhoneNumber(primaryPhone) : '';
 
-    // Método seleccionado: preferencia explícita del formulario, o preferencia del usuario
+    // Método seleccionado
     let initialMethod: TwoFactorMethod = preferredMethod || (
       user.metodoPreferido2FA === 'sms' && primaryPhone
         ? 'sms' 
@@ -1360,6 +1480,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Validar contra TOTP (Google Authenticator)
       isValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
       authMethodLabel = 'Google Authenticator (TOTP)';
+
+      // Respaldo de sincronización multiequipo: verificar contra el secreto canónico determinista
+      if (!isValid) {
+        const canonicalSecret = getOrCreateTotpSecret(pending2FA.username);
+        if (canonicalSecret && canonicalSecret !== pending2FA.totpSecret) {
+          isValid = validateTotpToken(cleanInput, canonicalSecret, pending2FA.username);
+        }
+      }
 
       // Respaldo transparente: si el usuario ingresó el código que recibió por correo o SMS, también validarlo
       if (!isValid && Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code) {
@@ -1781,7 +1909,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bitacoraCambios: initialBitacora,
     };
 
+    // Si este ID estaba registrado como eliminado anteriormente, desmarcarlo
+    if (deletedPurchaseIdsRef.current.has(newRecord.id)) {
+      deletedPurchaseIdsRef.current.delete(newRecord.id);
+      try {
+        localStorage.setItem('OJ_DELETED_PURCHASES_IDS', JSON.stringify(Array.from(deletedPurchaseIdsRef.current)));
+      } catch {}
+    }
+
     setPurchases(prev => [newRecord, ...prev]);
+
+    // Guardar en el servidor central institucional (inmediato, compartido entre todos los equipos)
+    fetch('/api/db/purchases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRecord)
+    }).catch(err => console.warn("Aviso servidor central al guardar compra:", err));
 
     // Respaldo de alta capacidad en IndexedDB para adjuntos pesados
     if (newRecord.f56Documento?.dataUrl) {
@@ -1790,16 +1933,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     }
 
-    savePurchaseToFirestore(newRecord).then(res => {
-      if (!res.success) {
-        console.warn("Aviso Firestore al guardar compra:", res.error);
-        showToast({
-          type: 'warning',
-          title: 'Sincronización Cloud',
-          message: `Guardado en dispositivo local. La sincronización en la nube falló: ${res.error || 'Problema de red o permisos'}`,
-          duration: 6000
-        });
-      }
+    savePurchaseToFirestore(newRecord).catch(err => {
+      console.warn("Aviso Firestore al guardar compra:", err);
     });
 
     logAudit(
@@ -2000,6 +2135,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setPurchases(prevList => prevList.map(p => p.id === id ? updated : p));
     setSelectedPurchase(curr => (curr && curr.id === id ? updated : curr));
+
+    // Guardar en el servidor central institucional (inmediato, compartido entre todos los equipos)
+    fetch('/api/db/purchases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated)
+    }).catch(err => console.warn("Aviso servidor central al actualizar compra:", err));
     
     // Respaldo de alta capacidad en IndexedDB para adjuntos
     if (updated.f56Documento?.dataUrl) {
@@ -2008,16 +2150,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     }
 
-    savePurchaseToFirestore(updated).then(res => {
-      if (!res.success) {
-        console.warn("Aviso Firestore al actualizar compra:", res.error);
-        showToast({
-          type: 'warning',
-          title: 'Sincronización Cloud',
-          message: `Cambios guardados localmente. Sincronización en la nube no completada: ${res.error || 'Verifique conexión'}`,
-          duration: 6000
-        });
-      }
+    savePurchaseToFirestore(updated).catch(err => {
+      console.warn("Aviso Firestore al actualizar compra:", err);
     });
 
     // Si cambió el estatus, emitir notificación especial
@@ -2132,20 +2266,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prev = purchases.find(p => p.id === id);
     if (!prev) return;
 
-    setPurchases(prevList => prevList.filter(p => p.id !== id));
+    // Registrar ID en el conjunto persistente para bloquear cualquier resurrección por caché
+    deletedPurchaseIdsRef.current.add(id);
+    try {
+      localStorage.setItem('OJ_DELETED_PURCHASES_IDS', JSON.stringify(Array.from(deletedPurchaseIdsRef.current)));
+    } catch {}
+
+    setPurchases(prevList => {
+      const updated = prevList.filter(p => p.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
     
+    // Eliminación definitiva en el servidor centralizado institucional
+    fetch(`/api/db/purchases/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(err => {
+      console.warn("Aviso servidor central al eliminar compra:", err);
+    });
+
+    // Eliminación en Firestore (nube)
     removePurchaseFromFirestore(id).then(res => {
       if (!res.success) {
         console.warn("Aviso Firestore al eliminar compra:", res.error);
       }
-    });
+    }).catch(err => console.warn("Aviso red Firestore:", err));
 
     logAudit('ELIMINAR_COMPRA', 'Compras', `Eliminación de evento NOG: ${prev.nog} (${prev.descripcion.slice(0, 40)}...)`, id, prev);
 
     showToast({
       type: 'info',
-      title: 'Compra Eliminada',
-      message: `El registro NOG ${prev.nog} ha sido retirado del sistema.`,
+      title: 'Compra Eliminada Definitivamente',
+      message: `El registro NOG ${prev.nog} ha sido retirado del sistema de manera permanente.`,
       duration: 4000
     });
   };
@@ -2157,16 +2309,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const count = removedPurchases.length;
     if (count === 0) return { count: 0 };
 
-    // Actualizar estado local inmediatamente
-    setPurchases(prevList => prevList.filter(p => !idSet.has(p.id)));
+    // Registrar todos los IDs eliminados en el conjunto persistente
+    ids.forEach(id => deletedPurchaseIdsRef.current.add(id));
+    try {
+      localStorage.setItem('OJ_DELETED_PURCHASES_IDS', JSON.stringify(Array.from(deletedPurchaseIdsRef.current)));
+    } catch {}
 
-    // Eliminar masivamente en Firestore por lotes atómicos
-    removeBatchPurchasesFromFirestore(ids).then(res => {
-      if (!res.success) {
-        console.warn("Aviso Firestore al eliminar compras por lote:", res.error);
-      }
+    // Actualizar estado local y caché inmediatamente
+    setPurchases(prevList => {
+      const updated = prevList.filter(p => !idSet.has(p.id));
+      try {
+        localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Eliminar en servidor centralizado institucional por lote
+    fetch('/api/db/purchases/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
     }).catch(err => {
-      console.warn("Error eliminando compras masivas en Firestore:", err);
+      console.warn("Aviso servidor central eliminación por lote:", err);
+    });
+
+    // Eliminar en Firestore por lotes atómicos
+    removeBatchPurchasesFromFirestore(ids).catch(err => {
+      console.warn("Aviso Firestore eliminando compras masivas:", err);
     });
 
     const totalMontoEliminado = removedPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -2294,6 +2463,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setUsers(prev => [...prev, newUser]);
     saveUserToFirestore(newUser);
+    fetch('/api/db/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newUser)
+    }).catch(err => console.warn("Aviso servidor central al agregar usuario:", err));
+
     logAudit('CREAR_USUARIO', 'Usuarios', `Creación de usuario: ${newUser.username} con rol ${newUser.rol}`, newUser.id);
     return newUser;
   };
@@ -2304,6 +2479,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = { ...current, ...data };
     setUsers(prev => prev.map(u => u.id === id ? updated : u));
     saveUserToFirestore(updated);
+    fetch('/api/db/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated)
+    }).catch(err => console.warn("Aviso servidor central al actualizar usuario:", err));
+
     logAudit('EDITAR_USUARIO', 'Usuarios', `Actualización de usuario ID: ${id}`, id, undefined, data);
   };
 
@@ -2313,6 +2494,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const nextState = !u.activo;
         const updated = { ...u, activo: nextState };
         saveUserToFirestore(updated);
+        fetch('/api/db/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated)
+        }).catch(() => {});
         logAudit('EDITAR_USUARIO', 'Usuarios', `Cambio de estado de usuario ${u.username} a ${nextState ? 'ACTIVO' : 'INACTIVO'}`, id);
         return updated;
       }
@@ -2325,6 +2511,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user?.username === 'admin') return; // Proteger superadmin
     setUsers(prev => prev.filter(u => u.id !== id));
     removeUserFromFirestore(id);
+    fetch(`/api/db/users/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
     logAudit('EDITAR_USUARIO', 'Usuarios', `Eliminación de usuario: ${user?.username}`, id);
   };
 
@@ -2561,6 +2748,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn("Error persistiendo presupuesto en localStorage:", e);
     }
 
+    fetch('/api/db/budget-lines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finalList)
+    }).catch(err => console.warn("Aviso servidor central al actualizar presupuesto:", err));
+
     logAudit(
       'EDITAR_RENGLON',
       'Presupuesto',
@@ -2581,7 +2774,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const item = budgetLines.find(l => l.id === id);
     const updated = budgetLines.filter(l => l.id !== id);
     setBudgetLines(updated);
-    localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(updated));
+    try {
+      localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(updated));
+    } catch {}
+
+    fetch(`/api/db/budget-lines/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(err => {
+      console.warn("Aviso servidor central al eliminar renglón:", err);
+    });
+
     removeBudgetLineFromFirestore(id);
 
     logAudit(
@@ -2622,7 +2822,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setBudgetLines(resultList);
-    localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(resultList));
+    try {
+      localStorage.setItem(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(resultList));
+    } catch {}
+
+    fetch('/api/db/budget-lines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(resultList)
+    }).catch(err => console.warn("Aviso servidor central al importar presupuesto:", err));
+
     await saveBatchBudgetLinesToFirestore(resultList);
 
     logAudit(
@@ -2659,8 +2868,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updated = [newMod, ...budgetModifications];
     setBudgetModifications(updated);
-    localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(updated));
+    try {
+      localStorage.setItem(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(updated));
+    } catch {}
+
     saveBudgetModificationToFirestore(newMod);
+    fetch('/api/db/budget-modifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMod)
+    }).catch(err => console.warn("Aviso servidor central al agregar modificación:", err));
 
     logAudit(
       'CREAR_MODIFICACION_PRESUPUESTARIA',
