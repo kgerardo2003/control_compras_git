@@ -64,7 +64,7 @@ export const INITIAL_USERS: User[] = [
     id: 'usr-admin-1',
     username: 'admin',
     nombreCompleto: 'Lic. Kevin Gerardo López de León',
-    email: 'klopez@oj.gob.gt',
+    email: 'kgerardo2003@gmail.com',
     password: 'Guate2026*',
     rol: 'administrador',
     perfilId: 'prof-admin',

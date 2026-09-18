@@ -304,6 +304,25 @@ export async function removeUserFromFirestore(userId: string): Promise<void> {
   }
 }
 
+// Sembrado inicial de contingencia si el directorio de usuarios está vacío
+export async function seedUsersIfEmpty(initialUsers: User[]): Promise<void> {
+  try {
+    const usersSnap = await getDocs(query(collection(db, USERS_COLLECTION), limit(1)));
+    if (usersSnap.empty) {
+      console.log("Sembrando directorio inicial de usuarios en Firestore...");
+      const batch = writeBatch(db);
+      for (const u of initialUsers) {
+        const ref = doc(db, USERS_COLLECTION, u.id);
+        batch.set(ref, cleanUndefined(u));
+      }
+      await batch.commit();
+      console.log("Directorio inicial de usuarios sembrado exitosamente en Firestore.");
+    }
+  } catch (err) {
+    console.warn("Nota sobre verificación o sembrado de usuarios en Firestore:", err);
+  }
+}
+
 // Sembrado inicial si la base de datos está vacía
 export async function seedInitialDataIfEmpty(
   initialPurchases: PurchaseRecord[],
@@ -314,7 +333,7 @@ export async function seedInitialDataIfEmpty(
   try {
     const purchasesSnap = await getDocs(query(collection(db, PURCHASES_COLLECTION), limit(1)));
     if (purchasesSnap.empty) {
-      console.log("Sembrando datos institucionales iniciales en Firestore...");
+      console.log("Sembrando adquisiciones y catálogos iniciales en Firestore...");
       const batch = writeBatch(db);
 
       // Compras
@@ -329,12 +348,6 @@ export async function seedInitialDataIfEmpty(
         batch.set(ref, cleanUndefined(c));
       }
 
-      // Usuarios
-      for (const u of initialUsers) {
-        const ref = doc(db, USERS_COLLECTION, u.id);
-        batch.set(ref, cleanUndefined(u));
-      }
-
       // Auditoría
       for (const log of initialLogs.slice(0, 15)) {
         const ref = doc(db, AUDIT_LOGS_COLLECTION, log.id);
@@ -342,8 +355,11 @@ export async function seedInitialDataIfEmpty(
       }
 
       await batch.commit();
-      console.log("Sembrado inicial de Firestore completado con éxito.");
+      console.log("Sembrado inicial de compras y catálogos en Firestore completado con éxito.");
     }
+
+    // Asegurar que el directorio de usuarios siempre esté sembrado
+    await seedUsersIfEmpty(initialUsers);
   } catch (err) {
     console.warn("Nota sobre sembrado inicial en Firestore:", err);
   }
