@@ -17,8 +17,15 @@ import {
   Smartphone,
   QrCode,
   Copy,
-  Check
+  Check,
+  X
 } from 'lucide-react';
+import { TwoFactorMethod } from '../types';
+import { 
+  getOrCreateTotpSecret, 
+  generateOtpAuthUri, 
+  generateTotpQrCodeDataUrl 
+} from '../utils/totpUtils';
 import { OJLogo } from './OJLogo';
 
 export const LoginView: React.FC = () => {
@@ -35,6 +42,13 @@ export const LoginView: React.FC = () => {
   // Paso de autenticación: 'credentials' (Paso 1) o 'twoFactor' (Paso 2)
   const [step, setStep] = useState<'credentials' | 'twoFactor'>('credentials');
 
+  // Método de 2FA seleccionado (por defecto Google Authenticator TOTP)
+  const [selectedMethod, setSelectedMethod] = useState<TwoFactorMethod>('totp');
+  const [showStep1QrModal, setShowStep1QrModal] = useState<boolean>(false);
+  const [step1QrUrl, setStep1QrUrl] = useState<string>('');
+  const [step1Secret, setStep1Secret] = useState<string>('');
+  const [copiedStep1Secret, setCopiedStep1Secret] = useState<boolean>(false);
+
   // Formulario Paso 1: Credenciales
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -48,10 +62,24 @@ export const LoginView: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutos en segundos
   const [resendCooldown, setResendCooldown] = useState<number>(0);
   const [isResending, setIsResending] = useState(false);
-  const [showQrCode, setShowQrCode] = useState(false);
+  const [showQrCode, setShowQrCode] = useState(true);
   const [copiedSecret, setCopiedSecret] = useState(false);
 
   const digitInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleOpenStep1QrModal = async () => {
+    const targetUser = username.trim() || 'admin';
+    const secret = getOrCreateTotpSecret(targetUser);
+    const uri = generateOtpAuthUri(targetUser, secret);
+    setStep1Secret(secret);
+    setShowStep1QrModal(true);
+    try {
+      const url = await generateTotpQrCodeDataUrl(uri);
+      setStep1QrUrl(url);
+    } catch (e) {
+      console.error('Error generando QR para vista previa:', e);
+    }
+  };
 
   // Temporizador para expiración del código 2FA
   useEffect(() => {
@@ -111,7 +139,7 @@ export const LoginView: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const result = await initiateLogin(username.trim(), password);
+      const result = await initiateLogin(username.trim(), password, selectedMethod);
       setIsLoading(false);
 
       if (result.success) {
@@ -120,7 +148,11 @@ export const LoginView: React.FC = () => {
           setTimeLeft(300);
           setResendCooldown(30);
           setOtpDigits(['', '', '', '', '', '']);
-          setSuccessMsg(`Código de verificación enviado exitosamente a su correo institucional.`);
+          if (selectedMethod === 'totp') {
+            setSuccessMsg('Verificación 2FA iniciada con Google Authenticator. Ingrese el código temporal de 6 dígitos.');
+          } else {
+            setSuccessMsg('Código de verificación enviado exitosamente a su correo institucional.');
+          }
         } else {
           setSuccessMsg(`Credenciales verificadas exitosamente. Ingresando al panel principal...`);
           setActiveTab('dashboard');
@@ -412,6 +444,79 @@ export const LoginView: React.FC = () => {
                       className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 cursor-pointer"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Selector de Método de Doble Factor (2FA) */}
+                <div className="pt-2 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-200">
+                      Segundo Factor de Autenticación (2FA):
+                    </label>
+                    <span className="text-[10px] text-amber-300 font-semibold flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-amber-400" />
+                      Obligatorio
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMethod('totp')}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                        selectedMethod === 'totp'
+                          ? 'bg-[#102452] border-amber-400 shadow-md ring-1 ring-amber-400/60 text-white'
+                          : 'bg-[#060f26]/70 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:border-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
+                          <Smartphone className="w-3.5 h-3.5 text-amber-400" />
+                          Google Authenticator
+                        </span>
+                        {selectedMethod === 'totp' && (
+                          <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/40" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-300 mt-1 leading-tight">
+                        Códigos dinámicos en su app móvil cada 30s (Recomendado)
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMethod('email')}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                        selectedMethod === 'email'
+                          ? 'bg-[#102452] border-blue-400 shadow-md ring-1 ring-blue-400/60 text-white'
+                          : 'bg-[#060f26]/70 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:border-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-blue-300 flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-blue-400" />
+                          Correo Institucional
+                        </span>
+                        {selectedMethod === 'email' && (
+                          <span className="w-2 h-2 rounded-full bg-blue-400 ring-2 ring-blue-400/40" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-300 mt-1 leading-tight">
+                        Código de 6 dígitos enviado a su correo institucional
+                      </p>
+                    </button>
+                  </div>
+
+                  {/* Enlace para ver QR o instrucciones de Google Authenticator */}
+                  <div className="pt-1 flex items-center justify-between text-[11px]">
+                    <button
+                      type="button"
+                      onClick={handleOpenStep1QrModal}
+                      className="text-amber-300 hover:text-amber-200 flex items-center gap-1.5 cursor-pointer font-medium transition-colors"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="underline">¿Primera vez? Ver instrucciones y vincular QR de Google Authenticator</span>
                     </button>
                   </div>
                 </div>
@@ -742,6 +847,96 @@ export const LoginView: React.FC = () => {
           Palacio de Justicia, Centro Cívico, Ciudad de Guatemala • Todos los derechos reservados © 2026
         </p>
       </footer>
+
+      {/* Modal Rápido de Vinculación QR en Paso 1 */}
+      {showStep1QrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#0b183c] border border-amber-400/40 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden text-slate-100 animate-in zoom-in-95 duration-200">
+            
+            <div className="px-5 py-3.5 border-b border-[#1c39bb]/40 bg-gradient-to-r from-[#0d1f4d] to-[#0a1738] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                  <QrCode className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white">Vincular Google Authenticator</h3>
+                  <p className="text-[10px] text-slate-300">Usuario: {username.trim() || 'admin'}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStep1QrModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-center">
+              <div className="bg-[#071330] p-3 rounded-xl border border-[#4682b4]/30 text-[11px] text-slate-300 text-left space-y-1">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Pasos para escanear:</span>
+                </p>
+                <ol className="list-decimal list-inside space-y-0.5 text-[10px]">
+                  <li>Abra <strong>Google Authenticator</strong> en su celular.</li>
+                  <li>Toque <strong>"+"</strong> y elija <strong>"Escanear un código QR"</strong>.</li>
+                  <li>Apunte la cámara a la pantalla.</li>
+                </ol>
+              </div>
+
+              {/* QR Image */}
+              <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl shadow-inner max-w-[200px] mx-auto border-2 border-amber-400">
+                {step1QrUrl ? (
+                  <img src={step1QrUrl} alt="QR Google Authenticator" className="w-40 h-40 object-contain rounded" />
+                ) : (
+                  <div className="w-40 h-40 flex items-center justify-center text-slate-400 text-xs">
+                    Generando QR...
+                  </div>
+                )}
+                <span className="text-[9px] font-mono text-slate-800 font-bold mt-1">
+                  OJ - {username.trim() || 'admin'}
+                </span>
+              </div>
+
+              {/* Clave Secreta */}
+              {step1Secret && (
+                <div className="p-2.5 rounded-lg bg-[#0a1738] border border-[#4682b4]/30 text-left space-y-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                    Clave de configuración manual:
+                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <code className="font-mono text-xs text-amber-300 font-bold tracking-wider break-all select-all">
+                      {step1Secret}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(step1Secret);
+                        setCopiedStep1Secret(true);
+                        setTimeout(() => setCopiedStep1Secret(false), 2500);
+                      }}
+                      className="px-2 py-1 rounded bg-[#1c39bb] hover:bg-[#254bdb] text-white text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                    >
+                      {copiedStep1Secret ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedStep1Secret ? 'Copiada' : 'Copiar'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowStep1QrModal(false)}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider shadow cursor-pointer transition-all"
+              >
+                Entendido / Cerrar Ventana
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );

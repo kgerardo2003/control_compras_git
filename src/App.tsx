@@ -25,6 +25,7 @@ import { PurchaseFormModal } from './components/PurchaseFormModal';
 import { PurchaseDetailModal } from './components/PurchaseDetailModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { ImportExcelModal } from './components/ImportExcelModal';
+import { GoogleAuthModal } from './components/GoogleAuthModal';
 import { ToastContainer } from './components/ToastContainer';
 
 const AppContent: React.FC = () => {
@@ -202,6 +203,7 @@ const AppContent: React.FC = () => {
       <PurchaseFormModal />
       <PurchaseDetailModal />
       <ChangePasswordModal />
+      <GoogleAuthModal />
       <ImportExcelModal />
 
       {/* Notificaciones Flotantes (Toasts) */}

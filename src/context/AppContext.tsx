@@ -116,6 +116,8 @@ interface AppContextType {
   setIsChangePasswordModalOpen: (open: boolean) => void;
   isImportModalOpen: boolean;
   setIsImportModalOpen: (open: boolean) => void;
+  isGoogleAuthModalOpen: boolean;
+  setIsGoogleAuthModalOpen: (open: boolean) => void;
 
   // Temas y Personalización
   theme: SystemThemeId;
@@ -127,7 +129,7 @@ interface AppContextType {
   
   // Auth & Doble Factor de Autenticación (2FA - Correo OTP y Google Authenticator)
   pending2FA: TwoFactorState | null;
-  initiateLogin: (username: string, password?: string) => Promise<{
+  initiateLogin: (username: string, password?: string, preferredMethod?: TwoFactorMethod) => Promise<{
     success: boolean;
     requires2FA?: boolean;
     message: string;
@@ -272,18 +274,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed: User[] = JSON.parse(saved);
-        const adminIndex = parsed.findIndex(u => u.username.toLowerCase() === 'admin');
+        const normalized = parsed.map(u => ({
+          ...u,
+          dobleFactorHabilitado: true,
+          metodoPreferido2FA: u.metodoPreferido2FA || 'totp'
+        }));
+        const adminIndex = normalized.findIndex(u => u.username.toLowerCase() === 'admin');
         if (adminIndex >= 0) {
-          parsed[adminIndex].nombreCompleto = 'Lic. Kevin Gerardo López de León';
-          parsed[adminIndex].email = 'klopez@oj.gob.gt';
-          parsed[adminIndex].password = parsed[adminIndex].password || 'Guate2026*';
-          parsed[adminIndex].rol = 'administrador';
-          parsed[adminIndex].cargo = 'Gerente de Informática';
-          parsed[adminIndex].departamento = 'Gerencia de Informática - OJ';
-          parsed[adminIndex].activo = true;
-          return parsed;
+          normalized[adminIndex].nombreCompleto = 'Lic. Kevin Gerardo López de León';
+          normalized[adminIndex].email = 'klopez@oj.gob.gt';
+          normalized[adminIndex].password = normalized[adminIndex].password || 'Guate2026*';
+          normalized[adminIndex].rol = 'administrador';
+          normalized[adminIndex].cargo = 'Gerente de Informática';
+          normalized[adminIndex].departamento = 'Gerencia de Informática - OJ';
+          normalized[adminIndex].activo = true;
+          normalized[adminIndex].dobleFactorHabilitado = true;
+          normalized[adminIndex].metodoPreferido2FA = normalized[adminIndex].metodoPreferido2FA || 'totp';
+          return normalized;
         } else {
-          return [INITIAL_USERS[0], ...parsed];
+          return [INITIAL_USERS[0], ...normalized];
         }
       } catch {
         return INITIAL_USERS;
@@ -445,6 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState<boolean>(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [isGoogleAuthModalOpen, setIsGoogleAuthModalOpen] = useState<boolean>(false);
 
   // Sincronización en Tiempo Real Multiusuario con Firebase Firestore
   useEffect(() => {
@@ -1093,7 +1103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // 1. Iniciar Logueo con Verificación de 1er Factor y Despacho de 2FA
-  const initiateLogin = async (username: string, password?: string): Promise<{
+  const initiateLogin = async (username: string, password?: string, preferredMethod?: TwoFactorMethod): Promise<{
     success: boolean;
     requires2FA?: boolean;
     message: string;
@@ -1114,12 +1124,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Contraseña institucional incorrecta.' };
     }
 
-    // Si el usuario tiene 2FA deshabilitado explícitamente (por defecto está habilitado)
-    if (user.dobleFactorHabilitado === false) {
-      const result = login(username, password);
-      return { success: result.success, requires2FA: false, message: result.message };
-    }
-
     // Generar código numérico seguro de 6 dígitos para el correo
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
     const fullName = user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.nombreCompleto;
@@ -1138,10 +1142,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Si el usuario no tenía totpSecret persistido, guardarlo
     if (!user.totpSecret) {
-      const userWithTotp = { ...user, totpSecret };
+      const userWithTotp = { ...user, totpSecret, dobleFactorHabilitado: true };
       setUsers(prev => prev.map(u => u.id === user.id ? userWithTotp : u));
-      saveUserToFirestore(userWithTotp);
+      try {
+        saveUserToFirestore(userWithTotp);
+      } catch (e) {
+        console.warn('Nota sincronización Firestore:', e);
+      }
     }
+
+    // Método seleccionado: preferencia explícita del formulario, o preferencia del usuario, por defecto Google Authenticator (TOTP)
+    const initialMethod: TwoFactorMethod = preferredMethod || (user.metodoPreferido2FA === 'email' ? 'email' : 'totp');
 
     const pendingState: TwoFactorState = {
       userId: user.id,
@@ -1153,7 +1164,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutos de vigencia
       attemptsLeft: 3,
       sentAt: Date.now(),
-      activeMethod: user.metodoPreferido2FA === 'totp' ? 'totp' : 'email',
+      activeMethod: initialMethod,
       totpSecret,
       totpUri,
       qrCodeUrl
@@ -1161,7 +1172,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setPending2FA(pendingState);
 
-    // Preparar contenido oficial del correo 2FA
+    // Preparar y despachar notificación por correo (en segundo plano, no bloquea TOTP)
     const emailData = buildTwoFactorEmail({
       username: user.username,
       nombreCompleto: fullName,
@@ -1190,7 +1201,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return {
       success: true,
       requires2FA: true,
-      message: `Código de seguridad 2FA enviado a ${masked}`,
+      message: initialMethod === 'totp'
+        ? 'Autenticación con Google Authenticator requerida. Ingrese el código temporal de 6 dígitos.'
+        : `Código de seguridad 2FA enviado a ${masked}`,
       email: masked,
       pendingData: pendingState
     };
@@ -2718,6 +2731,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsChangePasswordModalOpen,
         isImportModalOpen,
         setIsImportModalOpen,
+        isGoogleAuthModalOpen,
+        setIsGoogleAuthModalOpen,
         pending2FA,
         initiateLogin,
         verify2FACode,

@@ -20,6 +20,7 @@ import {
   Copy,
   Check
 } from 'lucide-react';
+import { TwoFactorMethod } from '../types';
 
 export const LoginModal: React.FC = () => {
   const { 
@@ -34,6 +35,7 @@ export const LoginModal: React.FC = () => {
   } = useApp();
   
   const [step, setStep] = useState<'credentials' | 'twoFactor'>('credentials');
+  const [selectedMethod, setSelectedMethod] = useState<TwoFactorMethod>('totp');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -46,7 +48,7 @@ export const LoginModal: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState<number>(300);
   const [resendCooldown, setResendCooldown] = useState<number>(0);
   const [isResending, setIsResending] = useState(false);
-  const [showQrCode, setShowQrCode] = useState(false);
+  const [showQrCode, setShowQrCode] = useState(true);
   const [copiedSecret, setCopiedSecret] = useState(false);
 
   const digitInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -118,7 +120,7 @@ export const LoginModal: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const result = await initiateLogin(username.trim(), password);
+      const result = await initiateLogin(username.trim(), password, selectedMethod);
       setIsLoading(false);
 
       if (result.success) {
@@ -127,7 +129,11 @@ export const LoginModal: React.FC = () => {
           setTimeLeft(300);
           setResendCooldown(30);
           setOtpDigits(['', '', '', '', '', '']);
-          setSuccessMsg(`Código de verificación enviado a su correo institucional.`);
+          if (selectedMethod === 'totp') {
+            setSuccessMsg('Verificación con Google Authenticator requerida.');
+          } else {
+            setSuccessMsg(`Código de verificación enviado a su correo institucional.`);
+          }
         } else {
           setSuccessMsg(result.message);
           setTimeout(() => {
@@ -398,6 +404,50 @@ export const LoginModal: React.FC = () => {
                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Selector de Método 2FA en Modal */}
+              <div className="pt-1 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Método de Doble Factor (2FA):
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMethod('totp')}
+                    className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                      selectedMethod === 'totp'
+                        ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-sm ring-1 ring-amber-400'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-amber-800">
+                      <Smartphone className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Google Auth</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      App en su móvil (Recomendado)
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMethod('email')}
+                    className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                      selectedMethod === 'email'
+                        ? 'bg-blue-50 border-blue-400 text-blue-900 shadow-sm ring-1 ring-blue-400'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-blue-800">
+                      <Mail className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Correo OTP</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Código de 6 dígitos
+                    </p>
                   </button>
                 </div>
               </div>

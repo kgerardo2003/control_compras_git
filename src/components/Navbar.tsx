@@ -16,7 +16,9 @@ import {
   Check,
   Database,
   Cloud,
-  KeyRound
+  KeyRound,
+  Smartphone,
+  QrCode
 } from 'lucide-react';
 import { UserRole, SystemThemeId } from '../types';
 import { formatDateTime } from '../utils/formatters';
@@ -32,6 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
     logout, 
     setIsLoginModalOpen, 
     setIsChangePasswordModalOpen,
+    setIsGoogleAuthModalOpen,
     switchDemoUser,
     notifications, 
     unreadNotificationsCount, 
@@ -393,6 +396,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                 </div>
 
                 <div className="border-t border-slate-100 pt-1 px-2 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setIsGoogleAuthModalOpen(true); setIsUserMenuOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-amber-700 hover:bg-amber-50 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Google Authenticator (QR)</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => { setIsChangePasswordModalOpen(true); setIsUserMenuOpen(false); }}
