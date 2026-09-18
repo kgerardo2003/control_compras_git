@@ -18,7 +18,9 @@ import {
   Smartphone,
   QrCode,
   Copy,
-  Check
+  Check,
+  MessageSquare,
+  Phone
 } from 'lucide-react';
 import { TwoFactorMethod } from '../types';
 
@@ -131,6 +133,8 @@ export const LoginModal: React.FC = () => {
           setOtpDigits(['', '', '', '', '', '']);
           if (selectedMethod === 'totp') {
             setSuccessMsg('Verificación con Google Authenticator requerida.');
+          } else if (selectedMethod === 'sms') {
+            setSuccessMsg(`Código de verificación enviado por mensaje SMS al teléfono móvil registrado.`);
           } else {
             setSuccessMsg(`Código de verificación enviado al correo registrado en su ficha de usuario.`);
           }
@@ -286,7 +290,7 @@ export const LoginModal: React.FC = () => {
     }
   };
 
-  const handleSwitchMethod = (method: 'email' | 'totp') => {
+  const handleSwitchMethod = (method: TwoFactorMethod) => {
     set2FAMethod(method);
     setOtpDigits(['', '', '', '', '', '']);
     setErrorMsg('');
@@ -423,12 +427,12 @@ export const LoginModal: React.FC = () => {
                         : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-amber-800">
-                      <Smartphone className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Google Auth</span>
+                    <div className="flex items-center gap-1 font-bold text-xs text-amber-800">
+                      <Smartphone className="w-3 h-3 text-amber-600" />
+                      <span className="truncate">Google Auth</span>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                      App en su móvil (Recomendado)
+                    <p className="text-[9px] text-slate-500 mt-0.5 leading-tight">
+                      App móvil
                     </p>
                   </button>
 
@@ -441,12 +445,12 @@ export const LoginModal: React.FC = () => {
                         : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-blue-800">
-                      <Mail className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Correo OTP</span>
+                    <div className="flex items-center gap-1 font-bold text-xs text-blue-800">
+                      <Mail className="w-3 h-3 text-blue-600" />
+                      <span className="truncate">Correo OTP</span>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                      Código de 6 dígitos
+                    <p className="text-[9px] text-slate-500 mt-0.5 leading-tight">
+                      Código email
                     </p>
                   </button>
                 </div>
@@ -480,28 +484,28 @@ export const LoginModal: React.FC = () => {
                 <div className="grid grid-cols-2 gap-1">
                   <button
                     type="button"
-                    onClick={() => handleSwitchMethod('email')}
-                    className={`py-1.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      pending2FA?.activeMethod === 'email'
-                        ? 'bg-[#1c39bb] text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                    }`}
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>Correo OTP</span>
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => handleSwitchMethod('totp')}
-                    className={`py-1.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
                       pending2FA?.activeMethod === 'totp'
                         ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                     }`}
                   >
-                    <Smartphone className="w-3.5 h-3.5" />
-                    <span>Google Authenticator</span>
+                    <Smartphone className="w-3 h-3" />
+                    <span className="truncate">Google Auth</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchMethod('email')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                      pending2FA?.activeMethod === 'email'
+                        ? 'bg-[#1c39bb] text-white shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <Mail className="w-3 h-3" />
+                    <span className="truncate">Correo OTP</span>
                   </button>
                 </div>
               </div>
@@ -600,9 +604,11 @@ export const LoginModal: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold text-slate-700">
-                    {pending2FA?.activeMethod === 'totp' ? 'Código de Google Authenticator' : 'Código de Seguridad (6 dígitos)'}
+                    {pending2FA?.activeMethod === 'totp'
+                      ? 'Código de Google Authenticator'
+                      : 'Código de Seguridad por Correo (6 dígitos)'}
                   </label>
-                  {pending2FA?.activeMethod === 'email' ? (
+                  {pending2FA?.activeMethod !== 'totp' ? (
                     <div className="flex items-center gap-1 text-[11px] font-mono text-slate-500">
                       <Clock className="w-3.5 h-3.5 text-amber-600" />
                       <span>{formatTime(timeLeft)}</span>
@@ -626,7 +632,7 @@ export const LoginModal: React.FC = () => {
                       value={digit}
                       onChange={(e) => handleDigitChange(idx, e.target.value)}
                       onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                      disabled={isLoading || (pending2FA?.activeMethod === 'email' && timeLeft === 0)}
+                      disabled={isLoading || (pending2FA?.activeMethod !== 'totp' && timeLeft === 0)}
                       placeholder="•"
                       className={`w-10 h-12 text-center font-mono font-bold text-lg rounded-lg border transition-all ${
                         digit
@@ -641,7 +647,7 @@ export const LoginModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => verifyCodeSubmission()}
-                disabled={isLoading || otpDigits.join('').length !== 6 || (pending2FA?.activeMethod === 'email' && timeLeft === 0)}
+                disabled={isLoading || otpDigits.join('').length !== 6 || (pending2FA?.activeMethod !== 'totp' && timeLeft === 0)}
                 className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#1c39bb] to-[#254bdb] hover:from-[#162e7a] hover:to-[#1c39bb] text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-40"
               >
                 {isLoading ? (
@@ -662,18 +668,20 @@ export const LoginModal: React.FC = () => {
                     disabled={isResending || resendCooldown > 0}
                     className="flex items-center gap-1 text-slate-600 hover:text-blue-700 disabled:text-slate-400 font-medium cursor-pointer"
                   >
-                    <RefreshCw className={`w-3 h-3 ${isResending ? 'animate-spin' : ''}`} />
-                    <span>{resendCooldown > 0 ? `Reenviar en ${resendCooldown}s` : 'Reenviar código'}</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
+                    <span>{resendCooldown > 0 ? `Reenviar en ${resendCooldown}s` : 'Reenviar código por correo'}</span>
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchMethod('email')}
-                    className="flex items-center gap-1 text-slate-600 hover:text-blue-700 font-medium cursor-pointer"
-                  >
-                    <Mail className="w-3 h-3" />
-                    <span>Recibir por correo</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchMethod('email')}
+                      className="flex items-center gap-1 text-slate-600 hover:text-blue-700 font-medium cursor-pointer"
+                    >
+                      <Mail className="w-3 h-3 text-blue-600" />
+                      <span>Recibir código por correo</span>
+                    </button>
+                  </div>
                 )}
 
                 <button

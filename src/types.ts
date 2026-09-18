@@ -20,6 +20,7 @@ export interface User {
   username: string;
   nombreCompleto: string;
   email: string;
+  telefono?: string; // Número de teléfono móvil para recepción de códigos 2FA por SMS
   password?: string;
   rol: UserRole;
   perfilId?: string; // ID o código del perfil de usuario asignado
@@ -31,10 +32,10 @@ export interface User {
   ultimoAcceso?: string;
   dobleFactorHabilitado?: boolean; // Segundo factor de autenticación 2FA requerido
   totpSecret?: string; // Clave secreta Base32 para Google Authenticator
-  metodoPreferido2FA?: 'email' | 'totp' | 'ambos'; // Método preferido para 2FA
+  metodoPreferido2FA?: 'email' | 'totp' | 'sms' | 'ambos'; // Método preferido para 2FA
 }
 
-export type TwoFactorMethod = 'email' | 'totp';
+export type TwoFactorMethod = 'email' | 'totp' | 'sms';
 
 export interface TwoFactorState {
   userId: string;
@@ -42,6 +43,9 @@ export interface TwoFactorState {
   nombreCompleto: string;
   email: string;
   maskedEmail: string;
+  telefono?: string;
+  maskedTelefono?: string;
+  smsSent?: boolean;
   code: string;
   expiresAt: number; // Timestamp en ms (ej. 5 minutos)
   attemptsLeft: number;

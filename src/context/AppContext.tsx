@@ -46,6 +46,7 @@ import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
 import { ensureValidDocument } from '../utils/documentUtils';
 import { buildUserWelcomeEmail } from '../utils/userEmailTemplate';
 import { buildTwoFactorEmail } from '../utils/twoFactorEmailTemplate';
+import { sendSmsVerification, maskPhoneNumber } from '../utils/smsService';
 import { 
   createAutomaticTimelineEvent, 
   detectAutomaticEventsOnUpdate, 
@@ -1218,8 +1219,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Método seleccionado: preferencia explícita del formulario, o preferencia del usuario, por defecto Google Authenticator (TOTP)
-    const initialMethod: TwoFactorMethod = preferredMethod || (user.metodoPreferido2FA === 'email' ? 'email' : 'totp');
+    // Teléfono registrado en la ficha del usuario
+    const primaryPhone = (user.telefono && user.telefono.trim()) || '';
+    const maskedPhone = primaryPhone ? maskPhoneNumber(primaryPhone) : '';
+
+    // Método seleccionado: preferencia explícita del formulario, o preferencia del usuario
+    let initialMethod: TwoFactorMethod = preferredMethod || (
+      user.metodoPreferido2FA === 'sms' && primaryPhone
+        ? 'sms' 
+        : (user.metodoPreferido2FA === 'email' ? 'email' : 'totp')
+    );
+
+    // Si se solicitó SMS pero el usuario no tiene teléfono registrado en su ficha
+    if (initialMethod === 'sms' && !primaryPhone) {
+      if (preferredMethod === 'sms') {
+        return {
+          success: false,
+          message: 'El usuario no posee un número de teléfono móvil registrado en su ficha para 2FA por SMS. Por favor elija Correo Registrado o Google Authenticator.'
+        };
+      }
+      initialMethod = 'totp';
+    }
 
     const pendingState: TwoFactorState = {
       userId: user.id,
@@ -1227,6 +1247,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       nombreCompleto: fullName,
       email: primaryEmail,
       maskedEmail: masked,
+      telefono: primaryPhone || undefined,
+      maskedTelefono: maskedPhone || undefined,
+      smsSent: false,
       code: generatedCode,
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutos de vigencia
       attemptsLeft: 3,
@@ -1238,6 +1261,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setPending2FA(pendingState);
+
+    // Despacho del código por SMS si el método es 'sms'
+    if (initialMethod === 'sms' && primaryPhone) {
+      sendSmsVerification({
+        to: primaryPhone,
+        code: generatedCode,
+        username: user.username,
+        nombreCompleto: fullName,
+        expiresInMinutes: 5
+      }).then((res) => {
+        if (res.success) {
+          setPending2FA(prev => prev ? { ...prev, smsSent: true } : null);
+        }
+      }).catch(err => {
+        console.warn('Advertencia al enviar código 2FA por SMS:', err);
+      });
+    }
 
     // Preparar y despachar notificación por correo directamente a la dirección registrada en la ficha del usuario
     const emailData = buildTwoFactorEmail({
@@ -1262,23 +1302,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Excepción al despachar código 2FA:', e);
     }
 
+    let statusMsg = '';
+    if (initialMethod === 'totp') {
+      statusMsg = 'Autenticación con Google Authenticator requerida. Ingrese el código temporal de 6 dígitos.';
+    } else if (initialMethod === 'sms') {
+      statusMsg = `Código de seguridad 2FA enviado por mensaje de texto SMS al teléfono registrado: ${maskedPhone}`;
+    } else {
+      statusMsg = `Código de seguridad 2FA enviado al correo registrado: ${masked}`;
+    }
+
     return {
       success: true,
       requires2FA: true,
-      message: initialMethod === 'totp'
-        ? 'Autenticación con Google Authenticator requerida. Ingrese el código temporal de 6 dígitos.'
-        : `Código de seguridad 2FA enviado al correo registrado: ${masked}`,
+      message: statusMsg,
       email: masked,
       pendingData: pendingState
     };
   };
 
-  // Cambiar método activo de 2FA (Correo OTP vs Google Authenticator)
+  // Cambiar método activo de 2FA (Correo OTP vs Google Authenticator vs Mensaje SMS)
   const set2FAMethod = (method: TwoFactorMethod) => {
-    setPending2FA(prev => prev ? { ...prev, activeMethod: method } : null);
+    setPending2FA(prev => {
+      if (!prev) return null;
+      if (method === 'sms' && prev.telefono && !prev.smsSent) {
+        sendSmsVerification({
+          to: prev.telefono,
+          code: prev.code,
+          username: prev.username,
+          nombreCompleto: prev.nombreCompleto,
+          expiresInMinutes: 5
+        }).then(() => {
+          setPending2FA(current => current ? { ...current, smsSent: true } : null);
+        }).catch(err => console.warn('Error al despachar SMS al cambiar método:', err));
+        return { ...prev, activeMethod: method, smsSent: true };
+      }
+      return { ...prev, activeMethod: method };
+    });
   };
 
-  // 2. Verificar Código de Segundo Factor (2FA - Correo OTP o Google Authenticator TOTP)
+  // 2. Verificar Código de Segundo Factor (2FA - Correo OTP, SMS OTP o Google Authenticator TOTP)
   const verify2FACode = (inputCode: string, method?: TwoFactorMethod): { success: boolean; message: string } => {
     if (!pending2FA) {
       return { success: false, message: 'No hay ninguna verificación de segundo factor activa.' };
@@ -1299,10 +1361,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
       authMethodLabel = 'Google Authenticator (TOTP)';
 
-      // Respaldo transparente: si el usuario ingresó el código que recibió por correo, también validarlo
+      // Respaldo transparente: si el usuario ingresó el código que recibió por correo o SMS, también validarlo
       if (!isValid && Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code) {
         isValid = true;
-        authMethodLabel = 'Correo Electrónico (OTP)';
+        authMethodLabel = 'Código Numérico (OTP)';
+      }
+    } else if (currentMethod === 'sms') {
+      // Método SMS OTP
+      const isSmsCodeValid = Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code;
+      const isTotpValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
+
+      if (isSmsCodeValid) {
+        isValid = true;
+        authMethodLabel = 'Mensaje de Texto (SMS OTP)';
+      } else if (isTotpValid) {
+        isValid = true;
+        authMethodLabel = 'Google Authenticator (TOTP)';
+      } else if (Date.now() > pending2FA.expiresAt) {
+        return { success: false, message: 'El código de seguridad por SMS ha expirado (5 minutos). Solicite uno nuevo o use otro método.' };
       }
     } else {
       // Método Email OTP
@@ -1340,7 +1416,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setPending2FA(prev => prev ? { ...prev, attemptsLeft: remaining } : null);
       const methodHelp = currentMethod === 'totp' 
         ? 'Verifique la hora de su teléfono y asegúrese de copiar el código actual de Google Authenticator.' 
-        : 'Verifique el código recibido en su bandeja de correo electrónico.';
+        : (currentMethod === 'sms'
+          ? 'Verifique el código recibido por mensaje de texto SMS en su teléfono móvil.'
+          : 'Verifique el código recibido en su bandeja de correo electrónico.');
       return { 
         success: false, 
         message: `Código de seguridad incorrecto. Le quedan ${remaining} intento(s). ${methodHelp}` 
@@ -1359,6 +1437,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...user, 
       nombreCompleto: user.nombreCompleto || (user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.username),
       email: user.email || 'kgerardo2003@gmail.com',
+      telefono: user.telefono || pending2FA.telefono,
       password: expectedPassword,
       totpSecret: pending2FA.totpSecret,
       ultimoAcceso: new Date().toISOString() 
@@ -1391,7 +1470,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  // 3. Reenviar Código de Segundo Factor por Correo
+  // 3. Reenviar Código de Segundo Factor (por Correo o por SMS)
   const resend2FACode = async (): Promise<{ success: boolean; message: string }> => {
     if (!pending2FA) {
       return { success: false, message: 'No hay ninguna solicitud de 2FA activa.' };
@@ -1408,28 +1487,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setPending2FA(updatedState);
 
-    const emailData = buildTwoFactorEmail({
-      username: updatedState.username,
-      nombreCompleto: updatedState.nombreCompleto,
-      code: newCode,
-      expiresInMinutes: 5
-    });
+    if (pending2FA.activeMethod === 'sms') {
+      if (!pending2FA.telefono) {
+        return { success: false, message: 'El usuario no tiene un número telefónico registrado para reenviar SMS.' };
+      }
+      const smsRes = await sendSmsVerification({
+        to: pending2FA.telefono,
+        code: newCode,
+        username: updatedState.username,
+        nombreCompleto: updatedState.nombreCompleto,
+        expiresInMinutes: 5
+      });
+      return {
+        success: true,
+        message: smsRes.message || `Código de seguridad reenviado por SMS al teléfono registrado: ${updatedState.maskedTelefono || ''}.`
+      };
+    } else {
+      const emailData = buildTwoFactorEmail({
+        username: updatedState.username,
+        nombreCompleto: updatedState.nombreCompleto,
+        code: newCode,
+        expiresInMinutes: 5
+      });
 
-    const recipients: string[] = [updatedState.email];
+      const recipients: string[] = [updatedState.email];
 
-    sendEmailNotification({
-      to: recipients,
-      subject: emailData.subject,
-      text: emailData.text,
-      html: emailData.html
-    }).catch(err => {
-      console.warn('Error reenviando 2FA por correo:', err);
-    });
+      sendEmailNotification({
+        to: recipients,
+        subject: emailData.subject,
+        text: emailData.text,
+        html: emailData.html
+      }).catch(err => {
+        console.warn('Error reenviando 2FA por correo:', err);
+      });
 
-    return {
-      success: true,
-      message: `Se ha enviado un nuevo código de seguridad a su correo registrado: ${updatedState.maskedEmail}.`
-    };
+      return {
+        success: true,
+        message: `Se ha enviado un nuevo código de seguridad a su correo registrado: ${updatedState.maskedEmail}.`
+      };
+    }
   };
 
   // 4. Cancelar 2FA y regresar al Paso 1

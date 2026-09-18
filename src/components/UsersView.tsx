@@ -13,11 +13,14 @@ import {
   ShieldCheck,
   Building2,
   Shield,
-  Eye
+  Eye,
+  Phone,
+  MessageSquare
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
 import { TECHNICAL_AREAS_LIST, ALL_AREAS_LABEL, isUserGlobalAdmin } from '../utils/rbacUtils';
+import { validatePhoneNumber, formatPhoneNumber } from '../utils/smsService';
 
 export const UsersView: React.FC = () => {
   const { 
@@ -43,6 +46,7 @@ export const UsersView: React.FC = () => {
   const [username, setUsername] = useState('');
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
+  const [telefono, setTelefono] = useState('');
   const [password, setPassword] = useState('Guate2026*');
   const [rol, setRol] = useState<UserRole>('usuario_estandar');
   const [perfilId, setPerfilId] = useState<string>('');
@@ -53,6 +57,7 @@ export const UsersView: React.FC = () => {
   const [customAreaText, setCustomAreaText] = useState('');
   const [notifyByEmail, setNotifyByEmail] = useState(true);
   const [dobleFactorHabilitado, setDobleFactorHabilitado] = useState(true);
+  const [metodoPreferido2FA, setMetodoPreferido2FA] = useState<'totp' | 'sms' | 'email'>('totp');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendingEmailUserId, setResendingEmailUserId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -63,6 +68,7 @@ export const UsersView: React.FC = () => {
     setUsername('');
     setNombreCompleto('');
     setEmail('');
+    setTelefono('');
     setPassword('Guate2026*');
     const defaultProf = userProfiles.find(p => p.codigo === 'usuario_estandar') || userProfiles[0];
     setRol(defaultProf ? (defaultProf.codigo as UserRole) : 'usuario_estandar');
@@ -74,6 +80,7 @@ export const UsersView: React.FC = () => {
     setCustomAreaText('');
     setNotifyByEmail(true);
     setDobleFactorHabilitado(true);
+    setMetodoPreferido2FA('totp');
     setIsSubmitting(false);
     setErrorMsg('');
     setIsNewUserModalOpen(true);
@@ -84,11 +91,13 @@ export const UsersView: React.FC = () => {
     setUsername(user.username);
     setNombreCompleto(user.nombreCompleto);
     setEmail(user.email);
+    setTelefono(user.telefono || '');
     setPassword('');
     setRol(user.rol);
     setPerfilId(user.perfilId || '');
     setCargo(user.cargo);
     setDepartamento(user.departamento);
+    setMetodoPreferido2FA(user.metodoPreferido2FA === 'sms' ? 'sms' : (user.metodoPreferido2FA === 'email' ? 'email' : 'totp'));
     
     const assigned = user.area || user.departamento || '';
     setDobleFactorHabilitado(user.dobleFactorHabilitado !== false);
@@ -156,18 +165,32 @@ export const UsersView: React.FC = () => {
       return;
     }
 
+    if (telefono.trim()) {
+      const phoneValidation = validatePhoneNumber(telefono);
+      if (!phoneValidation.valid) {
+        setErrorMsg(phoneValidation.error || 'Formato de número telefónico no válido.');
+        return;
+      }
+    } else if (dobleFactorHabilitado && metodoPreferido2FA === 'sms') {
+      setErrorMsg('Para habilitar el método 2FA por SMS, debe ingresar un número de teléfono móvil válido.');
+      return;
+    }
+
+    const formattedPhone = telefono.trim() ? formatPhoneNumber(telefono) : undefined;
     const resolvedArea = isCustomArea ? customAreaText.trim() : area;
 
     if (editingUser) {
       updateUser(editingUser.id, {
         nombreCompleto: nombreCompleto.trim(),
         email: email.trim(),
+        telefono: formattedPhone,
         rol,
         perfilId: perfilId || undefined,
         cargo: cargo.trim(),
         departamento: departamento.trim() || resolvedArea,
         area: resolvedArea,
         dobleFactorHabilitado,
+        metodoPreferido2FA,
         password: password.trim() ? password.trim() : editingUser.password,
       });
       showToast({
@@ -189,6 +212,7 @@ export const UsersView: React.FC = () => {
         username: username.trim().toLowerCase(),
         nombreCompleto: nombreCompleto.trim(),
         email: email.trim(),
+        telefono: formattedPhone,
         password: assignedPassword,
         rol,
         perfilId: perfilId || undefined,
@@ -196,6 +220,7 @@ export const UsersView: React.FC = () => {
         departamento: departamento.trim() || resolvedArea,
         area: resolvedArea,
         dobleFactorHabilitado,
+        metodoPreferido2FA,
         activo: true,
       });
 
@@ -354,11 +379,11 @@ export const UsersView: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">Usuario</th>
                 <th className="px-4 py-3">Nombre Completo</th>
-                <th className="px-3 py-3">Correo Institucional</th>
+                <th className="px-3 py-3">Contacto (Correo / Teléfono)</th>
                 <th className="px-3 py-3 text-center">Perfil / Rol</th>
                 <th className="px-3 py-3">Área / Depto. Asignado</th>
                 <th className="px-3 py-3">Cargo</th>
-                <th className="px-3 py-3 text-center">Estado</th>
+                <th className="px-3 py-3 text-center">Estado / 2FA</th>
                 <th className="px-3 py-3">Último Acceso</th>
                 {canManage && <th className="px-4 py-3 text-center">Acciones</th>}
               </tr>
@@ -380,9 +405,22 @@ export const UsersView: React.FC = () => {
                     {u.nombreCompleto}
                   </td>
 
-                  {/* Email */}
-                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap">
-                    {u.email}
+                  {/* Contacto: Email y Teléfono */}
+                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap text-xs">
+                    <div className="flex flex-col gap-1">
+                      <span className="flex items-center gap-1.5 text-slate-700 font-medium">
+                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        {u.email}
+                      </span>
+                      {u.telefono ? (
+                        <span className="flex items-center gap-1.5 text-slate-600 font-mono text-[11px]">
+                          <Phone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span>{u.telefono}</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">Sin teléfono registrado</span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Rol */}
@@ -448,6 +486,26 @@ export const UsersView: React.FC = () => {
                         <ShieldCheck className={`w-2.5 h-2.5 ${u.dobleFactorHabilitado !== false ? 'text-blue-600' : 'text-slate-400'}`} />
                         {u.dobleFactorHabilitado !== false ? '2FA Activo' : '2FA Inactivo'}
                       </span>
+                      {u.dobleFactorHabilitado !== false && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          {u.metodoPreferido2FA === 'sms' ? (
+                            <>
+                              <MessageSquare className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>SMS Móvil</span>
+                            </>
+                          ) : u.metodoPreferido2FA === 'email' ? (
+                            <>
+                              <Mail className="w-2.5 h-2.5 text-blue-600" />
+                              <span>Correo Ficha</span>
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="w-2.5 h-2.5 text-amber-600" />
+                              <span>Authenticator</span>
+                            </>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -564,6 +622,26 @@ export const UsersView: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-blue-600" />
+                    Número de Teléfono Móvil (Para 2FA vía SMS)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">Formato: +502 XXXX-XXXX</span>
+                </label>
+                <input
+                  type="tel"
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  placeholder="ej. +502 5555-0199 o 55550199"
+                  className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono text-xs"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Número de línea de contacto móvil del usuario.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Perfil Institucional / Rol *</label>
@@ -614,7 +692,7 @@ export const UsersView: React.FC = () => {
               </div>
 
               {/* Configuración de Seguridad 2FA */}
-              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl space-y-1">
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2.5">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -624,12 +702,51 @@ export const UsersView: React.FC = () => {
                   />
                   <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                    Exigir Doble Factor de Autenticación (2FA) por Correo
+                    Exigir Doble Factor de Autenticación (2FA)
                   </span>
                 </label>
-                <p className="text-[11px] text-slate-500 pl-6 leading-tight">
-                  Al iniciar sesión, el sistema generará y enviará un código numérico seguro de 6 dígitos con vigencia de 5 minutos al correo electrónico del usuario.
+                <p className="text-[11px] text-slate-600 pl-6 leading-tight">
+                  Al iniciar sesión, el sistema exigirá un segundo factor de seguridad con código numérico temporal de 6 dígitos con vigencia de 5 minutos.
                 </p>
+
+                {dobleFactorHabilitado && (
+                  <div className="pt-2 pl-6 border-t border-blue-100 space-y-2">
+                    <span className="block text-[11px] font-bold text-slate-700">
+                      Método de Segundo Factor Preferido:
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMetodoPreferido2FA('totp')}
+                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                          metodoPreferido2FA === 'totp'
+                            ? 'border-blue-600 bg-white shadow-xs text-blue-900 font-bold ring-1 ring-blue-500'
+                            : 'border-slate-200 bg-white/60 text-slate-700 hover:bg-white font-medium'
+                        }`}
+                      >
+                        <span className="text-[11px] flex items-center gap-1 font-bold">
+                          <ShieldCheck className="w-3 h-3 text-amber-600" /> Google Auth
+                        </span>
+                        <span className="text-[9px] text-slate-500 mt-0.5">App móvil</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMetodoPreferido2FA('email')}
+                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                          metodoPreferido2FA === 'email'
+                            ? 'border-blue-600 bg-white shadow-xs text-blue-900 font-bold ring-1 ring-blue-500'
+                            : 'border-slate-200 bg-white/60 text-slate-700 hover:bg-white font-medium'
+                        }`}
+                      >
+                        <span className="text-[11px] flex items-center gap-1 font-bold">
+                          <Mail className="w-3 h-3 text-blue-600" /> Correo Ficha
+                        </span>
+                        <span className="text-[9px] text-slate-500 mt-0.5">Código email</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Asignación de Área o Departamento para control de visibilidad RBAC */}

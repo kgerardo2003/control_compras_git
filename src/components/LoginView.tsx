@@ -18,7 +18,9 @@ import {
   QrCode,
   Copy,
   Check,
-  X
+  X,
+  MessageSquare,
+  Phone
 } from 'lucide-react';
 import { TwoFactorMethod } from '../types';
 import { 
@@ -150,6 +152,8 @@ export const LoginView: React.FC = () => {
           setOtpDigits(['', '', '', '', '', '']);
           if (selectedMethod === 'totp') {
             setSuccessMsg('Verificación 2FA iniciada con Google Authenticator. Ingrese el código temporal de 6 dígitos.');
+          } else if (selectedMethod === 'sms') {
+            setSuccessMsg('Código de verificación enviado por mensaje de texto (SMS) al teléfono móvil registrado.');
           } else {
             setSuccessMsg('Código de verificación enviado exitosamente al correo registrado en su ficha de usuario.');
           }
@@ -314,7 +318,7 @@ export const LoginView: React.FC = () => {
   };
 
   // Cambio de método 2FA
-  const handleSwitchMethod = (method: 'email' | 'totp') => {
+  const handleSwitchMethod = (method: TwoFactorMethod) => {
     set2FAMethod(method);
     setOtpDigits(['', '', '', '', '', '']);
     setErrorMsg('');
@@ -460,7 +464,7 @@ export const LoginView: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       type="button"
                       onClick={() => setSelectedMethod('totp')}
@@ -480,7 +484,7 @@ export const LoginView: React.FC = () => {
                         )}
                       </div>
                       <p className="text-[10px] text-slate-300 mt-1 leading-tight">
-                        Códigos dinámicos en su app móvil cada 30s (Recomendado)
+                        App en su móvil (Recomendado)
                       </p>
                     </button>
 
@@ -496,14 +500,14 @@ export const LoginView: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-xs text-blue-300 flex items-center gap-1.5">
                           <Mail className="w-3.5 h-3.5 text-blue-400" />
-                          Correo Registrado
+                          Correo Institucional
                         </span>
                         {selectedMethod === 'email' && (
                           <span className="w-2 h-2 rounded-full bg-blue-400 ring-2 ring-blue-400/40" />
                         )}
                       </div>
                       <p className="text-[10px] text-slate-300 mt-1 leading-tight">
-                        Código de 6 dígitos enviado al correo registrado en su ficha
+                        Código al correo en su ficha
                       </p>
                     </button>
                   </div>
@@ -550,31 +554,31 @@ export const LoginView: React.FC = () => {
                 
                 {/* Selector de Método de Verificación 2FA */}
                 <div className="bg-[#071330] p-1 rounded-xl border border-[#4682b4]/40">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchMethod('email')}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                        pending2FA?.activeMethod === 'email'
-                          ? 'bg-gradient-to-r from-[#1c39bb] to-[#2b52d9] text-white shadow-md border border-[#93c5fd]/30'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-[#0c204e]/60'
-                      }`}
-                    >
-                      <Mail className="w-3.5 h-3.5" />
-                      <span>Correo OTP</span>
-                    </button>
-
+                  <div className="grid grid-cols-2 gap-1">
                     <button
                       type="button"
                       onClick={() => handleSwitchMethod('totp')}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                         pending2FA?.activeMethod === 'totp'
                           ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-extrabold shadow-md border border-amber-300/40'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-[#0c204e]/60'
                       }`}
                     >
                       <Smartphone className="w-3.5 h-3.5" />
-                      <span>Google Authenticator</span>
+                      <span className="truncate">Google Authenticator</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchMethod('email')}
+                      className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        pending2FA?.activeMethod === 'email'
+                          ? 'bg-gradient-to-r from-[#1c39bb] to-[#2b52d9] text-white shadow-md border border-[#93c5fd]/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-[#0c204e]/60'
+                      }`}
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span className="truncate">Correo Institucional</span>
                     </button>
                   </div>
                 </div>
@@ -671,12 +675,12 @@ export const LoginView: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  /* Método Correo Institucional */
+                  /* Método Correo Institucional / Ficha */
                   <div className="p-3.5 rounded-xl bg-[#0e2254] border border-[#1c39bb]/60 flex items-start gap-3">
                     <div className="w-9 h-9 rounded-lg bg-[#1c39bb] border border-[#4682b4]/60 flex items-center justify-center text-amber-400 shrink-0">
                       <Mail className="w-5 h-5" />
                     </div>
-                    <div className="text-left space-y-0.5">
+                    <div className="text-left space-y-0.5 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-white uppercase tracking-wider">
                           Código de Seguridad por Correo
@@ -700,9 +704,11 @@ export const LoginView: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-200">
-                      {pending2FA?.activeMethod === 'totp' ? 'Código de Google Authenticator' : 'Código de Seguridad (6 dígitos)'}
+                      {pending2FA?.activeMethod === 'totp'
+                        ? 'Código de Google Authenticator'
+                        : 'Código de Seguridad por Correo (6 dígitos)'}
                     </label>
-                    {pending2FA?.activeMethod === 'email' ? (
+                    {pending2FA?.activeMethod !== 'totp' ? (
                       <div className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
                         <Clock className="w-3.5 h-3.5 text-amber-400" />
                         <span className={timeLeft < 60 ? 'text-rose-400 font-bold animate-pulse' : 'text-slate-300'}>
@@ -729,7 +735,7 @@ export const LoginView: React.FC = () => {
                         value={digit}
                         onChange={(e) => handleDigitChange(idx, e.target.value)}
                         onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                        disabled={isLoading || (pending2FA?.activeMethod === 'email' && timeLeft === 0)}
+                        disabled={isLoading || (pending2FA?.activeMethod !== 'totp' && timeLeft === 0)}
                         placeholder="•"
                         className={`w-11 h-13 sm:w-12 sm:h-14 text-center font-mono font-bold text-xl rounded-xl border transition-all placeholder:text-slate-600 ${
                           digit
@@ -746,7 +752,7 @@ export const LoginView: React.FC = () => {
                   id="btn-verify-2fa-submit"
                   type="button"
                   onClick={() => verifyCodeSubmission()}
-                  disabled={isLoading || otpDigits.join('').length !== 6 || (pending2FA?.activeMethod === 'email' && timeLeft === 0)}
+                  disabled={isLoading || otpDigits.join('').length !== 6 || (pending2FA?.activeMethod !== 'totp' && timeLeft === 0)}
                   className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isLoading ? (
@@ -781,14 +787,16 @@ export const LoginView: React.FC = () => {
                       </span>
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchMethod('email')}
-                      className="flex items-center gap-1.5 text-slate-300 hover:text-amber-300 font-medium transition-colors cursor-pointer"
-                    >
-                      <Mail className="w-3.5 h-3.5 text-[#93c5fd]" />
-                      <span>Recibir código por correo en su lugar</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSwitchMethod('email')}
+                        className="flex items-center gap-1.5 text-slate-300 hover:text-amber-300 font-medium transition-colors cursor-pointer text-xs"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-[#93c5fd]" />
+                        <span>Recibir código por Correo Institucional</span>
+                      </button>
+                    </div>
                   )}
 
                   {/* Botón Volver a Credenciales */}
