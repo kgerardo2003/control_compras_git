@@ -70,6 +70,7 @@ import {
   deleteUserProfileFromFirestore,
   onUserProfilesSnapshot,
   seedInitialDataIfEmpty,
+  seedUsersIfEmpty,
   forceFetchPurchasesFromServer,
   saveBudgetLineToFirestore,
   saveBatchBudgetLinesToFirestore,
@@ -79,7 +80,7 @@ import {
   onBudgetLinesSnapshot,
   onBudgetModificationsSnapshot
 } from '../lib/firebase';
-import { collection, onSnapshot, query, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, limit, getDocs } from 'firebase/firestore';
 import { saveAttachmentToIndexedDB, getAttachmentFromIndexedDB, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 
 export const DEFAULT_LOGO_CONFIG: CustomLogoConfig = {
@@ -281,12 +282,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }));
         const adminIndex = normalized.findIndex(u => u.username.toLowerCase() === 'admin');
         if (adminIndex >= 0) {
-          normalized[adminIndex].nombreCompleto = 'Lic. Kevin Gerardo López de León';
-          normalized[adminIndex].email = 'klopez@oj.gob.gt';
+          normalized[adminIndex].nombreCompleto = normalized[adminIndex].nombreCompleto || 'Lic. Kevin Gerardo López de León';
+          normalized[adminIndex].email = normalized[adminIndex].email || 'kgerardo2003@gmail.com';
           normalized[adminIndex].password = normalized[adminIndex].password || 'Guate2026*';
           normalized[adminIndex].rol = 'administrador';
-          normalized[adminIndex].cargo = 'Gerente de Informática';
-          normalized[adminIndex].departamento = 'Gerencia de Informática - OJ';
+          normalized[adminIndex].cargo = normalized[adminIndex].cargo || 'Gerente de Informática';
+          normalized[adminIndex].departamento = normalized[adminIndex].departamento || 'Gerencia de Informática - OJ';
           normalized[adminIndex].activo = true;
           normalized[adminIndex].dobleFactorHabilitado = true;
           normalized[adminIndex].metodoPreferido2FA = normalized[adminIndex].metodoPreferido2FA || 'totp';
@@ -429,11 +430,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.username && parsed.username.toLowerCase() === 'admin') {
-            parsed.nombreCompleto = 'Lic. Kevin Gerardo López de León';
-            parsed.email = 'klopez@oj.gob.gt';
+            parsed.nombreCompleto = parsed.nombreCompleto || 'Lic. Kevin Gerardo López de León';
+            parsed.email = parsed.email || 'kgerardo2003@gmail.com';
             parsed.password = parsed.password || 'Guate2026*';
-            parsed.cargo = 'Gerente de Informática';
-            parsed.departamento = 'Gerencia de Informática - OJ';
+            parsed.cargo = parsed.cargo || 'Gerente de Informática';
+            parsed.departamento = parsed.departamento || 'Gerencia de Informática - OJ';
           }
           return parsed;
         } catch {
@@ -564,7 +565,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snapshot.forEach((doc) => {
             remoteUsers.push(doc.data() as User);
           });
-          setUsers(remoteUsers);
+          // Unir usuarios remotos asegurando que no se pierdan cuentas base
+          const userMap = new Map<string, User>();
+          INITIAL_USERS.forEach(u => userMap.set(u.id, u));
+          remoteUsers.forEach(u => userMap.set(u.id, u));
+          const merged = Array.from(userMap.values());
+          setUsers(merged);
+          try {
+            localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
+          } catch (e) {
+            console.warn("Nota guardando usuarios en localStorage:", e);
+          }
+        } else {
+          // Si la colección de usuarios en Firestore estuviese vacía, sembrar usuarios base de inmediato
+          seedUsersIfEmpty(INITIAL_USERS).catch(() => {});
         }
       }, (error) => {
         console.warn("Firestore Users Listener Error:", error);
@@ -1094,7 +1108,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [pending2FA, setPending2FA] = useState<TwoFactorState | null>(null);
 
   const maskEmailAddress = (email: string): string => {
-    if (!email || !email.includes('@')) return 'correo***@oj.gob.gt';
+    if (!email || !email.includes('@')) return 'correo***@gmail.com';
     const [local, domain] = email.split('@');
     if (local.length <= 2) {
       return `${local[0]}***@${domain}`;
@@ -1111,9 +1125,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pendingData?: TwoFactorState;
   }> => {
     const trimmedUser = username.toLowerCase().trim();
-    const user = users.find(u => u.username.toLowerCase() === trimmedUser);
+
+    // 1. Buscar primero en memoria local (por nombre de usuario o por correo registrado)
+    let user = users.find(u => 
+      u.username.toLowerCase() === trimmedUser || 
+      (u.email && u.email.toLowerCase().trim() === trimmedUser)
+    );
+
+    // 2. Si no se encuentra en memoria local (ej. nueva computadora, sesión limpia o sincronización inicial pendiente),
+    // consultar directamente la base de datos de Firestore en la nube
     if (!user) {
-      return { success: false, message: 'Usuario no encontrado en los registros del Organismo Judicial.' };
+      try {
+        const snap = await getDocs(collection(db, USERS_COLLECTION));
+        if (!snap.empty) {
+          const remoteUsers: User[] = [];
+          snap.forEach(doc => remoteUsers.push(doc.data() as User));
+
+          const userMap = new Map<string, User>();
+          INITIAL_USERS.forEach(u => userMap.set(u.id, u));
+          users.forEach(u => userMap.set(u.id, u));
+          remoteUsers.forEach(u => userMap.set(u.id, u));
+          const merged = Array.from(userMap.values());
+
+          setUsers(merged);
+          try {
+            localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
+          } catch (e) {
+            console.warn("Nota guardando usuarios en localStorage:", e);
+          }
+
+          user = merged.find(u => 
+            u.username.toLowerCase() === trimmedUser || 
+            (u.email && u.email.toLowerCase().trim() === trimmedUser)
+          );
+        }
+      } catch (err) {
+        console.warn("Error consultando usuario en Firestore durante inicio de sesión:", err);
+      }
+    }
+
+    // 3. Si aún no se encuentra, verificar en INITIAL_USERS como respaldo institucional
+    if (!user) {
+      user = INITIAL_USERS.find(u => 
+        u.username.toLowerCase() === trimmedUser || 
+        (u.email && u.email.toLowerCase().trim() === trimmedUser)
+      );
+      if (user) {
+        // Asegurar persistencia inmediata en la nube
+        saveUserToFirestore(user).catch(() => {});
+      }
+    }
+
+    if (!user) {
+      return { success: false, message: 'Usuario no encontrado en los registros del Organismo Judicial. Verifique su usuario o correo registrado.' };
     }
     if (!user.activo) {
       return { success: false, message: 'La cuenta de usuario se encuentra suspendida o inactiva.' };
@@ -1121,13 +1185,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const expectedPassword = user.password || (user.username.toLowerCase() === 'admin' ? 'Guate2026*' : 'user123');
     if (password && expectedPassword && password !== expectedPassword) {
-      return { success: false, message: 'Contraseña institucional incorrecta.' };
+      return { success: false, message: 'Contraseña incorrecta para el usuario institucional.' };
     }
 
     // Generar código numérico seguro de 6 dígitos para el correo
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const fullName = user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.nombreCompleto;
-    const primaryEmail = user.username.toLowerCase() === 'admin' ? 'klopez@oj.gob.gt' : (user.email || 'kgerardo2003@gmail.com');
+    const fullName = user.nombreCompleto || (user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.username);
+    
+    // CORREO REGISTRADO EN LA FICHA DEL USUARIO:
+    // Se utiliza el correo guardado en el perfil/ficha del usuario, sin forzar cuentas institucionales fijas
+    const primaryEmail = (user.email && user.email.trim()) || 'kgerardo2003@gmail.com';
     const masked = maskEmailAddress(primaryEmail);
 
     // Generar o recuperar secreto TOTP para Google Authenticator
@@ -1172,7 +1239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setPending2FA(pendingState);
 
-    // Preparar y despachar notificación por correo (en segundo plano, no bloquea TOTP)
+    // Preparar y despachar notificación por correo directamente a la dirección registrada en la ficha del usuario
     const emailData = buildTwoFactorEmail({
       username: user.username,
       nombreCompleto: fullName,
@@ -1181,9 +1248,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const targetRecipients: string[] = [primaryEmail];
-    if (user.username.toLowerCase() === 'admin' && !targetRecipients.includes('kgerardo2003@gmail.com')) {
-      targetRecipients.push('kgerardo2003@gmail.com');
-    }
 
     try {
       sendEmailNotification({
@@ -1203,7 +1267,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       requires2FA: true,
       message: initialMethod === 'totp'
         ? 'Autenticación con Google Authenticator requerida. Ingrese el código temporal de 6 dígitos.'
-        : `Código de seguridad 2FA enviado a ${masked}`,
+        : `Código de seguridad 2FA enviado al correo registrado: ${masked}`,
       email: masked,
       pendingData: pendingState
     };
@@ -1293,8 +1357,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const expectedPassword = user.password || (user.username.toLowerCase() === 'admin' ? 'Guate2026*' : 'user123');
     const updatedUser: User = { 
       ...user, 
-      nombreCompleto: user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.nombreCompleto,
-      email: user.username.toLowerCase() === 'admin' ? 'klopez@oj.gob.gt' : user.email,
+      nombreCompleto: user.nombreCompleto || (user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.username),
+      email: user.email || 'kgerardo2003@gmail.com',
       password: expectedPassword,
       totpSecret: pending2FA.totpSecret,
       ultimoAcceso: new Date().toISOString() 
@@ -1352,9 +1416,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const recipients: string[] = [updatedState.email];
-    if (updatedState.username.toLowerCase() === 'admin' && !recipients.includes('kgerardo2003@gmail.com')) {
-      recipients.push('kgerardo2003@gmail.com');
-    }
 
     sendEmailNotification({
       to: recipients,
@@ -1367,7 +1428,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `Se ha enviado un nuevo código de seguridad a ${updatedState.maskedEmail}.`
+      message: `Se ha enviado un nuevo código de seguridad a su correo registrado: ${updatedState.maskedEmail}.`
     };
   };
 
@@ -1379,7 +1440,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Login Directo (Compatibilidad con flujos sin 2FA o automáticos)
   const login = (username: string, password?: string) => {
     const trimmedUser = username.toLowerCase().trim();
-    const user = users.find(u => u.username.toLowerCase() === trimmedUser);
+    let user = users.find(u => 
+      u.username.toLowerCase() === trimmedUser || 
+      (u.email && u.email.toLowerCase().trim() === trimmedUser)
+    );
+    if (!user) {
+      user = INITIAL_USERS.find(u => 
+        u.username.toLowerCase() === trimmedUser || 
+        (u.email && u.email.toLowerCase().trim() === trimmedUser)
+      );
+      if (user) {
+        saveUserToFirestore(user).catch(() => {});
+      }
+    }
     if (!user) {
       return { success: false, message: 'Usuario no encontrado en los registros del Organismo Judicial.' };
     }
@@ -1394,8 +1467,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updatedUser = { 
       ...user, 
-      nombreCompleto: user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.nombreCompleto,
-      email: user.username.toLowerCase() === 'admin' ? 'klopez@oj.gob.gt' : user.email,
+      nombreCompleto: user.nombreCompleto || (user.username.toLowerCase() === 'admin' ? 'Lic. Kevin Gerardo López de León' : user.username),
+      email: user.email || 'kgerardo2003@gmail.com',
       password: expectedPassword,
       ultimoAcceso: new Date().toISOString() 
     };

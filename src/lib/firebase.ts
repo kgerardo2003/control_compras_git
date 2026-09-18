@@ -304,10 +304,10 @@ export async function removeUserFromFirestore(userId: string): Promise<void> {
   }
 }
 
-// Sembrado inicial de contingencia si el directorio de usuarios está vacío
+// Sembrado inicial de contingencia si el directorio de usuarios está vacío o le faltan usuarios base
 export async function seedUsersIfEmpty(initialUsers: User[]): Promise<void> {
   try {
-    const usersSnap = await getDocs(query(collection(db, USERS_COLLECTION), limit(1)));
+    const usersSnap = await getDocs(collection(db, USERS_COLLECTION));
     if (usersSnap.empty) {
       console.log("Sembrando directorio inicial de usuarios en Firestore...");
       const batch = writeBatch(db);
@@ -317,6 +317,23 @@ export async function seedUsersIfEmpty(initialUsers: User[]): Promise<void> {
       }
       await batch.commit();
       console.log("Directorio inicial de usuarios sembrado exitosamente en Firestore.");
+    } else {
+      // Verificar si falta algún usuario base (como admin) para sincronizarlo inmediatamente
+      const existingUsernames = new Set<string>();
+      usersSnap.forEach((doc) => {
+        const data = doc.data() as User;
+        if (data.username) existingUsernames.add(data.username.toLowerCase());
+      });
+      const missingUsers = initialUsers.filter(u => !existingUsernames.has(u.username.toLowerCase()));
+      if (missingUsers.length > 0) {
+        const batch = writeBatch(db);
+        for (const u of missingUsers) {
+          const ref = doc(db, USERS_COLLECTION, u.id);
+          batch.set(ref, cleanUndefined(u));
+        }
+        await batch.commit();
+        console.log(`Se sincronizaron ${missingUsers.length} usuario(s) base faltante(s) a Firestore.`);
+      }
     }
   } catch (err) {
     console.warn("Nota sobre verificación o sembrado de usuarios en Firestore:", err);

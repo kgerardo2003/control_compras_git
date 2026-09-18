@@ -132,7 +132,7 @@ export const LoginModal: React.FC = () => {
           if (selectedMethod === 'totp') {
             setSuccessMsg('Verificación con Google Authenticator requerida.');
           } else {
-            setSuccessMsg(`Código de verificación enviado a su correo institucional.`);
+            setSuccessMsg(`Código de verificación enviado al correo registrado en su ficha de usuario.`);
           }
         } else {
           setSuccessMsg(result.message);
@@ -587,11 +587,11 @@ export const LoginModal: React.FC = () => {
                     <span className="text-xs font-bold text-blue-900">Verificación por Correo (OTP)</span>
                   </div>
                   <p className="text-[11px] text-blue-800">
-                    Código de 6 dígitos despachado al correo institucional:
+                    Código de 6 dígitos despachado al correo registrado en su ficha:
                   </p>
                   <div className="flex items-center gap-1.5 mt-1 font-mono text-xs font-bold text-blue-950">
                     <Mail className="w-3.5 h-3.5 text-blue-600" />
-                    <span>{pending2FA?.maskedEmail || 'correo institucional'}</span>
+                    <span>{pending2FA?.maskedEmail || 'correo registrado'}</span>
                   </div>
                 </div>
               )}

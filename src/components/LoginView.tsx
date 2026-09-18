@@ -151,7 +151,7 @@ export const LoginView: React.FC = () => {
           if (selectedMethod === 'totp') {
             setSuccessMsg('Verificación 2FA iniciada con Google Authenticator. Ingrese el código temporal de 6 dígitos.');
           } else {
-            setSuccessMsg('Código de verificación enviado exitosamente a su correo institucional.');
+            setSuccessMsg('Código de verificación enviado exitosamente al correo registrado en su ficha de usuario.');
           }
         } else {
           setSuccessMsg(`Credenciales verificadas exitosamente. Ingresando al panel principal...`);
@@ -496,14 +496,14 @@ export const LoginView: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-xs text-blue-300 flex items-center gap-1.5">
                           <Mail className="w-3.5 h-3.5 text-blue-400" />
-                          Correo Institucional
+                          Correo Registrado
                         </span>
                         {selectedMethod === 'email' && (
                           <span className="w-2 h-2 rounded-full bg-blue-400 ring-2 ring-blue-400/40" />
                         )}
                       </div>
                       <p className="text-[10px] text-slate-300 mt-1 leading-tight">
-                        Código de 6 dígitos enviado a su correo institucional
+                        Código de 6 dígitos enviado al correo registrado en su ficha
                       </p>
                     </button>
                   </div>
@@ -686,11 +686,11 @@ export const LoginView: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-300">
-                        Hemos despachado un código confidencial de 6 dígitos a su correo electrónico:
+                        Hemos despachado un código confidencial de 6 dígitos al correo registrado en su ficha de usuario:
                       </p>
                       <div className="flex items-center gap-1.5 pt-1 text-[#93c5fd] font-mono text-xs font-semibold">
                         <Mail className="w-3.5 h-3.5 text-[#4682b4]" />
-                        <span>{pending2FA?.maskedEmail || 'correo institucional'}</span>
+                        <span>{pending2FA?.maskedEmail || 'correo registrado'}</span>
                       </div>
                     </div>
                   </div>
