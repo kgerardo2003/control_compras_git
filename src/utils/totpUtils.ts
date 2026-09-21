@@ -95,12 +95,17 @@ export async function generateTotpQrCodeDataUrl(otpAuthUri: string): Promise<str
  */
 export function validateTotpToken(token: string, secret: string, username = 'usuario'): boolean {
   try {
-    const cleanToken = token.replace(/\s+/g, '').trim();
+    const cleanToken = (token || '').replace(/\s+/g, '').trim();
     if (cleanToken.length !== 6 || !/^\d{6}$/.test(cleanToken)) {
       return false;
     }
-    const totp = createTotpInstance(username, secret);
-    // Window = 2 permite 60 segundos antes y después para mitigar desincronizaciones de reloj entre diferentes computadoras
+    const cleanSecret = (secret || '').replace(/\s+/g, '').toUpperCase();
+    if (cleanSecret.length < 16) {
+      return false;
+    }
+    const totp = createTotpInstance(username, cleanSecret);
+    // Tolerancia escalonada: primero ventana normal (±60s), luego ampliada (±90s), luego extendida (±120s)
+    // para mitigar cualquier desincronización de reloj entre el teléfono del usuario y el servidor
     const delta = totp.validate({
       token: cleanToken,
       window: 2
@@ -109,12 +114,19 @@ export function validateTotpToken(token: string, secret: string, username = 'usu
       return true;
     }
 
-    // Ventana ampliada de contingencia (±90 segundos) en caso de ligero desfase de reloj del cliente
     const deltaWide = totp.validate({
       token: cleanToken,
       window: 3
     });
-    return deltaWide !== null;
+    if (deltaWide !== null) {
+      return true;
+    }
+
+    const deltaExtended = totp.validate({
+      token: cleanToken,
+      window: 4
+    });
+    return deltaExtended !== null;
   } catch (err) {
     console.error('Error validando token TOTP:', err);
     return false;

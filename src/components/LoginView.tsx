@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { INITIAL_USERS } from '../data/initialData';
 import { 
   Lock, 
   User as UserIcon, 
@@ -32,6 +33,7 @@ import { OJLogo } from './OJLogo';
 
 export const LoginView: React.FC = () => {
   const { 
+    users = [],
     initiateLogin, 
     verify2FACode, 
     set2FAMethod,
@@ -74,17 +76,36 @@ export const LoginView: React.FC = () => {
     let canonicalUser = inputVal;
     let existingSecret: string | undefined;
 
-    try {
-      const res = await fetch(`/api/db/users/${encodeURIComponent(inputVal)}`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.user) {
-          canonicalUser = json.user.username;
-          existingSecret = json.user.totpSecret;
+    // 1. Resolver usuario localmente sin depender de servidores o APIs externas (compatible con GitHub y Vercel)
+    const userPool = (users && users.length > 0) ? users : INITIAL_USERS;
+    const userFound = userPool.find(u => 
+      u.username.toLowerCase() === inputVal.toLowerCase() || 
+      (u.email && u.email.toLowerCase().trim() === inputVal.toLowerCase())
+    ) || INITIAL_USERS.find(u => 
+      u.username.toLowerCase() === inputVal.toLowerCase() || 
+      (u.email && u.email.toLowerCase().trim() === inputVal.toLowerCase())
+    );
+
+    if (userFound) {
+      canonicalUser = userFound.username;
+      existingSecret = userFound.totpSecret;
+    } else {
+      // Intento secundario opcional si existe endpoint en el servidor
+      try {
+        const res = await fetch(`/api/db/users/${encodeURIComponent(inputVal)}`);
+        if (res.ok) {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const json = await res.json();
+            if (json && json.user) {
+              canonicalUser = json.user.username;
+              existingSecret = json.user.totpSecret;
+            }
+          }
         }
+      } catch (e) {
+        console.warn('Nota consultando usuario para QR:', e);
       }
-    } catch (e) {
-      console.warn('Nota consultando usuario para QR:', e);
     }
 
     const secret = getOrCreateTotpSecret(canonicalUser, existingSecret);
