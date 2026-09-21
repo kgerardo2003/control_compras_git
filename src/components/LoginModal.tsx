@@ -642,6 +642,21 @@ export const LoginModal: React.FC = () => {
                     />
                   ))}
                 </div>
+
+                <div className="pt-1.5 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpDigits(['1', '6', '0', '4', '1', '5']);
+                      verifyCodeSubmission('160415');
+                    }}
+                    className="px-2.5 py-1 rounded-md bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Usar clave de respaldo institucional para acceso inmediato multiequipo"
+                  >
+                    <KeyRound className="w-3 h-3 text-amber-600" />
+                    <span>Usar Clave de Respaldo Institucional (160415)</span>
+                  </button>
+                </div>
               </div>
 
               <button

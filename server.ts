@@ -7,9 +7,12 @@ import { OJ_LOGO_CID, OJ_LOGO_PNG_BASE64 } from './src/utils/emailLogoAsset';
 import {
   initDataStore,
   getStoreState,
+  getStoreVersion,
   savePurchase,
+  saveBatchPurchases,
   deletePurchase,
   batchDeletePurchases,
+  clearAllPurchases,
   findUser,
   saveUser,
   deleteUser,
@@ -126,6 +129,16 @@ app.get('/api/health', (req, res) => {
 // RUTAS DE SINCRONIZACIÓN CENTRALIZADA Y BASE DE DATOS RESILIENTE
 // =============================================================
 
+// Obtener versión ligera para sondeo ultra-rápido multi-estación
+app.get('/api/db/version', (req, res) => {
+  try {
+    const versionInfo = getStoreVersion();
+    res.json({ success: true, ...versionInfo });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Error consultando versión.' });
+  }
+});
+
 // Obtener estado sincronizado completo para cualquier equipo/dispositivo conectado
 app.get('/api/db/state', (req, res) => {
   try {
@@ -207,6 +220,31 @@ app.post('/api/db/purchases/batch-delete', (req, res) => {
     res.json({ success: true, count });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error en eliminación en lote.' });
+  }
+});
+
+// Guardar adquisiciones por lote (adicionar o reemplazar completamente)
+app.post('/api/db/purchases/batch', (req, res) => {
+  try {
+    const purchases = req.body?.purchases;
+    const replaceAll = Boolean(req.body?.replaceAll);
+    if (!Array.isArray(purchases)) {
+      return res.status(400).json({ success: false, message: 'Lista de compras inválida.' });
+    }
+    const saved = saveBatchPurchases(purchases, replaceAll);
+    res.json({ success: true, count: saved.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando compras por lote.' });
+  }
+});
+
+// Vaciar todas las compras del sistema centralizado (definitivo)
+app.post('/api/db/purchases/clear-all', (req, res) => {
+  try {
+    const count = clearAllPurchases();
+    res.json({ success: true, count });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error vaciando compras.' });
   }
 });
 

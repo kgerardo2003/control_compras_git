@@ -76,6 +76,7 @@ export const USERS_COLLECTION = 'users';
 export const USER_PROFILES_COLLECTION = 'user_profiles';
 export const BUDGET_LINES_COLLECTION = 'budget_lines';
 export const BUDGET_MODIFICATIONS_COLLECTION = 'budget_modifications';
+export const SYSTEM_CONFIG_COLLECTION = 'system_config';
 
 // Función para limpiar campos con valor undefined recursivamente (Firestore no acepta undefined)
 export function cleanUndefined<T>(data: T): T {
@@ -311,32 +312,44 @@ export async function seedUsersIfEmpty(initialUsers: User[]): Promise<void> {
     if (usersSnap.empty) {
       console.log("Sembrando directorio inicial de usuarios en Firestore...");
       const batch = writeBatch(db);
-      for (const u of initialUsers) {
+      // Solo sembrar las cuentas esenciales institucionales base (admin y kglopezd)
+      const essentialUsers = initialUsers.filter(u => 
+        ['admin', 'kglopezd'].includes(u.username.toLowerCase())
+      );
+      for (const u of (essentialUsers.length > 0 ? essentialUsers : initialUsers)) {
         const ref = doc(db, USERS_COLLECTION, u.id);
         batch.set(ref, cleanUndefined(u));
       }
       await batch.commit();
       console.log("Directorio inicial de usuarios sembrado exitosamente en Firestore.");
     } else {
-      // Verificar si falta algún usuario base (como admin) para sincronizarlo inmediatamente
+      // Verificar si falta ÚNICAMENTE alguna cuenta esencial (admin o kglopezd) para sincronizarla
+      // NO revivir usuarios que el administrador haya eliminado deliberadamente
       const existingUsernames = new Set<string>();
-      usersSnap.forEach((doc) => {
-        const data = doc.data() as User;
+      usersSnap.forEach((d) => {
+        const data = d.data() as User;
         if (data.username) existingUsernames.add(data.username.toLowerCase());
       });
-      const missingUsers = initialUsers.filter(u => !existingUsernames.has(u.username.toLowerCase()));
-      if (missingUsers.length > 0) {
+      const essentialMissing = initialUsers.filter(u => 
+        ['admin', 'kglopezd'].includes(u.username.toLowerCase()) && 
+        !existingUsernames.has(u.username.toLowerCase())
+      );
+      if (essentialMissing.length > 0) {
         const batch = writeBatch(db);
-        for (const u of missingUsers) {
+        for (const u of essentialMissing) {
           const ref = doc(db, USERS_COLLECTION, u.id);
           batch.set(ref, cleanUndefined(u));
         }
         await batch.commit();
-        console.log(`Se sincronizaron ${missingUsers.length} usuario(s) base faltante(s) a Firestore.`);
+        console.log(`Se sincronizaron ${essentialMissing.length} cuenta(s) institucional(es) esenciales a Firestore.`);
       }
     }
-  } catch (err) {
-    console.warn("Nota sobre verificación o sembrado de usuarios en Firestore:", err);
+  } catch (err: any) {
+    if (err?.message?.includes('Quota') || err?.code === 'resource-exhausted') {
+      console.warn("Firestore: Cuota diaria de lectura alcanzada. Usando almacén central seguro.");
+    } else {
+      console.warn("Nota sobre verificación o sembrado de usuarios en Firestore:", err);
+    }
   }
 }
 
@@ -348,37 +361,61 @@ export async function seedInitialDataIfEmpty(
   initialLogs: AuditLogEntry[]
 ): Promise<void> {
   try {
-    const purchasesSnap = await getDocs(query(collection(db, PURCHASES_COLLECTION), limit(1)));
-    if (purchasesSnap.empty) {
-      console.log("Sembrando adquisiciones y catálogos iniciales en Firestore...");
-      const batch = writeBatch(db);
+    // Usar documento de estado de sembrado para NO recrear compras si el usuario las eliminó intencionalmente
+    const seedStatusRef = doc(db, SYSTEM_CONFIG_COLLECTION, 'sys-seed-status');
+    const seedSnap = await getDoc(seedStatusRef);
 
-      // Compras
-      for (const p of initialPurchases) {
-        const ref = doc(db, PURCHASES_COLLECTION, p.id);
-        batch.set(ref, cleanUndefined(p));
+    if (!seedSnap.exists()) {
+      const purchasesSnap = await getDocs(query(collection(db, PURCHASES_COLLECTION), limit(1)));
+      if (purchasesSnap.empty) {
+        console.log("Sembrando adquisiciones y catálogos iniciales en Firestore...");
+        const batch = writeBatch(db);
+
+        // Compras
+        for (const p of initialPurchases) {
+          const ref = doc(db, PURCHASES_COLLECTION, p.id);
+          batch.set(ref, cleanUndefined(p));
+        }
+
+        // Catálogos
+        for (const c of initialCatalogs) {
+          const ref = doc(db, CATALOGS_COLLECTION, c.id);
+          batch.set(ref, cleanUndefined(c));
+        }
+
+        // Auditoría
+        for (const log of initialLogs.slice(0, 15)) {
+          const ref = doc(db, AUDIT_LOGS_COLLECTION, log.id);
+          batch.set(ref, cleanUndefined(log));
+        }
+
+        // Registrar bandera permanente de inicialización para nunca más duplicar
+        batch.set(seedStatusRef, {
+          initialized: true,
+          seededAt: new Date().toISOString(),
+          version: 1
+        });
+
+        await batch.commit();
+        console.log("Sembrado inicial de compras y catálogos en Firestore completado con éxito.");
+      } else {
+        // La colección ya tiene datos, marcar bandera para no volver a evaluar
+        await setDoc(seedStatusRef, {
+          initialized: true,
+          detectedExisting: true,
+          checkedAt: new Date().toISOString()
+        });
       }
-
-      // Catálogos
-      for (const c of initialCatalogs) {
-        const ref = doc(db, CATALOGS_COLLECTION, c.id);
-        batch.set(ref, cleanUndefined(c));
-      }
-
-      // Auditoría
-      for (const log of initialLogs.slice(0, 15)) {
-        const ref = doc(db, AUDIT_LOGS_COLLECTION, log.id);
-        batch.set(ref, cleanUndefined(log));
-      }
-
-      await batch.commit();
-      console.log("Sembrado inicial de compras y catálogos en Firestore completado con éxito.");
     }
 
-    // Asegurar que el directorio de usuarios siempre esté sembrado
+    // Asegurar que las cuentas institucionales esenciales siempre existan
     await seedUsersIfEmpty(initialUsers);
-  } catch (err) {
-    console.warn("Nota sobre sembrado inicial en Firestore:", err);
+  } catch (err: any) {
+    if (err?.message?.includes('Quota') || err?.code === 'resource-exhausted') {
+      console.warn("Firestore: Cuota diaria de lectura alcanzada. Sincronización respaldada en servidor central.");
+    } else {
+      console.warn("Nota sobre sembrado inicial en Firestore:", err);
+    }
   }
 }
 

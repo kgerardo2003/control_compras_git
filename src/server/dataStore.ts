@@ -31,7 +31,12 @@ export interface DataStoreState {
   budgetModifications: BudgetModification[];
   auditLogs: AuditLogEntry[];
   userProfiles: UserProfile[];
+  deletedPurchaseIds: string[];
+  isPurchasesInitialized: boolean;
 }
+
+// Cuentas institucionales esenciales que NUNCA deben perderse (Lic. Kevin Gerardo López de León)
+export const ESSENTIAL_USER_USERNAMES = ['admin', 'kglopezd'];
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
@@ -69,20 +74,31 @@ export function initDataStore(): DataStoreState {
       const raw = fs.readFileSync(DATA_FILE, 'utf8');
       const parsed = JSON.parse(raw) as Partial<DataStoreState>;
       
+      const isPurchasesInitialized = parsed.isPurchasesInitialized !== undefined 
+        ? parsed.isPurchasesInitialized 
+        : true;
+
       storeMemory = {
         version: parsed.version || 1,
         lastUpdated: parsed.lastUpdated || new Date().toISOString(),
-        purchases: Array.isArray(parsed.purchases) ? parsed.purchases : [...INITIAL_PURCHASES],
+        purchases: Array.isArray(parsed.purchases) ? parsed.purchases : (isPurchasesInitialized ? [] : [...INITIAL_PURCHASES]),
         users: Array.isArray(parsed.users) ? parsed.users : [...INITIAL_USERS],
         catalogs: Array.isArray(parsed.catalogs) ? parsed.catalogs : [...INITIAL_CATALOGS],
         budgetLines: Array.isArray(parsed.budgetLines) ? parsed.budgetLines : [...INITIAL_BUDGET_LINES],
         budgetModifications: Array.isArray(parsed.budgetModifications) ? parsed.budgetModifications : [...INITIAL_BUDGET_MODIFICATIONS],
         auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [...INITIAL_AUDIT_LOGS],
-        userProfiles: Array.isArray(parsed.userProfiles) ? parsed.userProfiles : [...INITIAL_USER_PROFILES]
+        userProfiles: Array.isArray(parsed.userProfiles) ? parsed.userProfiles : [...INITIAL_USER_PROFILES],
+        deletedPurchaseIds: Array.isArray(parsed.deletedPurchaseIds) ? parsed.deletedPurchaseIds : [],
+        isPurchasesInitialized
       };
 
-      // Garantizar que todos los usuarios institucionales base (INITIAL_USERS) siempre existan
-      INITIAL_USERS.forEach(iu => {
+      // Garantizar ÚNICAMENTE que las cuentas esenciales del Lic. Kevin Gerardo López de León (admin y kglopezd) existan
+      // NO resucitar usuarios que el usuario haya eliminado deliberadamente (ej: auditor, operador, jfuentes, etc.)
+      const essentialInitial = INITIAL_USERS.filter(iu => 
+        ESSENTIAL_USER_USERNAMES.includes(iu.username.toLowerCase())
+      );
+
+      essentialInitial.forEach(iu => {
         const existingIdx = storeMemory!.users.findIndex(u => 
           u.id === iu.id || 
           u.username.toLowerCase() === iu.username.toLowerCase()
@@ -90,7 +106,7 @@ export function initDataStore(): DataStoreState {
         if (existingIdx === -1) {
           storeMemory!.users.push({ ...iu });
         } else {
-          // Asegurar que campos críticos como totpSecret, password y roles estén actualizados
+          // Asegurar credenciales y doble factor intactos
           storeMemory!.users[existingIdx] = {
             ...iu,
             ...storeMemory!.users[existingIdx],
@@ -100,8 +116,8 @@ export function initDataStore(): DataStoreState {
           };
         }
       });
-      persistToDisk();
 
+      persistToDisk();
       console.log(`[DataStore] Cargado desde disco: ${storeMemory.purchases.length} compras, ${storeMemory.users.length} usuarios.`);
       return storeMemory;
     } catch (err) {
@@ -114,12 +130,14 @@ export function initDataStore(): DataStoreState {
     version: 1,
     lastUpdated: new Date().toISOString(),
     purchases: [...INITIAL_PURCHASES],
-    users: [...INITIAL_USERS],
+    users: INITIAL_USERS.filter(u => ESSENTIAL_USER_USERNAMES.includes(u.username.toLowerCase())),
     catalogs: [...INITIAL_CATALOGS],
     budgetLines: [...INITIAL_BUDGET_LINES],
     budgetModifications: [...INITIAL_BUDGET_MODIFICATIONS],
     auditLogs: [...INITIAL_AUDIT_LOGS],
-    userProfiles: [...INITIAL_USER_PROFILES]
+    userProfiles: [...INITIAL_USER_PROFILES],
+    deletedPurchaseIds: [],
+    isPurchasesInitialized: true
   };
 
   persistToDisk();
@@ -132,17 +150,49 @@ export function getStoreState(): DataStoreState {
   return initDataStore();
 }
 
+// Obtener versión ligera para sondeo ultra-rápido multi-estación
+export function getStoreVersion(): { version: number; lastUpdated: string; purchasesCount: number; usersCount: number } {
+  const store = initDataStore();
+  return {
+    version: store.version || 1,
+    lastUpdated: store.lastUpdated,
+    purchasesCount: store.purchases.length,
+    usersCount: store.users.length
+  };
+}
+
 // Compras (Purchases)
 export function savePurchase(purchase: PurchaseRecord): PurchaseRecord {
   const store = initDataStore();
+  // Quitar de lista de eliminados si estuviera
+  if (store.deletedPurchaseIds) {
+    store.deletedPurchaseIds = store.deletedPurchaseIds.filter(id => id !== purchase.id);
+  }
   const index = store.purchases.findIndex(p => p.id === purchase.id);
   if (index >= 0) {
     store.purchases[index] = { ...store.purchases[index], ...purchase };
   } else {
     store.purchases.unshift(purchase);
   }
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
   persistToDisk();
   return purchase;
+}
+
+export function saveBatchPurchases(newPurchases: PurchaseRecord[], replaceAll = false): PurchaseRecord[] {
+  const store = initDataStore();
+  if (replaceAll) {
+    store.purchases = [...newPurchases];
+  } else {
+    const existingMap = new Map(store.purchases.map(p => [p.id, p]));
+    newPurchases.forEach(np => existingMap.set(np.id, np));
+    store.purchases = Array.from(existingMap.values());
+  }
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
+  persistToDisk();
+  return store.purchases;
 }
 
 export function deletePurchase(id: string): boolean {
@@ -151,6 +201,15 @@ export function deletePurchase(id: string): boolean {
   store.purchases = store.purchases.filter(p => p.id !== id);
   const deleted = store.purchases.length < initialLength;
   if (deleted) {
+    if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
+    if (!store.deletedPurchaseIds.includes(id)) {
+      store.deletedPurchaseIds.push(id);
+      if (store.deletedPurchaseIds.length > 500) {
+        store.deletedPurchaseIds = store.deletedPurchaseIds.slice(-500);
+      }
+    }
+    store.version = (store.version || 1) + 1;
+    store.isPurchasesInitialized = true;
     persistToDisk();
     console.log(`[DataStore] Compra eliminada permanentemente: ${id}`);
   }
@@ -164,9 +223,37 @@ export function batchDeletePurchases(ids: string[]): number {
   store.purchases = store.purchases.filter(p => !idSet.has(p.id));
   const count = initialLength - store.purchases.length;
   if (count > 0) {
+    if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
+    ids.forEach(id => {
+      if (!store.deletedPurchaseIds.includes(id)) {
+        store.deletedPurchaseIds.push(id);
+      }
+    });
+    if (store.deletedPurchaseIds.length > 500) {
+      store.deletedPurchaseIds = store.deletedPurchaseIds.slice(-500);
+    }
+    store.version = (store.version || 1) + 1;
+    store.isPurchasesInitialized = true;
     persistToDisk();
     console.log(`[DataStore] Eliminación en lote: ${count} compras retiradas.`);
   }
+  return count;
+}
+
+export function clearAllPurchases(): number {
+  const store = initDataStore();
+  const count = store.purchases.length;
+  if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
+  store.purchases.forEach(p => {
+    if (!store.deletedPurchaseIds.includes(p.id)) {
+      store.deletedPurchaseIds.push(p.id);
+    }
+  });
+  store.purchases = [];
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
+  persistToDisk();
+  console.log(`[DataStore] Todas las compras (${count}) fueron vaciadas permanentemente.`);
   return count;
 }
 
@@ -198,6 +285,7 @@ export function saveUser(user: User): User {
   } else {
     store.users.push(user);
   }
+  store.version = (store.version || 1) + 1;
   persistToDisk();
   return user;
 }
@@ -205,13 +293,14 @@ export function saveUser(user: User): User {
 export function deleteUser(id: string): boolean {
   const store = initDataStore();
   const user = store.users.find(u => u.id === id);
-  if (user?.username.toLowerCase() === 'admin') {
-    return false; // Proteger la cuenta admin
+  if (user && ESSENTIAL_USER_USERNAMES.includes(user.username.toLowerCase())) {
+    return false; // Proteger las cuentas esenciales del Lic. Kevin Gerardo López de León (admin y kglopezd)
   }
   const initialLength = store.users.length;
   store.users = store.users.filter(u => u.id !== id);
   const deleted = store.users.length < initialLength;
   if (deleted) {
+    store.version = (store.version || 1) + 1;
     persistToDisk();
     console.log(`[DataStore] Usuario eliminado permanentemente: ${id}`);
   }
@@ -227,6 +316,7 @@ export function saveCatalog(catalog: Catalog): Catalog {
   } else {
     store.catalogs.push(catalog);
   }
+  store.version = (store.version || 1) + 1;
   persistToDisk();
   return catalog;
 }
@@ -237,6 +327,7 @@ export function deleteCatalog(id: string): boolean {
   store.catalogs = store.catalogs.filter(c => c.id !== id);
   const deleted = store.catalogs.length < initialLength;
   if (deleted) {
+    store.version = (store.version || 1) + 1;
     persistToDisk();
   }
   return deleted;
@@ -251,6 +342,7 @@ export function saveBudgetLine(line: BudgetLineItem): BudgetLineItem {
   } else {
     store.budgetLines.push(line);
   }
+  store.version = (store.version || 1) + 1;
   persistToDisk();
   return line;
 }
@@ -261,6 +353,7 @@ export function deleteBudgetLine(id: string): boolean {
   store.budgetLines = store.budgetLines.filter(b => b.id !== id && b.renglonPresupuestario !== id);
   const deleted = store.budgetLines.length < initialLength;
   if (deleted) {
+    store.version = (store.version || 1) + 1;
     persistToDisk();
   }
   return deleted;
@@ -269,6 +362,7 @@ export function deleteBudgetLine(id: string): boolean {
 export function setBudgetLines(lines: BudgetLineItem[]): BudgetLineItem[] {
   const store = initDataStore();
   store.budgetLines = [...lines];
+  store.version = (store.version || 1) + 1;
   persistToDisk();
   return store.budgetLines;
 }
@@ -281,6 +375,7 @@ export function addBudgetModification(mod: BudgetModification): BudgetModificati
   } else {
     store.budgetModifications.unshift(mod);
   }
+  store.version = (store.version || 1) + 1;
   persistToDisk();
   return mod;
 }
@@ -292,6 +387,7 @@ export function addAuditLog(entry: AuditLogEntry): AuditLogEntry {
   if (store.auditLogs.length > 500) {
     store.auditLogs = store.auditLogs.slice(0, 500);
   }
+  store.version = (store.version || 1) + 1;
   persistToDisk();
   return entry;
 }

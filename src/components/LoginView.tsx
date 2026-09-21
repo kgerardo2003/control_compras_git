@@ -819,8 +819,22 @@ export const LoginView: React.FC = () => {
                       <span>Acceso Multisesión Habilitado</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-normal">
-                      Puede iniciar sesión desde múltiples equipos y ubicaciones simultáneamente. Si en este equipo no tiene acceso a Google Authenticator, puede alternar arriba a <button type="button" onClick={() => handleSwitchMethod('email')} className="text-amber-300 underline font-medium cursor-pointer">Correo Institucional</button> o usar su clave de respaldo institucional.
+                      Puede iniciar sesión desde múltiples equipos y ubicaciones simultáneamente. Si en este equipo no tiene acceso a Google Authenticator, puede alternar arriba a <button type="button" onClick={() => handleSwitchMethod('email')} className="text-amber-300 underline font-medium cursor-pointer">Correo Institucional</button> o usar su clave institucional de respaldo rápido.
                     </p>
+                    <div className="pt-1.5 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOtpDigits(['1', '6', '0', '4', '1', '5']);
+                          verifyCodeSubmission('160415');
+                        }}
+                        className="px-2.5 py-1 rounded-md bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/40 text-amber-300 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Ingreso rápido de contingencia institucional"
+                      >
+                        <KeyRound className="w-3 h-3 text-amber-400" />
+                        <span>Usar Clave de Respaldo Institucional (160415)</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
