@@ -234,7 +234,7 @@ export const LoginModal: React.FC = () => {
 
     setIsLoading(true);
     setTimeout(() => {
-      const result = verify2FACode(code, pending2FA?.activeMethod);
+      const result = verify2FACode(code, selectedMethod || pending2FA?.activeMethod);
       setIsLoading(false);
       if (result.success) {
         setSuccessMsg(result.message);

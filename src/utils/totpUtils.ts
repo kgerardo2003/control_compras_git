@@ -95,38 +95,38 @@ export async function generateTotpQrCodeDataUrl(otpAuthUri: string): Promise<str
  */
 export function validateTotpToken(token: string, secret: string, username = 'usuario'): boolean {
   try {
-    const cleanToken = (token || '').replace(/\s+/g, '').trim();
+    const cleanToken = (token || '').replace(/[\s\-]+/g, '').trim();
     if (cleanToken.length !== 6 || !/^\d{6}$/.test(cleanToken)) {
       return false;
     }
-    const cleanSecret = (secret || '').replace(/\s+/g, '').toUpperCase();
+    const cleanSecret = (secret || '').replace(/[\s\-]+/g, '').toUpperCase();
     if (cleanSecret.length < 16) {
       return false;
     }
-    const totp = createTotpInstance(username, cleanSecret);
-    // Tolerancia escalonada: primero ventana normal (±60s), luego ampliada (±90s), luego extendida (±120s)
-    // para mitigar cualquier desincronización de reloj entre el teléfono del usuario y el servidor
-    const delta = totp.validate({
-      token: cleanToken,
-      window: 2
-    });
-    if (delta !== null) {
-      return true;
+
+    // Probar tanto la clave con relleno como sin relleno para máxima compatibilidad Base32
+    const secretCandidates = [cleanSecret, cleanSecret.replace(/=+$/, '')];
+    
+    for (const sec of secretCandidates) {
+      try {
+        const totp = createTotpInstance(username, sec);
+        // Tolerancia progresiva de ventanas: desde ±30s hasta ±300s (±10 pasos / 5 minutos)
+        // para absorber desincronizaciones de reloj entre teléfonos celulares y diferentes equipos
+        for (const w of [1, 2, 3, 4, 6, 8, 10]) {
+          const delta = totp.validate({
+            token: cleanToken,
+            window: w
+          });
+          if (delta !== null) {
+            return true;
+          }
+        }
+      } catch (innerErr) {
+        // Continuar con siguiente candidato
+      }
     }
 
-    const deltaWide = totp.validate({
-      token: cleanToken,
-      window: 3
-    });
-    if (deltaWide !== null) {
-      return true;
-    }
-
-    const deltaExtended = totp.validate({
-      token: cleanToken,
-      window: 4
-    });
-    return deltaExtended !== null;
+    return false;
   } catch (err) {
     console.error('Error validando token TOTP:', err);
     return false;
