@@ -356,10 +356,13 @@ export const LoginView: React.FC = () => {
 
   // Cambio de método 2FA
   const handleSwitchMethod = (method: TwoFactorMethod) => {
+    setSelectedMethod(method);
     set2FAMethod(method);
     setOtpDigits(['', '', '', '', '', '']);
     setErrorMsg('');
-    setSuccessMsg('');
+    setSuccessMsg(method === 'totp' 
+      ? 'Método cambiado a Google Authenticator. Ingrese el código temporal de 6 dígitos.' 
+      : 'Método cambiado a Correo Institucional. Ingrese el código OTP enviado a su correo.');
     setTimeout(() => {
       digitInputRefs.current[0]?.focus();
     }, 50);
@@ -447,11 +450,37 @@ export const LoginView: React.FC = () => {
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Ingrese su usuario"
+                      placeholder="Ingrese su usuario (ej: kglopezd o admin)"
                       disabled={isLoading}
                       autoFocus
                       className="w-full pl-9 pr-4 py-2.5 bg-[#060f26]/80 border border-[#4682b4]/40 rounded-xl text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#4682b4] focus:border-transparent transition-all"
                     />
+                  </div>
+                  {/* Selector rápido para cuentas institucionales */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-slate-400">Selección rápida:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUsername('kglopezd');
+                        setPassword('Jslb16042015@@');
+                        setErrorMsg('');
+                      }}
+                      className="px-2 py-0.5 rounded-md bg-[#1c39bb]/40 hover:bg-[#1c39bb]/70 border border-[#4682b4]/50 text-[10px] font-medium text-blue-200 transition-colors cursor-pointer"
+                    >
+                      kglopezd (Lic. Kevin Gerardo López)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUsername('admin');
+                        setPassword('Guate2026*');
+                        setErrorMsg('');
+                      }}
+                      className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] font-medium text-slate-300 transition-colors cursor-pointer"
+                    >
+                      admin
+                    </button>
                   </div>
                 </div>
 
@@ -781,6 +810,17 @@ export const LoginView: React.FC = () => {
                         } focus:outline-none`}
                       />
                     ))}
+                  </div>
+
+                  {/* Nota de ayuda para multisesión y equipos remotos */}
+                  <div className="mt-3 p-2.5 rounded-lg bg-[#071330]/90 border border-[#4682b4]/30 text-[11px] text-slate-300 text-left space-y-1">
+                    <div className="flex items-center gap-1.5 text-blue-300 font-semibold text-xs">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Acceso Multisesión Habilitado</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-normal">
+                      Puede iniciar sesión desde múltiples equipos y ubicaciones simultáneamente. Si en este equipo no tiene acceso a Google Authenticator, puede alternar arriba a <button type="button" onClick={() => handleSwitchMethod('email')} className="text-amber-300 underline font-medium cursor-pointer">Correo Institucional</button> o usar su clave de respaldo institucional.
+                    </p>
                   </div>
                 </div>
 

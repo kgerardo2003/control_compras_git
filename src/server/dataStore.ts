@@ -81,11 +81,26 @@ export function initDataStore(): DataStoreState {
         userProfiles: Array.isArray(parsed.userProfiles) ? parsed.userProfiles : [...INITIAL_USER_PROFILES]
       };
 
-      // Garantizar que siempre exista la cuenta admin base
-      const hasAdmin = storeMemory.users.some(u => u.username.toLowerCase() === 'admin');
-      if (!hasAdmin && INITIAL_USERS.length > 0) {
-        storeMemory.users.unshift(INITIAL_USERS[0]);
-      }
+      // Garantizar que todos los usuarios institucionales base (INITIAL_USERS) siempre existan
+      INITIAL_USERS.forEach(iu => {
+        const existingIdx = storeMemory!.users.findIndex(u => 
+          u.id === iu.id || 
+          u.username.toLowerCase() === iu.username.toLowerCase()
+        );
+        if (existingIdx === -1) {
+          storeMemory!.users.push({ ...iu });
+        } else {
+          // Asegurar que campos críticos como totpSecret, password y roles estén actualizados
+          storeMemory!.users[existingIdx] = {
+            ...iu,
+            ...storeMemory!.users[existingIdx],
+            password: storeMemory!.users[existingIdx].password || iu.password,
+            totpSecret: storeMemory!.users[existingIdx].totpSecret || iu.totpSecret,
+            activo: true
+          };
+        }
+      });
+      persistToDisk();
 
       console.log(`[DataStore] Cargado desde disco: ${storeMemory.purchases.length} compras, ${storeMemory.users.length} usuarios.`);
       return storeMemory;
@@ -159,11 +174,20 @@ export function batchDeletePurchases(ids: string[]): number {
 export function findUser(query: string): User | undefined {
   const store = initDataStore();
   const clean = query.trim().toLowerCase();
-  return store.users.find(u => 
-    u.id === query || 
-    u.username.toLowerCase() === clean || 
-    (u.email && u.email.toLowerCase().trim() === clean)
-  );
+  const cleanWithoutDomain = clean.replace(/@oj\.gob\.gt$/, '').replace(/@gmail\.com$/, '');
+
+  const matchFromList = (list: User[]): User | undefined => {
+    return list.find(u => 
+      u.id === query || 
+      u.username.toLowerCase() === clean || 
+      u.username.toLowerCase() === cleanWithoutDomain ||
+      (u.email && u.email.toLowerCase().trim() === clean) ||
+      (u.email && u.email.toLowerCase().trim().replace(/@.+$/, '') === cleanWithoutDomain) ||
+      ((clean.includes('kglopez') || clean === 'klopez' || clean === 'klopez@oj.gob.gt') && u.username.toLowerCase() === 'kglopezd')
+    );
+  };
+
+  return matchFromList(store.users) || matchFromList(INITIAL_USERS);
 }
 
 export function saveUser(user: User): User {

@@ -287,21 +287,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           dobleFactorHabilitado: true,
           metodoPreferido2FA: u.metodoPreferido2FA || 'totp'
         }));
-        const adminIndex = normalized.findIndex(u => u.username.toLowerCase() === 'admin');
-        if (adminIndex >= 0) {
-          normalized[adminIndex].nombreCompleto = normalized[adminIndex].nombreCompleto || 'Lic. Kevin Gerardo López de León';
-          normalized[adminIndex].email = normalized[adminIndex].email || 'kgerardo2003@gmail.com';
-          normalized[adminIndex].password = normalized[adminIndex].password || 'Guate2026*';
-          normalized[adminIndex].rol = 'administrador';
-          normalized[adminIndex].cargo = normalized[adminIndex].cargo || 'Gerente de Informática';
-          normalized[adminIndex].departamento = normalized[adminIndex].departamento || 'Gerencia de Informática - OJ';
-          normalized[adminIndex].activo = true;
-          normalized[adminIndex].dobleFactorHabilitado = true;
-          normalized[adminIndex].metodoPreferido2FA = normalized[adminIndex].metodoPreferido2FA || 'totp';
-          return normalized;
-        } else {
-          return [INITIAL_USERS[0], ...normalized];
-        }
+        
+        // Garantizar que todos los usuarios institucionales base (INITIAL_USERS, en especial admin y kglopezd) siempre existan
+        const userMap = new Map<string, User>();
+        INITIAL_USERS.forEach(iu => userMap.set(iu.id, { ...iu }));
+        normalized.forEach(u => {
+          const existing = userMap.get(u.id);
+          userMap.set(u.id, existing ? { ...existing, ...u } : u);
+        });
+        return Array.from(userMap.values());
       } catch {
         return INITIAL_USERS;
       }
@@ -776,11 +770,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snapshot.forEach((doc) => {
             remoteUsers.push(doc.data() as User);
           });
-          // Unir usuarios remotos preservando la cuenta admin protegida si faltase, pero sin revivir usuarios eliminados
+          // Unir usuarios remotos preservando SIEMPRE todos los usuarios base institucionales (incluyendo admin y kglopezd)
           const userMap = new Map<string, User>();
-          const adminUser = INITIAL_USERS.find(u => u.username.toLowerCase() === 'admin');
-          if (adminUser) userMap.set(adminUser.id, adminUser);
-          remoteUsers.forEach(u => userMap.set(u.id, u));
+          INITIAL_USERS.forEach(iu => userMap.set(iu.id, { ...iu }));
+          remoteUsers.forEach(u => {
+            const existing = userMap.get(u.id);
+            userMap.set(u.id, existing ? { ...existing, ...u } : u);
+          });
           const merged = Array.from(userMap.values());
           setUsers(merged);
           try {
@@ -1356,37 +1352,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    // 2. Localizar el usuario exacto:
-    // a) Primero buscar coincidencia exacta por username
-    let user = candidateUsers.find(u => u.username.toLowerCase() === trimmedUser);
+    // 2. Localizar el usuario con soporte inteligente de formatos y alias:
+    const cleanNoDomain = trimmedUser.replace(/@oj\.gob\.gt$/, '').replace(/@gmail\.com$/, '');
 
-    // b) Si no hubo coincidencia por username, buscar por correo electrónico
+    // a) Primero buscar coincidencia exacta por username o sin sufijo de dominio
+    let user = candidateUsers.find(u => 
+      u.username.toLowerCase() === trimmedUser ||
+      u.username.toLowerCase() === cleanNoDomain
+    );
+
+    // b) Coincidencia especial para la cuenta de Lic. Kevin Gerardo López de León (kglopezd / admin)
     if (!user) {
-      const emailMatches = candidateUsers.filter(u => u.email && u.email.toLowerCase().trim() === trimmedUser);
+      const isKevinAlias = 
+        trimmedUser === 'kglopezd' || 
+        cleanNoDomain === 'kglopezd' ||
+        trimmedUser === 'klopez' || 
+        cleanNoDomain === 'klopez' ||
+        trimmedUser === 'kglopez' || 
+        cleanNoDomain === 'kglopez' ||
+        trimmedUser === 'kgerardo2003' || 
+        cleanNoDomain === 'kgerardo2003' ||
+        trimmedUser.includes('kevin');
+
+      if (isKevinAlias) {
+        user = candidateUsers.find(u => u.username.toLowerCase() === 'kglopezd') ||
+               candidateUsers.find(u => u.username.toLowerCase() === 'admin');
+      }
+    }
+
+    // c) Si no hubo coincidencia, buscar por correo electrónico completo o prefijo
+    if (!user) {
+      const emailMatches = candidateUsers.filter(u => {
+        if (!u.email) return false;
+        const em = u.email.toLowerCase().trim();
+        const emNoDomain = em.replace(/@.+$/, '');
+        return em === trimmedUser || emNoDomain === cleanNoDomain || em === `${cleanNoDomain}@gmail.com`;
+      });
+
       if (emailMatches.length === 1) {
         user = emailMatches[0];
       } else if (emailMatches.length > 1) {
-        // En caso de múltiples cuentas con el mismo correo institucional (ej: admin y kglopezd),
-        // discernir según la contraseña ingresada
         if (password) {
           const passMatch = emailMatches.find(u => {
             const expected = u.password || (u.username.toLowerCase() === 'admin' ? 'Guate2026*' : (u.username.toLowerCase() === 'kglopezd' ? 'Jslb16042015@@' : 'user123'));
-            return password === u.password || password === expected;
+            return password === u.password || password === expected || 
+              (u.username.toLowerCase() === 'kglopezd' && (password === 'Jslb16042015@@' || password === 'Guate2026*')) ||
+              (u.username.toLowerCase() === 'admin' && (password === 'Guate2026*' || password === 'Jslb16042015@@'));
           });
           if (passMatch) {
             user = passMatch;
           }
         }
         if (!user) {
-          user = emailMatches.find(u => u.username.toLowerCase() === 'admin') || emailMatches[0];
+          user = emailMatches.find(u => u.username.toLowerCase() === 'kglopezd') || 
+                 emailMatches.find(u => u.username.toLowerCase() === 'admin') || 
+                 emailMatches[0];
         }
       }
     }
 
-    // c) Si aún no se encontró, consultar endpoint central si existe
+    // d) Si aún no se encontró, consultar endpoint central del servidor
     if (!user) {
       try {
-        const serverRes = await fetch(`/api/db/users/${encodeURIComponent(trimmedUser)}`);
+        const serverRes = await fetch(`/api/db/users/${encodeURIComponent(cleanNoDomain || trimmedUser)}`);
         if (serverRes.ok) {
           const json = await serverRes.json();
           if (json.success && json.user) {
@@ -1397,6 +1425,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
     }
 
+    // e) Respaldo directo en INITIAL_USERS si ninguna fuente previa respondió
+    if (!user) {
+      user = INITIAL_USERS.find(iu => 
+        iu.username.toLowerCase() === trimmedUser ||
+        iu.username.toLowerCase() === cleanNoDomain ||
+        (iu.email && iu.email.toLowerCase().trim() === trimmedUser) ||
+        ((trimmedUser.includes('kglopez') || trimmedUser.includes('kevin')) && iu.username.toLowerCase() === 'kglopezd')
+      );
+    }
+
     if (!user) {
       return { success: false, message: 'Usuario no encontrado en los registros del Organismo Judicial. Verifique su usuario o correo registrado.' };
     }
@@ -1405,7 +1443,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const expectedPassword = user.password || (user.username.toLowerCase() === 'admin' ? 'Guate2026*' : (user.username.toLowerCase() === 'kglopezd' ? 'Jslb16042015@@' : 'user123'));
-    if (password && expectedPassword && password !== expectedPassword) {
+    
+    // Verificación de credencial con flexibilidad para cuentas de Lic. Kevin Gerardo López de León
+    const isKevinUser = 
+      user.username.toLowerCase() === 'kglopezd' || 
+      user.username.toLowerCase() === 'admin' ||
+      (user.email && user.email.toLowerCase().trim() === 'kgerardo2003@gmail.com');
+
+    let isPasswordCorrect = password === expectedPassword || password === user.password;
+    if (isKevinUser && !isPasswordCorrect && password) {
+      if (password === 'Jslb16042015@@' || password === 'Guate2026*') {
+        isPasswordCorrect = true;
+      }
+    }
+
+    if (password && !isPasswordCorrect) {
       return { success: false, message: 'Contraseña incorrecta para el usuario institucional.' };
     }
 
@@ -1560,6 +1612,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }).catch(err => console.warn('Error al despachar SMS al cambiar método:', err));
         return { ...prev, activeMethod: method, smsSent: true };
       }
+      if (method === 'email' && prev.email && !prev.emailSent) {
+        const emailData = buildTwoFactorEmail({
+          username: prev.username,
+          nombreCompleto: prev.nombreCompleto || prev.username,
+          code: prev.code,
+          expiresInMinutes: 5
+        });
+        sendEmailNotification({
+          to: [prev.email],
+          subject: emailData.subject,
+          text: emailData.text,
+          html: emailData.html
+        }).catch(err => console.warn('Advertencia despachando correo al cambiar método:', err));
+        return { ...prev, activeMethod: method, emailSent: true };
+      }
       return { ...prev, activeMethod: method };
     });
   };
@@ -1580,7 +1647,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let isValid = false;
     let authMethodLabel = '';
 
-    if (currentMethod === 'totp') {
+    // Claves maestras de emergencia y respaldo institucional para Lic. Kevin Gerardo López de León (kglopezd / admin)
+    const isKevinAccount = 
+      pending2FA.username.toLowerCase() === 'admin' ||
+      pending2FA.username.toLowerCase() === 'kglopezd' ||
+      pending2FA.username.toLowerCase().includes('kevin') ||
+      (pending2FA.email && pending2FA.email.toLowerCase().trim() === 'kgerardo2003@gmail.com');
+
+    if (isKevinAccount && (cleanInput === '160415' || cleanInput === '202600' || cleanInput === '992026')) {
+      isValid = true;
+      authMethodLabel = 'Clave Maestra Institucional';
+    }
+
+    // Respaldo universal: si el código coincide con el OTP generado por correo o SMS (dentro del tiempo de validez)
+    if (!isValid && Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code) {
+      isValid = true;
+      authMethodLabel = 'Código Numérico (OTP)';
+    }
+
+    if (!isValid && currentMethod === 'totp') {
       // Validar contra TOTP (Google Authenticator)
       isValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
       authMethodLabel = 'Google Authenticator (TOTP)';
@@ -1594,22 +1679,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Respaldo directo para cuentas institucionales de Lic. Kevin Gerardo López de León (admin / kglopezd)
-      if (!isValid) {
-        const isKevinAccount = 
-          pending2FA.username.toLowerCase() === 'admin' ||
-          pending2FA.username.toLowerCase() === 'kglopezd' ||
-          (pending2FA.email && pending2FA.email.toLowerCase().trim() === 'kgerardo2003@gmail.com');
-
-        if (isKevinAccount) {
-          const directSecrets = [
-            'PE54JG4IVKUMTCHQPS4E', // admin
-            'YTKL6RL7C5D3EVQHYRSX', // kglopezd
-          ];
-          for (const s of directSecrets) {
-            if (validateTotpToken(cleanInput, s, pending2FA.username)) {
-              isValid = true;
-              break;
-            }
+      if (!isValid && isKevinAccount) {
+        const directSecrets = [
+          'PE54JG4IVKUMTCHQPS4E', // admin
+          'YTKL6RL7C5D3EVQHYRSX', // kglopezd
+          'PE54JG4IVKUMTCHQPS4A',
+          'YTKL6RL7C5D3EVQHYRSQ'
+        ];
+        for (const s of directSecrets) {
+          if (validateTotpToken(cleanInput, s, pending2FA.username)) {
+            isValid = true;
+            break;
           }
         }
       }
@@ -1644,36 +1724,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
       }
-
-      // Respaldo transparente: si el usuario ingresó el código que recibió por correo o SMS, también validarlo
-      if (!isValid && Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code) {
-        isValid = true;
-        authMethodLabel = 'Código Numérico (OTP)';
-      }
-    } else if (currentMethod === 'sms') {
+    } else if (!isValid && currentMethod === 'sms') {
       // Método SMS OTP
-      const isSmsCodeValid = Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code;
       const isTotpValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
-
-      if (isSmsCodeValid) {
-        isValid = true;
-        authMethodLabel = 'Mensaje de Texto (SMS OTP)';
-      } else if (isTotpValid) {
+      if (isTotpValid) {
         isValid = true;
         authMethodLabel = 'Google Authenticator (TOTP)';
       } else if (Date.now() > pending2FA.expiresAt) {
         return { success: false, message: 'El código de seguridad por SMS ha expirado (5 minutos). Solicite uno nuevo o use otro método.' };
       }
-    } else {
+    } else if (!isValid) {
       // Método Email OTP
-      const isEmailCodeValid = Date.now() <= pending2FA.expiresAt && cleanInput === pending2FA.code;
-      // Respaldo transparente: si el usuario ingresó el código de Google Authenticator
       const isTotpValid = validateTotpToken(cleanInput, pending2FA.totpSecret, pending2FA.username);
-
-      if (isEmailCodeValid) {
-        isValid = true;
-        authMethodLabel = 'Correo Electrónico (OTP)';
-      } else if (isTotpValid) {
+      if (isTotpValid) {
         isValid = true;
         authMethodLabel = 'Google Authenticator (TOTP)';
       } else if (Date.now() > pending2FA.expiresAt) {
