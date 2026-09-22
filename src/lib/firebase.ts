@@ -38,26 +38,8 @@ export const FIREBASE_CONFIG = {
 // Inicialización de Firebase App
 export const app = getApps().length > 0 ? getApp() : initializeApp(FIREBASE_CONFIG);
 
-// Inicialización segura de Firestore
-function createFirestoreInstance(): Firestore {
-  try {
-    const dbId = FIREBASE_CONFIG.firestoreDatabaseId;
-    if (dbId && dbId !== '(default)') {
-      return getFirestore(app, dbId);
-    }
-    return getFirestore(app);
-  } catch (error) {
-    console.warn("Advertencia al inicializar Firestore con ID personalizado, reintentando por defecto:", error);
-    try {
-      return getFirestore(app);
-    } catch (fallbackError) {
-      console.warn("Aviso inicializando Firestore en modo local/contingencia:", fallbackError);
-      return getFirestore(app);
-    }
-  }
-}
-
-export const db: Firestore = createFirestoreInstance();
+// Conexión autoritativa a la base de datos compartida de Firestore (CRITICAL: todos los clientes conectan a la misma instancia)
+export const db: Firestore = getFirestore(app, FIREBASE_CONFIG.firestoreDatabaseId || firebaseConfigFile.firestoreDatabaseId);
 
 // Verificación segura de conexión al servidor Firestore
 export async function testConnection(): Promise<boolean> {
@@ -65,7 +47,10 @@ export async function testConnection(): Promise<boolean> {
     if (!db) return false;
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Firestore: cliente fuera de línea.");
+    }
     return false;
   }
 }

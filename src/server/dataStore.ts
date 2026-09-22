@@ -89,10 +89,15 @@ export function initDataStore(): DataStoreState {
         budgetModifications: Array.isArray(parsed.budgetModifications) ? parsed.budgetModifications : [...INITIAL_BUDGET_MODIFICATIONS],
         auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [...INITIAL_AUDIT_LOGS],
         userProfiles: Array.isArray(parsed.userProfiles) ? parsed.userProfiles : [...INITIAL_USER_PROFILES],
-        deletedPurchaseIds: Array.isArray(parsed.deletedPurchaseIds) ? parsed.deletedPurchaseIds : [],
-        deletedUserIds: Array.isArray(parsed.deletedUserIds) ? parsed.deletedUserIds : ['usr-operador-1', 'operador'],
+        deletedPurchaseIds: Array.isArray(parsed.deletedPurchaseIds) ? Array.from(new Set([...parsed.deletedPurchaseIds, 'pur-2026-038'])) : ['pur-2026-038'],
+        deletedUserIds: Array.isArray(parsed.deletedUserIds) ? Array.from(new Set([...parsed.deletedUserIds, 'usr-operador-1', 'operador', 'usr-auditor-1', 'auditor', 'usr-operador-2', 'jfuentes', 'usr-presupuesto-1', 'edmonroy', 'usr-compras-2', 'mmvaldez', 'usr-1790026026081-utwru'])) : ['usr-operador-1', 'operador', 'usr-auditor-1', 'auditor', 'usr-operador-2', 'jfuentes', 'usr-presupuesto-1', 'edmonroy', 'usr-compras-2', 'mmvaldez', 'usr-1790026026081-utwru'],
         isPurchasesInitialized
       };
+
+      // Filtrar de inmediato compras eliminadas
+      storeMemory.purchases = storeMemory.purchases.filter(p => 
+        !storeMemory!.deletedPurchaseIds.includes(p.id)
+      );
 
       // Filtrar de inmediato cualquier usuario que esté en la lista negra de eliminados
       storeMemory.users = storeMemory.users.filter(u => 
@@ -184,9 +189,10 @@ export function getStoreVersion(): { version: number; lastUpdated: string; purch
 // Compras (Purchases)
 export function savePurchase(purchase: PurchaseRecord): PurchaseRecord {
   const store = initDataStore();
-  // Quitar de lista de eliminados si estuviera
-  if (store.deletedPurchaseIds) {
-    store.deletedPurchaseIds = store.deletedPurchaseIds.filter(id => id !== purchase.id);
+  // Si está en la lista de eliminados confirmados, no permitir resurrección accidental
+  if (store.deletedPurchaseIds && store.deletedPurchaseIds.includes(purchase.id)) {
+    console.log(`[DataStore] Intento de resurrección bloqueado para compra eliminada: ${purchase.id}`);
+    return purchase;
   }
   const index = store.purchases.findIndex(p => p.id === purchase.id);
   if (index >= 0) {
@@ -202,11 +208,12 @@ export function savePurchase(purchase: PurchaseRecord): PurchaseRecord {
 
 export function saveBatchPurchases(newPurchases: PurchaseRecord[], replaceAll = false): PurchaseRecord[] {
   const store = initDataStore();
+  const valid = newPurchases.filter(p => !store.deletedPurchaseIds?.includes(p.id));
   if (replaceAll) {
-    store.purchases = [...newPurchases];
+    store.purchases = [...valid];
   } else {
     const existingMap = new Map(store.purchases.map(p => [p.id, p]));
-    newPurchases.forEach(np => existingMap.set(np.id, np));
+    valid.forEach(np => existingMap.set(np.id, np));
     store.purchases = Array.from(existingMap.values());
   }
   store.version = (store.version || 1) + 1;
@@ -217,23 +224,19 @@ export function saveBatchPurchases(newPurchases: PurchaseRecord[], replaceAll = 
 
 export function deletePurchase(id: string): boolean {
   const store = initDataStore();
-  const initialLength = store.purchases.length;
   store.purchases = store.purchases.filter(p => p.id !== id);
-  const deleted = store.purchases.length < initialLength;
-  if (deleted) {
-    if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
-    if (!store.deletedPurchaseIds.includes(id)) {
-      store.deletedPurchaseIds.push(id);
-      if (store.deletedPurchaseIds.length > 500) {
-        store.deletedPurchaseIds = store.deletedPurchaseIds.slice(-500);
-      }
+  if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
+  if (!store.deletedPurchaseIds.includes(id)) {
+    store.deletedPurchaseIds.push(id);
+    if (store.deletedPurchaseIds.length > 500) {
+      store.deletedPurchaseIds = store.deletedPurchaseIds.slice(-500);
     }
-    store.version = (store.version || 1) + 1;
-    store.isPurchasesInitialized = true;
-    persistToDisk();
-    console.log(`[DataStore] Compra eliminada permanentemente: ${id}`);
   }
-  return deleted;
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
+  persistToDisk();
+  console.log(`[DataStore] Compra eliminada permanentemente y registrada en lista negra: ${id}`);
+  return true;
 }
 
 export function batchDeletePurchases(ids: string[]): number {

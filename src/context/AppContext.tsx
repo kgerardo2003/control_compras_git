@@ -338,7 +338,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Inicialización con persistencia en localStorage
   const [users, setUsers] = useState<User[]>(() => {
     const essentialInitial = INITIAL_USERS.filter(iu => ['admin', 'kglopezd'].includes(iu.username.toLowerCase()));
-    let deletedSet = new Set<string>(['usr-operador-1', 'operador']);
+    let deletedSet = new Set<string>([
+      'usr-operador-1', 'operador',
+      'usr-auditor-1', 'auditor',
+      'usr-operador-2', 'jfuentes',
+      'usr-presupuesto-1', 'edmonroy',
+      'usr-compras-2', 'mmvaldez',
+      'usr-1790026026081-utwru'
+    ]);
     try {
       const savedDeleted = safeGetLocalStorage('OJ_DELETED_USERS_IDS');
       if (savedDeleted) {
@@ -361,10 +368,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           
           // Asegurar que las cuentas institucionales esenciales de Lic. Kevin López (admin y kglopezd) no falten
           const userMap = new Map<string, User>();
-          normalized.forEach(u => userMap.set(u.id, u));
-          essentialInitial.forEach(eu => {
-            if (!userMap.has(eu.id)) {
-              userMap.set(eu.id, { ...eu });
+          essentialInitial.forEach(eu => userMap.set(eu.id, { ...eu }));
+          normalized.forEach(u => {
+            if (!deletedSet.has(u.id) && !deletedSet.has((u.username || '').toLowerCase())) {
+              userMap.set(u.id, u);
             }
           });
           return Array.from(userMap.values());
@@ -395,7 +402,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed: PurchaseRecord[] = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map(p => {
+          // Filtrar rigurosamente cualquier compra eliminada (ej. pur-2026-038)
+          const valid = parsed.filter(p => p && p.id && p.id !== 'pur-2026-038');
+          return valid.map(p => {
             let rec = { ...p };
             if (!rec.areaSolicitante) {
               const initialMatch = INITIAL_PURCHASES.find(ip => ip.id === rec.id);
@@ -687,17 +696,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Registro persistente de IDs de compras eliminadas para evitar resurrección por caché de Firestore
   const deletedPurchaseIdsRef = useRef<Set<string>>((() => {
+    const set = new Set<string>(['pur-2026-038']);
     try {
       const stored = safeGetLocalStorage('OJ_DELETED_PURCHASES_IDS');
-      return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
-    } catch {
-      return new Set<string>();
-    }
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) arr.forEach((id: string) => set.add(id));
+      }
+    } catch {}
+    return set;
   })());
 
   // Registro persistente de IDs y nombres de usuario eliminados para evitar resurrección por caché o semillas
   const deletedUserIdsRef = useRef<Set<string>>((() => {
-    const set = new Set<string>(['usr-operador-1', 'operador']);
+    const set = new Set<string>([
+      'usr-operador-1', 'operador',
+      'usr-auditor-1', 'auditor',
+      'usr-operador-2', 'jfuentes',
+      'usr-presupuesto-1', 'edmonroy',
+      'usr-compras-2', 'mmvaldez',
+      'usr-1790026026081-utwru'
+    ]);
     try {
       const stored = safeGetLocalStorage('OJ_DELETED_USERS_IDS');
       if (stored) {
@@ -746,6 +765,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPurchases(validPurchases);
         try {
           safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(validPurchases));
+        } catch {}
+
+        // Reconciliación: si la estación tiene compras nuevas pendientes que no están en el servidor ni eliminadas, enviarlas
+        const serverIds = new Set<string>(data.purchases.map((p: PurchaseRecord) => p.id));
+        try {
+          const localSaved = safeGetLocalStorage(STORAGE_KEYS.PURCHASES);
+          if (localSaved) {
+            const localArr: PurchaseRecord[] = JSON.parse(localSaved);
+            if (Array.isArray(localArr)) {
+              localArr.forEach(localP => {
+                if (localP && localP.id && !serverIds.has(localP.id) && !deletedPurchaseIdsRef.current.has(localP.id)) {
+                  fetch('/api/db/purchases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(localP)
+                  }).catch(() => {});
+                }
+              });
+            }
+          }
         } catch {}
       }
 
@@ -879,29 +918,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (remoteItems.length > 0) {
           setPurchases(prevPurchases => {
             const prevMap = new Map<string, PurchaseRecord>(prevPurchases.map(p => [p.id, p]));
-            remoteItems.forEach(item => {
+            const validRemote = remoteItems.filter(item => !deletedPurchaseIdsRef.current.has(item.id));
+            const updated = validRemote.map(item => {
               const prevItem = prevMap.get(item.id);
               if (item.f56Documento && prevItem?.f56Documento?.dataUrl) {
                 if (!item.f56Documento.dataUrl || item.f56Documento.dataUrl.length < prevItem.f56Documento.dataUrl.length) {
-                  item.f56Documento = {
-                    ...item.f56Documento,
-                    dataUrl: prevItem.f56Documento.dataUrl,
-                    nombre: item.f56Documento.nombre || prevItem.f56Documento.nombre,
-                    tamano: item.f56Documento.tamano || prevItem.f56Documento.tamano,
-                    tipo: item.f56Documento.tipo || prevItem.f56Documento.tipo,
-                    fechaSubida: item.f56Documento.fechaSubida || prevItem.f56Documento.fechaSubida
+                  return {
+                    ...item,
+                    f56Documento: {
+                      ...item.f56Documento,
+                      dataUrl: prevItem.f56Documento.dataUrl,
+                      nombre: item.f56Documento.nombre || prevItem.f56Documento.nombre,
+                      tamano: item.f56Documento.tamano || prevItem.f56Documento.tamano,
+                      tipo: item.f56Documento.tipo || prevItem.f56Documento.tipo,
+                      fechaSubida: item.f56Documento.fechaSubida || prevItem.f56Documento.fechaSubida
+                    }
                   };
                 }
               }
-              prevMap.set(item.id, item);
+              return item;
             });
-            const merged = Array.from(prevMap.values())
-              .filter(p => !deletedPurchaseIdsRef.current.has(p.id))
-              .sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
+            updated.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
             try {
-              safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(merged));
+              safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
             } catch {}
-            return merged;
+            return updated;
           });
         }
         handleSnapshotMetadata(snapshot);
@@ -969,20 +1010,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (remoteUsers.length > 0) {
             setUsers(prevUsers => {
+              const prevUserMap = new Map<string, User>(prevUsers.map(pu => [pu.id, pu]));
               const userMap = new Map<string, User>();
               INITIAL_USERS.forEach(iu => {
                 if (['admin', 'kglopezd'].includes(iu.username.toLowerCase())) {
-                  userMap.set(iu.id, { ...iu });
-                }
-              });
-              prevUsers.forEach(pu => {
-                if (!deletedUserIdsRef.current.has(pu.id) && !deletedUserIdsRef.current.has((pu.username || '').toLowerCase())) {
-                  userMap.set(pu.id, pu);
+                  const prev = prevUserMap.get(iu.id);
+                  userMap.set(iu.id, prev ? { ...iu, ...prev } : { ...iu });
                 }
               });
               remoteUsers.forEach(u => {
-                const existing = userMap.get(u.id);
-                userMap.set(u.id, existing ? { ...existing, ...u } : u);
+                const uId = u.id;
+                const uName = (u.username || '').toLowerCase();
+                if (deletedUserIdsRef.current.has(uId) || deletedUserIdsRef.current.has(uName)) {
+                  return;
+                }
+                const prev = prevUserMap.get(uId);
+                userMap.set(uId, prev ? { ...prev, ...u } : u);
               });
               const merged = Array.from(userMap.values()).filter(u => 
                 !deletedUserIdsRef.current.has(u.id) && 

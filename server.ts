@@ -42,7 +42,8 @@ syncFirestoreData().catch(e => console.warn('[Server] Nota en sincronización in
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Helper para normalizar correos electrónicos (ej: kgerardo2003@gmail -> kgerardo2003@gmail.com)
 function normalizeEmail(email?: string): string {
