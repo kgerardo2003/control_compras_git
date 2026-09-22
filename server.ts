@@ -3,7 +3,12 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { setLogLevel } from 'firebase/firestore';
 import { OJ_LOGO_CID, OJ_LOGO_PNG_BASE64 } from './src/utils/emailLogoAsset';
+
+try {
+  setLogLevel('silent');
+} catch (_) {}
 import {
   initDataStore,
   getStoreState,
@@ -24,11 +29,15 @@ import {
   addBudgetModification,
   addAuditLog
 } from './src/server/dataStore';
+import { syncFirestoreData } from './src/server/firestoreSync';
 
 dotenv.config();
 
 // Inicializar de inmediato el almacén de datos persistente en disco
 initDataStore();
+
+// Sincronizar de inmediato datos de Firestore en segundo plano
+syncFirestoreData().catch(e => console.warn('[Server] Nota en sincronización inicial con Firestore:', e?.message));
 
 const app = express();
 const PORT = 3000;
@@ -152,8 +161,16 @@ app.get('/api/db/state', (req, res) => {
 
 // Verificar estado en vivo de la base de datos Firestore y del almacén sincronizado
 app.get('/api/db/firestore-status', async (req, res) => {
-  const projectId = 'gen-lang-client-0584258501';
-  const firestoreDatabaseId = 'ai-studio-sistemadecontrol-5592e35a-812a-481c-bad9-b7ae12134a41';
+  const fs = await import('fs');
+  let cfg: any = {};
+  if (fs.existsSync('./firebase-applet-config.json')) {
+    try {
+      cfg = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+    } catch (_) {}
+  }
+  const projectId = cfg.projectId || 'gen-lang-client-0584258501';
+  const firestoreDatabaseId = cfg.firestoreDatabaseId || 'ai-studio-sistemadecontrol-5592e35a-812a-481c-bad9-b7ae12134a41';
+  const apiKey = cfg.apiKey || '';
   const consoleUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${firestoreDatabaseId}/data?openUpgradeDialog=true`;
 
   const startTime = Date.now();
@@ -163,30 +180,34 @@ app.get('/api/db/firestore-status', async (req, res) => {
   let quotaExceeded = false;
 
   try {
-    const { initializeApp, getApps } = await import('firebase/app');
-    const { getFirestore, collection, getDocs, limit, query } = await import('firebase/firestore');
-    const fs = await import('fs');
-    let cfg = {};
-    if (fs.existsSync('./firebase-applet-config.json')) {
-      cfg = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
-    }
-    const app = getApps().length === 0 ? initializeApp(cfg) : getApps()[0];
-    const db = getFirestore(app, (cfg as any).firestoreDatabaseId || firestoreDatabaseId);
-
-    await getDocs(query(collection(db, 'system_config'), limit(1)));
+    const testUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDatabaseId}/documents/test/connection?key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(testUrl, { signal: controller.signal });
+    clearTimeout(timeout);
     latencyMs = Date.now() - startTime;
-    firestoreStatus = 'conectado';
+
+    if (resp.ok) {
+      firestoreStatus = 'conectado';
+    } else {
+      const data: any = await resp.json().catch(() => ({}));
+      const msg = data?.error?.message || resp.statusText;
+      const status = data?.error?.status || '';
+
+      if (resp.status === 429 || status === 'RESOURCE_EXHAUSTED' || msg.includes('Quota') || msg.includes('quota')) {
+        firestoreStatus = 'quota_exceeded';
+        quotaExceeded = true;
+        statusMessage = 'Límite de lectura gratuita diaria de Firestore alcanzado (Free daily read units per project). El sistema opera en Modo Resiliente con sincronización local y central de respaldo.';
+      } else {
+        firestoreStatus = 'error';
+        statusMessage = `Error de enlace con Firestore (${resp.status}): ${msg}`;
+      }
+    }
   } catch (err: any) {
     latencyMs = Date.now() - startTime;
     const msg = err?.message || String(err);
-    if (err?.code === 'resource-exhausted' || msg.includes('Quota') || msg.includes('quota')) {
-      firestoreStatus = 'quota_exceeded';
-      quotaExceeded = true;
-      statusMessage = 'Límite de lectura gratuita diaria de Firestore alcanzado (Free daily read units per project). El sistema opera en Modo Resiliente con sincronización local y central de respaldo.';
-    } else {
-      firestoreStatus = 'error';
-      statusMessage = `Error de enlace con Firestore: ${msg}`;
-    }
+    firestoreStatus = 'error';
+    statusMessage = `Error de enlace con Firestore: ${msg}`;
   }
 
   const store = getStoreState();
@@ -215,6 +236,16 @@ app.get('/api/db/firestore-status', async (req, res) => {
       lastUpdated: store.lastUpdated
     }
   });
+});
+
+// Reconciliar y forzar sincronización con Firestore bajo demanda
+app.post('/api/db/sync-firestore', async (req, res) => {
+  try {
+    const result = await syncFirestoreData();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error sincronizando con Firestore' });
+  }
 });
 
 // Buscar usuario institucional (para validación de inicio de sesión o 2FA)

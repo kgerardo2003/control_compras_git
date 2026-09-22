@@ -31,97 +31,17 @@ export function getUserAssignedArea(user?: User | null): string {
 }
 
 /**
- * Evalúa si una adquisición o evento es visible para el usuario según su área asignada.
+ * Evalúa si una adquisición o evento es visible para el usuario.
  * 
- * Regla de negocio:
- * - Los Administradores pueden ver absolutamente todos los eventos de todas las áreas.
- * - Los usuarios con área específica (ej. Desarrollo, Redes) ÚNICAMENTE pueden ver
- *   los eventos correspondientes a su área técnica.
+ * Regla de negocio institucional:
+ * - Todas las adquisiciones y expedientes son compartidos y visibles para todo el personal 
+ *   institucional autenticado (Administradores, Auditores, Operadores y Usuarios).
+ * - Los filtros por área o estatus se aplican de forma dinámica en la interfaz de usuario.
  */
 export function isPurchaseVisibleToUser(purchase: PurchaseRecord, user?: User | null): boolean {
   if (!user) return false;
-
-  // 1. El Administrador General siempre tiene visibilidad global irrestricta
-  if (isUserGlobalAdmin(user)) {
-    return true;
-  }
-
-  // 2. Área configurada para el usuario
-  const rawUserArea = (user.area || user.departamento || '').trim();
-  
-  // Si no tiene área definida o está configurado como global
-  if (!rawUserArea) return true;
-
-  const lowerUserArea = rawUserArea.toLowerCase();
-  if (
-    lowerUserArea.includes('todas las') || 
-    lowerUserArea.includes('acceso global') || 
-    lowerUserArea === 'todos' || 
-    lowerUserArea === 'general'
-  ) {
-    return true;
-  }
-
-  const pArea = (purchase.areaSolicitante || '').toLowerCase().trim();
-  const pDep = (purchase.dependenciaSolicitante || '').toLowerCase().trim();
-
-  // Si la compra no tiene área ni dependencia asignada, un admin ya la ve, para el resto no corresponde
-  if (!pArea && !pDep) {
-    return false;
-  }
-
-  // 3. Coincidencia exacta o contenida directa
-  if (pArea && (pArea === lowerUserArea || pArea.includes(lowerUserArea) || lowerUserArea.includes(pArea))) {
-    return true;
-  }
-  if (pDep && (pDep === lowerUserArea || pDep.includes(lowerUserArea) || lowerUserArea.includes(pDep))) {
-    return true;
-  }
-
-  // 4. Mapeo semántico de áreas institucionales de la Gerencia de Informática
-  // Desarrollo y Sistemas
-  if (lowerUserArea.includes('desarrollo') || lowerUserArea.includes('sistema')) {
-    if (pArea.includes('desarrollo') || pArea.includes('sistema') || pDep.includes('desarrollo') || pDep.includes('sistema')) {
-      return true;
-    }
-  }
-
-  // Redes y Telecomunicaciones
-  if (lowerUserArea.includes('red') || lowerUserArea.includes('telecom')) {
-    if (pArea.includes('red') || pArea.includes('telecom') || pDep.includes('red') || pDep.includes('telecom')) {
-      return true;
-    }
-  }
-
-  // Soporte Técnico (presencial o remoto)
-  if (lowerUserArea.includes('soporte')) {
-    if (pArea.includes('soporte') || pDep.includes('soporte')) {
-      return true;
-    }
-  }
-
-  // Videoaudiencias
-  if (lowerUserArea.includes('videoaudiencia') || lowerUserArea.includes('audiencia')) {
-    if (pArea.includes('videoaudiencia') || pArea.includes('audiencia') || pDep.includes('videoaudiencia') || pDep.includes('audiencia')) {
-      return true;
-    }
-  }
-
-  // Seguridad Informática
-  if (lowerUserArea.includes('seguridad')) {
-    if (pArea.includes('seguridad') || pDep.includes('seguridad')) {
-      return true;
-    }
-  }
-
-  // Departamento de Servicios Informáticos
-  if (lowerUserArea.includes('servicios inform')) {
-    if (pArea.includes('servicios inform') || pDep.includes('servicios inform')) {
-      return true;
-    }
-  }
-
-  return false;
+  // Todo usuario institucional autenticado tiene acceso de lectura al inventario consolidado
+  return true;
 }
 
 /**

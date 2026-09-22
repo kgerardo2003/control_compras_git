@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getFirestore, 
   Firestore,
+  setLogLevel,
   doc, 
   getDoc,
   getDocFromServer,
@@ -16,6 +17,11 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
+
+// Suprimir logs internos de depuración de Firestore (ej. idle stream timeout)
+try {
+  setLogLevel('silent');
+} catch (_) {}
 import firebaseConfigFile from '../../firebase-applet-config.json';
 import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument } from '../types';
 
@@ -45,28 +51,24 @@ function createFirestoreInstance(): Firestore {
     try {
       return getFirestore(app);
     } catch (fallbackError) {
-      console.error("Error crítico inicializando Firestore:", fallbackError);
-      throw fallbackError;
+      console.warn("Aviso inicializando Firestore en modo local/contingencia:", fallbackError);
+      return getFirestore(app);
     }
   }
 }
 
 export const db: Firestore = createFirestoreInstance();
 
-// Verificación obligatoria de conexión al servidor Firestore
+// Verificación segura de conexión al servidor Firestore
 export async function testConnection(): Promise<boolean> {
   try {
+    if (!db) return false;
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Verificando conectividad con Firebase Firestore...");
-    }
-    return true;
+    return false;
   }
 }
-// Ejecución silenciosa sin bloquear carga del módulo
-testConnection().catch(() => {});
 
 // Colecciones
 export const PURCHASES_COLLECTION = 'purchases';

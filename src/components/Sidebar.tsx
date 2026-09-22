@@ -40,7 +40,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
     hasModuleAccess,
     getUserProfile,
     themeConfig,
-    firestoreStatus
+    firestoreStatus,
+    setIsFirestoreStatusModalOpen
   } = useApp();
 
   const handleNavClick = (tab: ActiveTab) => {
@@ -354,7 +355,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
         <div className={`p-3 border-t ${themeConfig.sidebarBorder} space-y-2`}>
           
           {/* Indicador de Base de Datos Nube */}
-          <div className="bg-white/5 px-2.5 py-1.5 rounded-md flex items-center justify-between border border-white/5 text-[11px]">
+          <button 
+            type="button"
+            onClick={() => setIsFirestoreStatusModalOpen(true)}
+            className="w-full bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-md flex items-center justify-between border border-white/5 text-[11px] transition-colors cursor-pointer"
+            title="Verificar estado de la base de datos Firestore"
+          >
             <div className="flex items-center gap-1.5">
               <span className="relative flex h-1.5 w-1.5">
                 {firestoreStatus === 'conectado' ? (
@@ -371,7 +377,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
             <span className="text-[10px] text-emerald-400 font-mono font-semibold">
               {firestoreStatus === 'conectado' ? 'En Vivo' : 'Conectando'}
             </span>
-          </div>
+          </button>
 
           {/* Tarjeta de Usuario Activo */}
           <div className="bg-white/5 p-3 rounded-lg flex items-center justify-between border border-white/5">

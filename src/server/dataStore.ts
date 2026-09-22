@@ -32,6 +32,7 @@ export interface DataStoreState {
   auditLogs: AuditLogEntry[];
   userProfiles: UserProfile[];
   deletedPurchaseIds: string[];
+  deletedUserIds: string[];
   isPurchasesInitialized: boolean;
 }
 
@@ -89,8 +90,15 @@ export function initDataStore(): DataStoreState {
         auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [...INITIAL_AUDIT_LOGS],
         userProfiles: Array.isArray(parsed.userProfiles) ? parsed.userProfiles : [...INITIAL_USER_PROFILES],
         deletedPurchaseIds: Array.isArray(parsed.deletedPurchaseIds) ? parsed.deletedPurchaseIds : [],
+        deletedUserIds: Array.isArray(parsed.deletedUserIds) ? parsed.deletedUserIds : ['usr-operador-1', 'operador'],
         isPurchasesInitialized
       };
+
+      // Filtrar de inmediato cualquier usuario que esté en la lista negra de eliminados
+      storeMemory.users = storeMemory.users.filter(u => 
+        !storeMemory!.deletedUserIds.includes(u.id) && 
+        !storeMemory!.deletedUserIds.includes(u.username.toLowerCase())
+      );
 
       // Garantizar ÚNICAMENTE que las cuentas esenciales del Lic. Kevin Gerardo López de León (admin y kglopezd) existan
       // NO resucitar usuarios que el usuario haya eliminado deliberadamente (ej: auditor, operador, jfuentes, etc.)
@@ -137,6 +145,7 @@ export function initDataStore(): DataStoreState {
     auditLogs: [...INITIAL_AUDIT_LOGS],
     userProfiles: [...INITIAL_USER_PROFILES],
     deletedPurchaseIds: [],
+    deletedUserIds: ['usr-operador-1', 'operador'],
     isPurchasesInitialized: true
   };
 
@@ -148,6 +157,17 @@ export function initDataStore(): DataStoreState {
 // Obtener estado completo
 export function getStoreState(): DataStoreState {
   return initDataStore();
+}
+
+// Sobrescribir / reconciliar estado completo con persistencia a disco
+export function setStoreState(newState: DataStoreState): DataStoreState {
+  storeMemory = {
+    ...newState,
+    version: (newState.version || 1) + 1,
+    lastUpdated: new Date().toISOString()
+  };
+  persistToDisk();
+  return storeMemory;
 }
 
 // Obtener versión ligera para sondeo ultra-rápido multi-estación
@@ -279,6 +299,12 @@ export function findUser(query: string): User | undefined {
 
 export function saveUser(user: User): User {
   const store = initDataStore();
+  // Si fue eliminado con anterioridad pero el administrador lo está recreando, remover de la lista negra
+  if (store.deletedUserIds) {
+    store.deletedUserIds = store.deletedUserIds.filter(
+      id => id !== user.id && id !== user.username.toLowerCase()
+    );
+  }
   const index = store.users.findIndex(u => u.id === user.id || u.username.toLowerCase() === user.username.toLowerCase());
   if (index >= 0) {
     store.users[index] = { ...store.users[index], ...user };
@@ -292,19 +318,34 @@ export function saveUser(user: User): User {
 
 export function deleteUser(id: string): boolean {
   const store = initDataStore();
-  const user = store.users.find(u => u.id === id);
+  const user = store.users.find(u => u.id === id || u.username.toLowerCase() === id.toLowerCase());
   if (user && ESSENTIAL_USER_USERNAMES.includes(user.username.toLowerCase())) {
     return false; // Proteger las cuentas esenciales del Lic. Kevin Gerardo López de León (admin y kglopezd)
   }
-  const initialLength = store.users.length;
-  store.users = store.users.filter(u => u.id !== id);
-  const deleted = store.users.length < initialLength;
-  if (deleted) {
-    store.version = (store.version || 1) + 1;
-    persistToDisk();
-    console.log(`[DataStore] Usuario eliminado permanentemente: ${id}`);
+
+  if (!store.deletedUserIds) {
+    store.deletedUserIds = [];
   }
-  return deleted;
+
+  // Registrar permanentemente en la lista negra tanto ID como username
+  if (id && !store.deletedUserIds.includes(id)) {
+    store.deletedUserIds.push(id);
+  }
+  if (user?.username && !store.deletedUserIds.includes(user.username.toLowerCase())) {
+    store.deletedUserIds.push(user.username.toLowerCase());
+  }
+
+  const initialLength = store.users.length;
+  store.users = store.users.filter(u => 
+    u.id !== id && 
+    u.username.toLowerCase() !== id.toLowerCase() && 
+    (user ? u.username.toLowerCase() !== user.username.toLowerCase() : true)
+  );
+
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  console.log(`[DataStore] Usuario eliminado permanentemente y agregado a lista negra: ${id} (${user?.username || ''})`);
+  return true;
 }
 
 // Catálogos
