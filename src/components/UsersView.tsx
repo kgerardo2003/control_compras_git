@@ -379,10 +379,8 @@ export const UsersView: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">Usuario</th>
                 <th className="px-4 py-3">Nombre Completo</th>
-                <th className="px-3 py-3">Contacto (Correo / Teléfono)</th>
                 <th className="px-3 py-3 text-center">Perfil / Rol</th>
                 <th className="px-3 py-3">Área / Depto. Asignado</th>
-                <th className="px-3 py-3">Cargo</th>
                 <th className="px-3 py-3 text-center">Estado / 2FA</th>
                 <th className="px-3 py-3">Último Acceso</th>
                 {canManage && <th className="px-4 py-3 text-center">Acciones</th>}
@@ -403,24 +401,6 @@ export const UsersView: React.FC = () => {
                   {/* Nombre */}
                   <td className="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">
                     {u.nombreCompleto}
-                  </td>
-
-                  {/* Contacto: Email y Teléfono */}
-                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap text-xs">
-                    <div className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1.5 text-slate-700 font-medium">
-                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        {u.email}
-                      </span>
-                      {u.telefono ? (
-                        <span className="flex items-center gap-1.5 text-slate-600 font-mono text-[11px]">
-                          <Phone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span>{u.telefono}</span>
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 italic">Sin teléfono registrado</span>
-                      )}
-                    </div>
                   </td>
 
                   {/* Rol */}
@@ -446,12 +426,6 @@ export const UsersView: React.FC = () => {
                         </span>
                       </div>
                     )}
-                  </td>
-
-                  {/* Cargo */}
-                  <td className="px-3 py-3 text-slate-600 text-[11px]">
-                    <span className="font-medium text-slate-800 block">{u.cargo}</span>
-                    <span className="text-slate-400 block">{u.departamento}</span>
                   </td>
 
                   {/* Estado y Seguridad 2FA */}

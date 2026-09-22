@@ -150,6 +150,73 @@ app.get('/api/db/state', (req, res) => {
   }
 });
 
+// Verificar estado en vivo de la base de datos Firestore y del almacén sincronizado
+app.get('/api/db/firestore-status', async (req, res) => {
+  const projectId = 'gen-lang-client-0584258501';
+  const firestoreDatabaseId = 'ai-studio-sistemadecontrol-5592e35a-812a-481c-bad9-b7ae12134a41';
+  const consoleUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${firestoreDatabaseId}/data?openUpgradeDialog=true`;
+
+  const startTime = Date.now();
+  let firestoreStatus: 'conectado' | 'quota_exceeded' | 'error' = 'conectado';
+  let latencyMs = 0;
+  let statusMessage = 'Conexión a Firebase Firestore activa y operativa.';
+  let quotaExceeded = false;
+
+  try {
+    const { initializeApp, getApps } = await import('firebase/app');
+    const { getFirestore, collection, getDocs, limit, query } = await import('firebase/firestore');
+    const fs = await import('fs');
+    let cfg = {};
+    if (fs.existsSync('./firebase-applet-config.json')) {
+      cfg = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+    }
+    const app = getApps().length === 0 ? initializeApp(cfg) : getApps()[0];
+    const db = getFirestore(app, (cfg as any).firestoreDatabaseId || firestoreDatabaseId);
+
+    await getDocs(query(collection(db, 'system_config'), limit(1)));
+    latencyMs = Date.now() - startTime;
+    firestoreStatus = 'conectado';
+  } catch (err: any) {
+    latencyMs = Date.now() - startTime;
+    const msg = err?.message || String(err);
+    if (err?.code === 'resource-exhausted' || msg.includes('Quota') || msg.includes('quota')) {
+      firestoreStatus = 'quota_exceeded';
+      quotaExceeded = true;
+      statusMessage = 'Límite de lectura gratuita diaria de Firestore alcanzado (Free daily read units per project). El sistema opera en Modo Resiliente con sincronización local y central de respaldo.';
+    } else {
+      firestoreStatus = 'error';
+      statusMessage = `Error de enlace con Firestore: ${msg}`;
+    }
+  }
+
+  const store = getStoreState();
+
+  return res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
+    firestore: {
+      projectId,
+      databaseId: firestoreDatabaseId,
+      status: firestoreStatus,
+      latencyMs,
+      quotaExceeded,
+      message: statusMessage,
+      consoleUrl
+    },
+    centralStore: {
+      status: 'active',
+      version: store.version,
+      purchasesCount: store.purchases.length,
+      usersCount: store.users.length,
+      catalogsCount: store.catalogs.length,
+      budgetLinesCount: store.budgetLines.length,
+      budgetModificationsCount: store.budgetModifications.length,
+      auditLogsCount: store.auditLogs.length,
+      lastUpdated: store.lastUpdated
+    }
+  });
+});
+
 // Buscar usuario institucional (para validación de inicio de sesión o 2FA)
 app.get('/api/db/users/:query', (req, res) => {
   try {
