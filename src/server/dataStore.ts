@@ -7,7 +7,9 @@ import {
   Catalog, 
   AuditLogEntry, 
   BudgetLineItem, 
-  BudgetModification 
+  BudgetModification,
+  JudicaturaRecord,
+  JudicaturaObservacion
 } from '../types';
 import { 
   INITIAL_PURCHASES, 
@@ -16,6 +18,7 @@ import {
   INITIAL_USER_PROFILES, 
   INITIAL_AUDIT_LOGS 
 } from '../data/initialData';
+import { INITIAL_JUDICATURAS } from '../data/initialJudicaturasData';
 import { 
   INITIAL_BUDGET_LINES, 
   INITIAL_BUDGET_MODIFICATIONS 
@@ -25,6 +28,7 @@ export interface DataStoreState {
   version: number;
   lastUpdated: string;
   purchases: PurchaseRecord[];
+  judicaturas: JudicaturaRecord[];
   users: User[];
   catalogs: Catalog[];
   budgetLines: BudgetLineItem[];
@@ -83,6 +87,7 @@ export function initDataStore(): DataStoreState {
         version: parsed.version || 1,
         lastUpdated: parsed.lastUpdated || new Date().toISOString(),
         purchases: Array.isArray(parsed.purchases) ? parsed.purchases : (isPurchasesInitialized ? [] : [...INITIAL_PURCHASES]),
+        judicaturas: Array.isArray(parsed.judicaturas) ? parsed.judicaturas : [...INITIAL_JUDICATURAS],
         users: Array.isArray(parsed.users) ? parsed.users : [...INITIAL_USERS],
         catalogs: Array.isArray(parsed.catalogs) ? parsed.catalogs : [...INITIAL_CATALOGS],
         budgetLines: Array.isArray(parsed.budgetLines) ? parsed.budgetLines : [...INITIAL_BUDGET_LINES],
@@ -143,6 +148,7 @@ export function initDataStore(): DataStoreState {
     version: 1,
     lastUpdated: new Date().toISOString(),
     purchases: [...INITIAL_PURCHASES],
+    judicaturas: [...INITIAL_JUDICATURAS],
     users: INITIAL_USERS.filter(u => ESSENTIAL_USER_USERNAMES.includes(u.username.toLowerCase())),
     catalogs: [...INITIAL_CATALOGS],
     budgetLines: [...INITIAL_BUDGET_LINES],
@@ -435,3 +441,54 @@ export function addAuditLog(entry: AuditLogEntry): AuditLogEntry {
   persistToDisk();
   return entry;
 }
+
+// Judicaturas por Inaugurar
+export function saveJudicatura(judicatura: JudicaturaRecord): JudicaturaRecord {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  const index = store.judicaturas.findIndex(j => j.id === judicatura.id);
+  if (index >= 0) {
+    store.judicaturas[index] = { ...store.judicaturas[index], ...judicatura };
+  } else {
+    store.judicaturas.unshift(judicatura);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return judicatura;
+}
+
+export function deleteJudicatura(id: string): boolean {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [];
+    return false;
+  }
+  const initialLength = store.judicaturas.length;
+  store.judicaturas = store.judicaturas.filter(j => j.id !== id);
+  const deleted = store.judicaturas.length < initialLength;
+  if (deleted) {
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+  }
+  return deleted;
+}
+
+export function addJudicaturaObservation(judicaturaId: string, obs: JudicaturaObservacion): JudicaturaRecord | null {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  const jud = store.judicaturas.find(j => j.id === judicaturaId);
+  if (!jud) return null;
+
+  if (!Array.isArray(jud.observaciones)) {
+    jud.observaciones = [];
+  }
+  jud.observaciones.unshift(obs);
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return jud;
+}
+

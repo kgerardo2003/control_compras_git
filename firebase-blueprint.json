@@ -86,12 +86,37 @@
         "activo": { "type": "boolean", "description": "Estado de actividad" }
       },
       "required": ["id", "codigo", "nombre", "modulosPermitidos"]
+    },
+    "Judicatura": {
+      "title": "Judicatura",
+      "description": "Control de nuevas Judicaturas por Inaugurar, infraestructura técnica y cronología de observaciones",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único de la judicatura" },
+        "nombreJudicatura": { "type": "string", "description": "Nombre de la judicatura" },
+        "tipoRamo": { "type": "string", "description": "Ramo jurisdiccional: Penal o Civil" },
+        "fechaInicioAdecuaciones": { "type": "string", "description": "Fecha de inicio de adecuaciones físicas y técnicas" },
+        "fechaFinAdecuaciones": { "type": "string", "description": "Fecha de culminación de adecuaciones" },
+        "equipoComputo": { "type": "string", "description": "Disponibilidad de equipo de cómputo (Si / No)" },
+        "equipoAudio": { "type": "string", "description": "Disponibilidad de equipo de audio para audiencias (Si / No)" },
+        "cableadoEstructurado": { "type": "string", "description": "Instalación de cableado estructurado de red (Si / No)" },
+        "enlaceDatos": { "type": "string", "description": "Enlace de datos y conectividad telecom (Si / No)" },
+        "fechaInauguracion": { "type": "string", "description": "Fecha proyectada u oficial de inauguración" },
+        "observaciones": { "type": "array", "description": "Historial cronológico de observaciones y avances" },
+        "creadoPor": { "type": "string", "description": "Funcionario responsable del registro" },
+        "fechaCreacion": { "type": "string", "description": "Fecha y hora de creación ISO" }
+      },
+      "required": ["id", "nombreJudicatura", "tipoRamo", "fechaInicioAdecuaciones", "fechaFinAdecuaciones", "fechaInauguracion"]
     }
   },
   "firestore": {
     "/purchases/{purchaseId}": {
       "schema": "Purchase",
       "description": "Colección de procesos y compras institucionales en tiempo real"
+    },
+    "/judicaturas/{judicaturaId}": {
+      "schema": "Judicatura",
+      "description": "Colección de control de nuevas judicaturas por inaugurar"
     },
     "/audit_logs/{logId}": {
       "schema": "AuditLog",

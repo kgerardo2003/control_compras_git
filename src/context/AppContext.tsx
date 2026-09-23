@@ -21,7 +21,9 @@ import {
   BudgetModification,
   PurchaseChangeLogEntry,
   TwoFactorState,
-  TwoFactorMethod
+  TwoFactorMethod,
+  JudicaturaRecord,
+  JudicaturaObservacion
 } from '../types';
 import { 
   getOrCreateTotpSecret, 
@@ -37,6 +39,7 @@ import {
   INITIAL_AUDIT_LOGS, 
   INITIAL_NOTIFICATIONS 
 } from '../data/initialData';
+import { INITIAL_JUDICATURAS } from '../data/initialJudicaturasData';
 import { 
   INITIAL_BUDGET_LINES, 
   INITIAL_BUDGET_MODIFICATIONS 
@@ -79,7 +82,10 @@ import {
   saveBudgetModificationToFirestore,
   removeBudgetModificationFromFirestore,
   onBudgetLinesSnapshot,
-  onBudgetModificationsSnapshot
+  onBudgetModificationsSnapshot,
+  saveJudicaturaToFirestore,
+  removeJudicaturaFromFirestore,
+  onJudicaturasSnapshot
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit, getDocs } from 'firebase/firestore';
 import { saveAttachmentToIndexedDB, getAttachmentFromIndexedDB, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
@@ -244,6 +250,13 @@ interface AppContextType {
   rejectBudgetModification: (id: string) => void;
   togglePurchasePaymentState: (purchaseId: string) => void;
   addPurchaseBitacoraEntry: (purchaseId: string, entry: Omit<PurchaseChangeLogEntry, 'id' | 'fechaHora' | 'usuario'>) => void;
+
+  // Módulo de Judicaturas por Inaugurar
+  judicaturas: JudicaturaRecord[];
+  addJudicatura: (data: Omit<JudicaturaRecord, 'id' | 'fechaCreacion' | 'observaciones'> & { observacionesIniciales?: string }) => Promise<JudicaturaRecord>;
+  updateJudicatura: (id: string, data: Partial<JudicaturaRecord>) => Promise<JudicaturaRecord>;
+  deleteJudicatura: (id: string) => Promise<boolean>;
+  addJudicaturaObservacion: (judicaturaId: string, texto: string) => Promise<JudicaturaRecord | null>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -252,6 +265,7 @@ const STORAGE_KEYS = {
   USERS: 'oj_git_users_v1',
   USER_PROFILES: 'oj_git_user_profiles_v1',
   PURCHASES: 'oj_git_purchases_v1',
+  JUDICATURAS: 'oj_git_judicaturas_v1',
   CATALOGS: 'oj_git_catalogs_v1',
   AUDIT_LOGS: 'oj_git_audit_v1',
   NOTIFICATIONS: 'oj_git_notifs_v1',
@@ -362,7 +376,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const filtered = parsed.filter(u => !deletedSet.has(u.id) && !deletedSet.has((u.username || '').toLowerCase()));
           const normalized = filtered.map(u => ({
             ...u,
-            dobleFactorHabilitado: false,
+            dobleFactorHabilitado: u.dobleFactorHabilitado !== undefined ? u.dobleFactorHabilitado : true,
             metodoPreferido2FA: u.metodoPreferido2FA || 'totp'
           }));
           
@@ -422,6 +436,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     // En nueva estación de trabajo, iniciar vacío para recibir los datos reales del servidor central
     return [];
+  });
+
+  const [judicaturas, setJudicaturas] = useState<JudicaturaRecord[]>(() => {
+    const saved = safeGetLocalStorage(STORAGE_KEYS.JUDICATURAS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {}
+    }
+    return [...INITIAL_JUDICATURAS];
   });
 
   const [catalogs, setCatalogs] = useState<Catalog[]>(() => {
@@ -830,14 +857,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
         const essentialUsers = INITIAL_USERS.filter(iu => ['admin', 'kglopezd'].includes(iu.username.toLowerCase()));
         const uMap = new Map<string, User>();
-        validUsers.forEach(u => uMap.set(u.id, { ...u, dobleFactorHabilitado: false }));
+        validUsers.forEach(u => uMap.set(u.id, { ...u, dobleFactorHabilitado: u.dobleFactorHabilitado !== undefined ? u.dobleFactorHabilitado : true }));
         essentialUsers.forEach(eu => {
-          if (!uMap.has(eu.id)) uMap.set(eu.id, { ...eu, dobleFactorHabilitado: false });
+          if (!uMap.has(eu.id)) uMap.set(eu.id, { ...eu, dobleFactorHabilitado: true });
         });
         const finalUsers = Array.from(uMap.values());
         setUsers(finalUsers);
         try {
           safeSetLocalStorage(STORAGE_KEYS.USERS, JSON.stringify(finalUsers));
+        } catch {}
+      }
+
+      // Sincronizar judicaturas por inaugurar
+      if (Array.isArray(data.judicaturas)) {
+        setJudicaturas(data.judicaturas);
+        try {
+          safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(data.judicaturas));
         } catch {}
       }
 
@@ -1153,6 +1188,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn("No se pudo iniciar listener de perfiles de usuario:", err);
     }
 
+    // Suscripción reactiva a Judicaturas por Inaugurar
+    let unsubJudicaturas: (() => void) | undefined;
+    try {
+      unsubJudicaturas = onJudicaturasSnapshot((cloudJudicaturas) => {
+        if (cloudJudicaturas && cloudJudicaturas.length > 0) {
+          setJudicaturas(cloudJudicaturas);
+          safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(cloudJudicaturas));
+        }
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de judicaturas:", err);
+    }
+
     return () => {
       if (unsubPurchases) unsubPurchases();
       if (unsubLogs) unsubLogs();
@@ -1161,8 +1209,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (unsubBudgetLines) unsubBudgetLines();
       if (unsubBudgetMods) unsubBudgetMods();
       if (unsubUserProfiles) unsubUserProfiles();
+      if (unsubJudicaturas) unsubJudicaturas();
     };
   }, [syncWithCentralServer]);
+
+  useEffect(() => {
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(judicaturas));
+  }, [judicaturas]);
 
   useEffect(() => {
     safeSetLocalStorage(STORAGE_KEYS.USER_PROFILES, JSON.stringify(userProfiles));
@@ -1761,7 +1814,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Contraseña incorrecta para el usuario institucional.' };
     }
 
-    // Autenticación directa sin 2FA según solicitud institucional
+    // Si el usuario tiene habilitado el Doble Factor de Autenticación (Google Authenticator)
+    if (user.dobleFactorHabilitado !== false) {
+      const userTotpSecret = getOrCreateTotpSecret(user.id, user.username);
+      const userTotpUri = generateOtpAuthUri(user.username, userTotpSecret);
+      const userQrCodeUrl = await generateTotpQrCodeDataUrl(userTotpUri);
+      const activeMethod: TwoFactorMethod = preferredMethod || (user.metodoPreferido2FA as TwoFactorMethod) || 'totp';
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+      const pendingData: TwoFactorState = {
+        userId: user.id,
+        username: user.username,
+        nombreCompleto: user.nombreCompleto || user.username,
+        email: user.email || 'kgerardo2003@gmail.com',
+        maskedEmail: maskEmailAddress(user.email || 'kgerardo2003@gmail.com'),
+        telefono: user.telefono,
+        maskedTelefono: user.telefono ? maskPhoneNumber(user.telefono) : undefined,
+        code,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+        attemptsLeft: 5,
+        sentAt: Date.now(),
+        activeMethod,
+        totpSecret: userTotpSecret,
+        totpUri: userTotpUri,
+        qrCodeUrl: userQrCodeUrl,
+      };
+
+      setPending2FA(pendingData);
+
+      // Si el método activo es email, enviar correo de respaldo
+      if (activeMethod === 'email' && pendingData.email) {
+        const emailData = buildTwoFactorEmail({
+          username: user.username,
+          nombreCompleto: user.nombreCompleto || user.username,
+          code,
+          expiresInMinutes: 5
+        });
+        sendEmailNotification({
+          to: [pendingData.email],
+          subject: emailData.subject,
+          text: emailData.text,
+          html: emailData.html
+        }).catch(err => console.warn('Aviso enviando correo 2FA:', err));
+      }
+
+      return {
+        success: true,
+        requires2FA: true,
+        message: 'Segundo factor de autenticación requerido con Google Authenticator.',
+        email: pendingData.email,
+        pendingData
+      };
+    }
+
+    // Autenticación directa sin 2FA si fue desactivado manualmente
     const updatedUser: User = { 
       ...user, 
       nombreCompleto: user.nombreCompleto || ((user.username.toLowerCase() === 'admin' || user.username.toLowerCase() === 'kglopezd') ? 'Lic. Kevin Gerardo López de León' : user.username),
@@ -3071,10 +3177,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Reglas de respaldo si el perfil no fue cargado
     if (currentUser.rol === 'auditor') {
-      return ['dashboard', 'compras', 'presupuesto', 'reportes', 'auditoria'].includes(tab);
+      return ['dashboard', 'compras', 'judicaturas', 'presupuesto', 'reportes', 'auditoria'].includes(tab);
     }
     if (currentUser.rol === 'usuario_estandar') {
-      return ['dashboard', 'compras', 'reportes'].includes(tab);
+      return ['dashboard', 'compras', 'judicaturas', 'reportes'].includes(tab);
     }
 
     return tab === 'dashboard';
@@ -3543,9 +3649,194 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // Métodos del Módulo de Judicaturas por Inaugurar
+  const addJudicatura = async (data: Omit<JudicaturaRecord, 'id' | 'fechaCreacion' | 'observaciones'> & { observacionesIniciales?: string }): Promise<JudicaturaRecord> => {
+    const id = `jud-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const nowIso = new Date().toISOString();
+    const observacionInicial: JudicaturaObservacion[] = [];
+
+    if (data.observacionesIniciales && data.observacionesIniciales.trim()) {
+      observacionInicial.push({
+        id: `obs-${Date.now()}-1`,
+        numeroAccion: 1,
+        fecha: nowIso,
+        autor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+        texto: data.observacionesIniciales.trim()
+      });
+    }
+
+    const newJud: JudicaturaRecord = {
+      id,
+      nombreJudicatura: data.nombreJudicatura.trim(),
+      tipoRamo: data.tipoRamo,
+      fechaInicioAdecuaciones: data.fechaInicioAdecuaciones,
+      fechaFinAdecuaciones: data.fechaFinAdecuaciones,
+      equipoComputo: data.equipoComputo,
+      equipoAudio: data.equipoAudio,
+      cableadoEstructurado: data.cableadoEstructurado,
+      enlaceDatos: data.enlaceDatos,
+      fechaInauguracion: data.fechaInauguracion,
+      observaciones: observacionInicial,
+      creadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaCreacion: nowIso
+    };
+
+    const updated = [newJud, ...judicaturas];
+    setJudicaturas(updated);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updated));
+
+    // Persistir en Firestore
+    saveJudicaturaToFirestore(newJud).catch(err => console.warn("Aviso Firestore al guardar judicatura:", err));
+
+    // Persistir en servidor central
+    fetch('/api/db/judicaturas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newJud)
+    }).catch(err => console.warn("Aviso servidor central al guardar judicatura:", err));
+
+    logAudit(
+      'CREAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Registro de nueva judicatura por inaugurar: ${newJud.nombreJudicatura} (Ramo ${newJud.tipoRamo}). Fecha Inauguración: ${newJud.fechaInauguracion}`,
+      newJud.id
+    );
+
+    showToast({
+      title: 'Judicatura Registrada',
+      message: `La ficha de ${newJud.nombreJudicatura} ha sido ingresada satisfactoriamente.`,
+      type: 'exito'
+    });
+
+    return newJud;
+  };
+
+  const updateJudicatura = async (id: string, data: Partial<JudicaturaRecord>): Promise<JudicaturaRecord> => {
+    const existing = judicaturas.find(j => j.id === id);
+    const nowIso = new Date().toISOString();
+    const updatedRecord: JudicaturaRecord = {
+      ...(existing || ({} as JudicaturaRecord)),
+      ...data,
+      id,
+      modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaModificacion: nowIso
+    };
+
+    const updated = judicaturas.map(j => j.id === id ? updatedRecord : j);
+    setJudicaturas(updated);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updated));
+
+    saveJudicaturaToFirestore(updatedRecord).catch(err => console.warn("Aviso Firestore al actualizar judicatura:", err));
+
+    fetch('/api/db/judicaturas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedRecord)
+    }).catch(err => console.warn("Aviso servidor central al actualizar judicatura:", err));
+
+    logAudit(
+      'EDITAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Actualización de datos en judicatura: ${updatedRecord.nombreJudicatura} (Ramo ${updatedRecord.tipoRamo})`,
+      updatedRecord.id
+    );
+
+    showToast({
+      title: 'Judicatura Actualizada',
+      message: `Los cambios en ${updatedRecord.nombreJudicatura} fueron guardados.`,
+      type: 'exito'
+    });
+
+    return updatedRecord;
+  };
+
+  const deleteJudicatura = async (id: string): Promise<boolean> => {
+    const existing = judicaturas.find(j => j.id === id);
+    const updated = judicaturas.filter(j => j.id !== id);
+    setJudicaturas(updated);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updated));
+
+    removeJudicaturaFromFirestore(id).catch(err => console.warn("Aviso Firestore al eliminar judicatura:", err));
+
+    fetch(`/api/db/judicaturas/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      .catch(err => console.warn("Aviso servidor central al eliminar judicatura:", err));
+
+    logAudit(
+      'ELIMINAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Eliminación de registro de judicatura: ${existing?.nombreJudicatura || id}`,
+      id
+    );
+
+    showToast({
+      title: 'Judicatura Eliminada',
+      message: `El registro de la judicatura ha sido removido del sistema.`,
+      type: 'info'
+    });
+
+    return true;
+  };
+
+  const addJudicaturaObservacion = async (judicaturaId: string, texto: string): Promise<JudicaturaRecord | null> => {
+    const existing = judicaturas.find(j => j.id === judicaturaId);
+    if (!existing || !texto.trim()) return null;
+
+    const currentObs = existing.observaciones || [];
+    const nextNumber = currentObs.length + 1;
+    const nowIso = new Date().toISOString();
+
+    const newObs: JudicaturaObservacion = {
+      id: `obs-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      numeroAccion: nextNumber,
+      fecha: nowIso,
+      autor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      texto: texto.trim()
+    };
+
+    // Agregar de forma cronológica (más reciente primero para vista del más reciente al más antiguo)
+    const updatedObs = [newObs, ...currentObs];
+    const updatedRecord: JudicaturaRecord = {
+      ...existing,
+      observaciones: updatedObs,
+      modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaModificacion: nowIso
+    };
+
+    const updated = judicaturas.map(j => j.id === judicaturaId ? updatedRecord : j);
+    setJudicaturas(updated);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updated));
+
+    saveJudicaturaToFirestore(updatedRecord).catch(err => console.warn("Aviso Firestore al guardar observación:", err));
+
+    fetch(`/api/db/judicaturas/${encodeURIComponent(judicaturaId)}/observaciones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        texto: newObs.texto,
+        autor: newObs.autor
+      })
+    }).catch(err => console.warn("Aviso servidor central al agregar observación:", err));
+
+    logAudit(
+      'EDITAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Nueva observación/acción #${nextNumber} registrada en judicatura: ${existing.nombreJudicatura}`,
+      judicaturaId
+    );
+
+    showToast({
+      title: 'Acción Registrada en Árbol',
+      message: `Se añadió la observación #${nextNumber} al historial cronológico de la judicatura.`,
+      type: 'exito'
+    });
+
+    return updatedRecord;
+  };
+
   const resetToDemoData = () => {
     setUsers(INITIAL_USERS);
     setPurchases(INITIAL_PURCHASES);
+    setJudicaturas(INITIAL_JUDICATURAS);
     setCatalogs(INITIAL_CATALOGS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
     setNotifications(INITIAL_NOTIFICATIONS);
@@ -3663,6 +3954,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         rejectBudgetModification,
         togglePurchasePaymentState,
         addPurchaseBitacoraEntry,
+        judicaturas,
+        addJudicatura,
+        updateJudicatura,
+        deleteJudicatura,
+        addJudicaturaObservacion,
       }}
     >
       {children}

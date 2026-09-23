@@ -15,7 +15,8 @@ import {
   Shield,
   Eye,
   Phone,
-  MessageSquare
+  MessageSquare,
+  Smartphone
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
@@ -382,6 +383,7 @@ export const UsersView: React.FC = () => {
                 <th className="px-3 py-3 text-center">Perfil / Rol</th>
                 <th className="px-3 py-3">Área / Depto. Asignado</th>
                 <th className="px-3 py-3 text-center">Estado</th>
+                <th className="px-3 py-3 text-center">2FA Google</th>
                 <th className="px-3 py-3">Último Acceso</th>
                 {canManage && <th className="px-4 py-3 text-center">Acciones</th>}
               </tr>
@@ -450,6 +452,20 @@ export const UsersView: React.FC = () => {
                         </span>
                       )}
                     </div>
+                  </td>
+
+                  {/* 2FA Google Authenticator */}
+                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                    {u.dobleFactorHabilitado !== false ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                        <Smartphone className="w-3 h-3 text-amber-600" />
+                        <span>Google TOTP</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500">
+                        Desactivado
+                      </span>
+                    )}
                   </td>
 
                   {/* Último Acceso */}
@@ -569,7 +585,7 @@ export const UsersView: React.FC = () => {
                 <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-blue-600" />
-                    Número de Teléfono Móvil (Para 2FA vía SMS)
+                    Número de Teléfono Móvil
                   </span>
                   <span className="text-[10px] text-slate-400 font-normal">Formato: +502 XXXX-XXXX</span>
                 </label>
@@ -709,6 +725,28 @@ export const UsersView: React.FC = () => {
                   placeholder="ej. Gerencia de Informática - Organismo Judicial"
                   className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
                 />
+              </div>
+
+              {/* Doble Factor Google Authenticator */}
+              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-amber-600" />
+                    <span className="font-bold text-slate-800 text-xs">Doble Factor con Google Authenticator</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={dobleFactorHabilitado}
+                      onChange={(e) => setDobleFactorHabilitado(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+                  </label>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  Protección de cuenta con tokens TOTP generados dinámicamente cada 30 segundos en Google Authenticator.
+                </p>
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2">

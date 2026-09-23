@@ -15,7 +15,8 @@ import {
   RotateCcw,
   KeyRound,
   Key,
-  DollarSign
+  DollarSign,
+  Scale
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { OJLogo } from './OJLogo';
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
     setPurchaseToEdit,
     resetToDemoData,
     purchases,
+    judicaturas,
     budgetAvailability,
     userProfiles,
     hasModuleAccess,
@@ -168,6 +170,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
               </div>
               <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeConfig.sidebarBadge} font-mono`}>
                 {purchases.length}
+              </span>
+            </button>
+          )}
+
+          {/* Judicaturas por Inaugurar */}
+          {hasModuleAccess('judicaturas') && (
+            <button
+              id="nav-tab-judicaturas"
+              type="button"
+              onClick={() => handleNavClick('judicaturas')}
+              className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'judicaturas'
+                  ? themeConfig.sidebarActive
+                  : `text-slate-300 ${themeConfig.sidebarHover}`
+              }`}
+            >
+              <div className="flex items-center">
+                <Scale className={`w-4 h-4 mr-3 ${activeTab === 'judicaturas' ? themeConfig.sidebarIconActive : 'text-slate-400'}`} />
+                <span>Judicaturas</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeConfig.sidebarBadge} font-mono`}>
+                {(judicaturas || []).length}
               </span>
             </button>
           )}

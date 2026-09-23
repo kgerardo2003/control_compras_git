@@ -403,6 +403,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                 <div className="border-t border-slate-100 pt-1 px-2 space-y-0.5">
                   <button
                     type="button"
+                    onClick={() => { setIsGoogleAuthModalOpen(true); setIsUserMenuOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-amber-800 hover:bg-amber-50 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Google Authenticator (QR)</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => { setIsChangePasswordModalOpen(true); setIsUserMenuOpen(false); }}
                     className="w-full text-left px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
                   >

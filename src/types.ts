@@ -122,6 +122,7 @@ export interface PurchaseRecord {
   estadoPago?: 'comprometido' | 'pagado'; // "comprometido" = pendiente de pago; "pagado" = rebaja realizada
   montoPagado?: number; // Monto que ya fue efectivamente pagado / devengado
   fechaPago?: string; // Fecha en que se marcó como pagado
+  diasAtraso?: number; // Días de atraso en el evento (para semáforos de cumplimiento)
   bitacoraCambios?: PurchaseChangeLogEntry[]; // Bitácora de cambios y auditoría de la ficha
 }
 
@@ -242,7 +243,11 @@ export type AuditAction =
   | 'ELIMINAR_RENGLON'
   | 'CREAR_MODIFICACION_PRESUPUESTARIA'
   | 'APROBAR_MODIFICACION_PRESUPUESTARIA'
-  | 'IMPORTAR_PRESUPUESTO';
+  | 'IMPORTAR_PRESUPUESTO'
+  | 'CREAR_JUDICATURA'
+  | 'EDITAR_JUDICATURA'
+  | 'ELIMINAR_JUDICATURA'
+  | 'AGREGAR_OBSERVACION_JUDICATURA';
 
 export interface AuditLogEntry {
   id: string;
@@ -250,7 +255,7 @@ export interface AuditLogEntry {
   usuario: string;
   rol: UserRole;
   accion: AuditAction;
-  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema' | 'Perfiles';
+  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema' | 'Perfiles' | 'Judicaturas';
   detalles: string;
   registroId?: string;
   ip: string;
@@ -271,7 +276,40 @@ export interface AppNotification {
   categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema';
 }
 
-export type ActiveTab = 'dashboard' | 'compras' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo';
+export type ActiveTab = 'dashboard' | 'compras' | 'judicaturas' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo';
+
+// ==========================================
+// MÓDULO DE JUDICATURAS POR INAUGURAR
+// ==========================================
+
+export type TipoRamoJudicatura = 'Penal' | 'Civil';
+export type OpcionSiNo = 'Si' | 'No';
+
+export interface JudicaturaObservacion {
+  id: string;
+  numeroAccion: number; // Enumeración secuencial (#1, #2, #3...)
+  fecha: string; // Timestamp ISO
+  autor: string; // Nombre del funcionario que registra
+  texto: string; // Texto de la observación o acción realizada
+}
+
+export interface JudicaturaRecord {
+  id: string;
+  nombreJudicatura: string;
+  tipoRamo: TipoRamoJudicatura;
+  fechaInicioAdecuaciones: string; // YYYY-MM-DD
+  fechaFinAdecuaciones: string;    // YYYY-MM-DD
+  equipoComputo: OpcionSiNo;
+  equipoAudio: OpcionSiNo;
+  cableadoEstructurado: OpcionSiNo;
+  enlaceDatos: OpcionSiNo;
+  fechaInauguracion: string;       // YYYY-MM-DD
+  observaciones: JudicaturaObservacion[];
+  creadoPor: string;
+  fechaCreacion: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
 
 export interface GmailConfig {
   userEmail: string;

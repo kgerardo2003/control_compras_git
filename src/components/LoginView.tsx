@@ -518,23 +518,48 @@ export const LoginView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Botón Continuar */}
+                {/* Banner de Doble Factor Google Authenticator */}
+                <div className="p-3 rounded-xl bg-[#09173d]/80 border border-[#4682b4]/40 flex items-center justify-between gap-2 mt-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
+                      <Smartphone className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-amber-300">Doble Factor Activo</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">Google Authenticator</span>
+                      </div>
+                      <p className="text-[10px] text-slate-300 truncate">Protección de acceso por código TOTP de 6 dígitos</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenStep1QrModal}
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] font-bold text-amber-200 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                    title="Ver código QR para vincular Google Authenticator"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Ver QR</span>
+                  </button>
+                </div>
+
+                {/* Botón Continuar con Doble Factor */}
                 <button
                   id="btn-login-submit"
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider shadow-lg border border-slate-300 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer disabled:opacity-50 mt-4"
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 hover:from-blue-600 hover:to-indigo-600 text-white font-bold text-xs uppercase tracking-wider shadow-lg border border-blue-400/40 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer disabled:opacity-50 mt-4"
                 >
                   {isLoading ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-slate-800 border-t-transparent rounded-full animate-spin" />
-                      <span>Iniciando Sesión...</span>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Verificando credenciales...</span>
                     </>
                   ) : (
                     <>
-                      <Lock className="w-4 h-4 text-slate-900" />
-                      <span>Continuar</span>
-                      <ArrowRight className="w-4 h-4 text-slate-900" />
+                      <ShieldCheck className="w-4 h-4 text-amber-300" />
+                      <span>Continuar con Doble Factor (Google Authenticator)</span>
+                      <ArrowRight className="w-4 h-4 text-white" />
                     </>
                   )}
                 </button>

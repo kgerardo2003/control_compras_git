@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { getEventDelayDays } from '../utils/delayUtils';
 import {
   ResponsiveContainer,
   BarChart,
@@ -813,6 +814,26 @@ export const DashboardView: React.FC = () => {
     const enEvaluacionMonto = enEvaluacion.reduce((acc, p) => acc + (p.monto || 0), 0);
     const enEvaluacionPorcentaje = totalEventos > 0 ? Math.round((enEvaluacionCount / totalEventos) * 100) : 0;
 
+    // Indicadores tipo semáforo de atraso para NOG Adjudicados (≤10 verde, 11-30 naranja, >30 rojo)
+    const semaforoAdjudicados = {
+      verde: adjudicados.filter(p => getEventDelayDays(p) <= 10),
+      naranja: adjudicados.filter(p => {
+        const d = getEventDelayDays(p);
+        return d > 10 && d <= 30;
+      }),
+      rojo: adjudicados.filter(p => getEventDelayDays(p) > 30),
+    };
+
+    // Indicadores tipo semáforo de atraso para NOG en Evaluación (≤10 verde, 11-30 naranja, >30 rojo)
+    const semaforoEvaluacion = {
+      verde: enEvaluacion.filter(p => getEventDelayDays(p) <= 10),
+      naranja: enEvaluacion.filter(p => {
+        const d = getEventDelayDays(p);
+        return d > 10 && d <= 30;
+      }),
+      rojo: enEvaluacion.filter(p => getEventDelayDays(p) > 30),
+    };
+
     return {
       totalEventos,
       totalMonto,
@@ -825,6 +846,8 @@ export const DashboardView: React.FC = () => {
       enEvaluacionCount,
       enEvaluacionMonto,
       enEvaluacionPorcentaje,
+      semaforoAdjudicados,
+      semaforoEvaluacion,
     };
   }, [filteredPurchases]);
 
@@ -1302,6 +1325,104 @@ export const DashboardView: React.FC = () => {
             <span className="text-sm sm:text-base font-black font-mono text-amber-400">
               {formatQuetzales(metrics.enEvaluacionMonto)}
             </span>
+          </div>
+
+          {/* Gráfica de Círculo (Pie/Donut) e Indicadores de Estado para NOG en Evaluación */}
+          <div className="mt-4 pt-3 border-t border-slate-200/80 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                <PieChartIcon className="w-3.5 h-3.5 text-amber-600" />
+                Distribución de Plazos (En Evaluación)
+              </span>
+              <span className="text-[10px] text-slate-500 font-semibold">Gráfica Circular</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+              {/* Gráfica de Círculo Donut interactiva */}
+              <div className="sm:col-span-5 h-28 relative flex items-center justify-center">
+                {metrics.enEvaluacionCount > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: '≤ 10 días (Verde)', value: metrics.semaforoEvaluacion.verde.length, color: '#16a34a' },
+                          { name: '11 a 30 días (Naranja)', value: metrics.semaforoEvaluacion.naranja.length, color: '#f59e0b' },
+                          { name: '> 30 días (Rojo)', value: metrics.semaforoEvaluacion.rojo.length, color: '#e11d48' },
+                        ].filter(item => item.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={24}
+                        outerRadius={42}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {[
+                          { name: '≤ 10 días (Verde)', value: metrics.semaforoEvaluacion.verde.length, color: '#16a34a' },
+                          { name: '11 a 30 días (Naranja)', value: metrics.semaforoEvaluacion.naranja.length, color: '#f59e0b' },
+                          { name: '> 30 días (Rojo)', value: metrics.semaforoEvaluacion.rojo.length, color: '#e11d48' },
+                        ].filter(item => item.value > 0).map((entry, index) => (
+                          <Cell key={`eval-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={1.5} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: any, name: any) => [`${val} NOGs`, name]}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px] italic">
+                    Sin eventos en evaluación
+                  </div>
+                )}
+                {metrics.enEvaluacionCount > 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-xs font-black font-mono text-slate-800">
+                      {metrics.enEvaluacionCount}
+                    </span>
+                    <span className="text-[8px] font-bold uppercase text-slate-500">
+                      NOGs
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Leyenda y Semáforo Detallado al Lado */}
+              <div className="sm:col-span-7 grid grid-cols-3 sm:grid-cols-1 gap-1.5 text-[11px]">
+                {/* Verde: <= 10 días */}
+                <div className="p-1.5 px-2 rounded-lg bg-emerald-50 border border-emerald-300/80 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0"></span>
+                    <span className="text-[10px] font-bold text-emerald-900 truncate">≤ 10 d (Normal)</span>
+                  </div>
+                  <span className="text-xs font-black text-emerald-950 font-mono ml-1">
+                    {metrics.semaforoEvaluacion.verde.length}
+                  </span>
+                </div>
+
+                {/* Naranja: > 10 e <= 30 días */}
+                <div className="p-1.5 px-2 rounded-lg bg-amber-50 border border-amber-300/80 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+                    <span className="text-[10px] font-bold text-amber-900 truncate">&gt; 10 a 30 d</span>
+                  </div>
+                  <span className="text-xs font-black text-amber-950 font-mono ml-1">
+                    {metrics.semaforoEvaluacion.naranja.length}
+                  </span>
+                </div>
+
+                {/* Rojo: > 30 días */}
+                <div className="p-1.5 px-2 rounded-lg bg-rose-50 border border-rose-300/80 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600 shrink-0"></span>
+                    <span className="text-[10px] font-bold text-rose-900 truncate">&gt; 30 d (Crítico)</span>
+                  </div>
+                  <span className="text-xs font-black text-rose-950 font-mono ml-1">
+                    {metrics.semaforoEvaluacion.rojo.length}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

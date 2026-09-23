@@ -27,7 +27,10 @@ import {
   deleteBudgetLine,
   setBudgetLines,
   addBudgetModification,
-  addAuditLog
+  addAuditLog,
+  saveJudicatura,
+  deleteJudicatura,
+  addJudicaturaObservation
 } from './src/server/dataStore';
 import { syncFirestoreData } from './src/server/firestoreSync';
 
@@ -474,6 +477,64 @@ app.post('/api/db/audit-logs', (req, res) => {
     res.json({ success: true, log: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error registrando bitácora.' });
+  }
+});
+
+// ==========================================
+// ENDPOINTS DE JUDICATURAS POR INAUGURAR
+// ==========================================
+
+// Obtener todas las judicaturas
+app.get('/api/db/judicaturas', (req, res) => {
+  try {
+    const state = getStoreState();
+    res.json({ success: true, judicaturas: state.judicaturas || [] });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error obteniendo judicaturas.' });
+  }
+});
+
+// Guardar o actualizar judicatura
+app.post('/api/db/judicaturas', (req, res) => {
+  try {
+    const saved = saveJudicatura(req.body);
+    notifyChange('judicatura_saved', { id: saved.id });
+    res.json({ success: true, judicatura: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando judicatura.' });
+  }
+});
+
+// Eliminar judicatura
+app.delete('/api/db/judicaturas/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const ok = deleteJudicatura(id);
+    if (ok) {
+      notifyChange('judicatura_deleted', { id });
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ success: false, message: 'Judicatura no encontrada.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando judicatura.' });
+  }
+});
+
+// Agregar observación a una judicatura
+app.post('/api/db/judicaturas/:id/observaciones', (req, res) => {
+  try {
+    const { id } = req.params;
+    const obs = req.body;
+    const updated = addJudicaturaObservation(id, obs);
+    if (updated) {
+      notifyChange('judicatura_obs_added', { id, obsId: obs.id });
+      res.json({ success: true, judicatura: updated });
+    } else {
+      res.status(404).json({ success: false, message: 'Judicatura no encontrada.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error agregando observación.' });
   }
 });
 

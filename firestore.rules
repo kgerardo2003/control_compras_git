@@ -60,6 +60,11 @@ service cloud.firestore {
       allow read, write: if isValidId(profileId);
     }
 
+    // Reglas para Judicaturas por Inaugurar
+    match /judicaturas/{judicaturaId} {
+      allow read, write: if isValidId(judicaturaId);
+    }
+
     // Reglas para Renglones Presupuestarios y Matriz de Disponibilidad
     match /budget_lines/{lineId} {
       allow read, write: if true;

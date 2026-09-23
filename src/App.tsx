@@ -10,6 +10,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { PurchasesView } from './components/PurchasesView';
+import { JudicaturasView } from './components/JudicaturasView';
 import { CatalogsView } from './components/CatalogsView';
 import { AuditLogView } from './components/AuditLogView';
 import { UsersView } from './components/UsersView';
@@ -85,6 +86,15 @@ const AppContent: React.FC = () => {
                 <AdminAccessGate 
                   moduleTitle="Compras y Eventos Tecnológicos" 
                   moduleDescription="Gestión y seguimiento de expedientes F56-e, eventos NOG y actas GIT" 
+                />
+              )
+            )}
+
+            {activeTab === 'judicaturas' && (
+              hasModuleAccess('judicaturas') ? <JudicaturasView /> : (
+                <AdminAccessGate 
+                  moduleTitle="Control de Judicaturas por Inaugurar" 
+                  moduleDescription="Gestión de adecuaciones, infraestructura TIC, árbol de acciones y diagrama de Gantt semanal" 
                 />
               )
             )}

@@ -23,7 +23,7 @@ try {
   setLogLevel('silent');
 } catch (_) {}
 import firebaseConfigFile from '../../firebase-applet-config.json';
-import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument } from '../types';
+import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument, JudicaturaRecord } from '../types';
 
 export const FIREBASE_CONFIG = {
   apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || firebaseConfigFile.apiKey,
@@ -61,6 +61,7 @@ export const AUDIT_LOGS_COLLECTION = 'audit_logs';
 export const CATALOGS_COLLECTION = 'catalogs';
 export const USERS_COLLECTION = 'users';
 export const USER_PROFILES_COLLECTION = 'user_profiles';
+export const JUDICATURAS_COLLECTION = 'judicaturas';
 export const BUDGET_LINES_COLLECTION = 'budget_lines';
 export const BUDGET_MODIFICATIONS_COLLECTION = 'budget_modifications';
 export const SYSTEM_CONFIG_COLLECTION = 'system_config';
@@ -716,5 +717,58 @@ export function onUsersSnapshot(
     return () => {};
   }
 }
+
+// Helpers Firestore para Judicaturas por Inaugurar
+export async function saveJudicaturaToFirestore(data: JudicaturaRecord): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cleaned = cleanUndefined(data);
+    const docRef = doc(db, JUDICATURAS_COLLECTION, data.id);
+    await setDoc(docRef, cleaned, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error guardando judicatura en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function removeJudicaturaFromFirestore(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, JUDICATURAS_COLLECTION, id);
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error eliminando judicatura de Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export function onJudicaturasSnapshot(
+  onData: (items: JudicaturaRecord[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  try {
+    const colRef = collection(db, JUDICATURAS_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: JudicaturaRecord[] = [];
+        snapshot.forEach((d) => {
+          items.push(d.data() as JudicaturaRecord);
+        });
+        items.sort((a, b) => (a.fechaInauguracion || '').localeCompare(b.fechaInauguracion || ''));
+        onData(items);
+      },
+      (err) => {
+        console.warn("Error en listener de judicaturas:", err);
+        onError?.(err);
+      }
+    );
+  } catch (err) {
+    console.warn("Excepción al iniciar listener de judicaturas:", err);
+    onError?.(err as Error);
+    return () => {};
+  }
+}
+
 
 
