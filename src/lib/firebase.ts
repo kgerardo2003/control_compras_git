@@ -2,9 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getFirestore, 
   Firestore,
-  setLogLevel,
   doc, 
-  getDoc,
   getDocFromServer,
   getDocsFromServer,
   collection,
@@ -17,13 +15,8 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
-
-// Suprimir logs internos de depuración de Firestore (ej. idle stream timeout)
-try {
-  setLogLevel('silent');
-} catch (_) {}
 import firebaseConfigFile from '../../firebase-applet-config.json';
-import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument } from '../types';
+import { PurchaseRecord, AuditLogEntry, Catalog, User } from '../types';
 
 export const FIREBASE_CONFIG = {
   apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || firebaseConfigFile.apiKey,
@@ -38,32 +31,47 @@ export const FIREBASE_CONFIG = {
 // Inicialización de Firebase App
 export const app = getApps().length > 0 ? getApp() : initializeApp(FIREBASE_CONFIG);
 
-// Conexión autoritativa a la base de datos compartida de Firestore (CRITICAL: todos los clientes conectan a la misma instancia)
-export const db: Firestore = getFirestore(app, FIREBASE_CONFIG.firestoreDatabaseId || firebaseConfigFile.firestoreDatabaseId);
-
-// Verificación segura de conexión al servidor Firestore
-export async function testConnection(): Promise<boolean> {
+// Inicialización segura de Firestore
+function createFirestoreInstance(): Firestore {
   try {
-    if (!db) return false;
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    return true;
-  } catch (error: any) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Firestore: cliente fuera de línea.");
+    const dbId = FIREBASE_CONFIG.firestoreDatabaseId;
+    if (dbId && dbId !== '(default)') {
+      return getFirestore(app, dbId);
     }
-    return false;
+    return getFirestore(app);
+  } catch (error) {
+    console.warn("Advertencia al inicializar Firestore con ID personalizado, reintentando por defecto:", error);
+    try {
+      return getFirestore(app);
+    } catch (fallbackError) {
+      console.error("Error crítico inicializando Firestore:", fallbackError);
+      throw fallbackError;
+    }
   }
 }
+
+export const db: Firestore = createFirestoreInstance();
+
+// Verificación obligatoria de conexión al servidor Firestore
+export async function testConnection(): Promise<boolean> {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Verificando conectividad con Firebase Firestore...");
+    }
+    return true;
+  }
+}
+// Ejecución silenciosa sin bloquear carga del módulo
+testConnection().catch(() => {});
 
 // Colecciones
 export const PURCHASES_COLLECTION = 'purchases';
 export const AUDIT_LOGS_COLLECTION = 'audit_logs';
 export const CATALOGS_COLLECTION = 'catalogs';
 export const USERS_COLLECTION = 'users';
-export const USER_PROFILES_COLLECTION = 'user_profiles';
-export const BUDGET_LINES_COLLECTION = 'budget_lines';
-export const BUDGET_MODIFICATIONS_COLLECTION = 'budget_modifications';
-export const SYSTEM_CONFIG_COLLECTION = 'system_config';
 
 // Función para limpiar campos con valor undefined recursivamente (Firestore no acepta undefined)
 export function cleanUndefined<T>(data: T): T {
@@ -89,107 +97,13 @@ export function cleanUndefined<T>(data: T): T {
 export async function savePurchaseToFirestore(purchase: PurchaseRecord): Promise<{ success: boolean; error?: string }> {
   try {
     const docRef = doc(db, PURCHASES_COLLECTION, purchase.id);
-    const cleaned = cleanUndefined(purchase) as PurchaseRecord;
-
-    // Manejo inteligente del documento adjunto para respetar los límites estrictos de Firestore (1MB máx por documento)
-    if (cleaned.f56Documento?.dataUrl) {
-      const fullDoc = cleaned.f56Documento;
-      const dataUrlLen = fullDoc.dataUrl.length;
-
-      // Si el archivo en base64 supera ~700KB (~500KB binario), Firestore no lo aceptará en ningún documento.
-      // En ese caso, se almacena en IndexedDB local con capacidad de Gigabytes y en Firestore se preservan los metadatos.
-      if (dataUrlLen > 700000) {
-        cleaned.f56Documento = {
-          nombre: fullDoc.nombre,
-          tamano: fullDoc.tamano,
-          tipo: fullDoc.tipo,
-          fechaSubida: fullDoc.fechaSubida,
-          storageKey: 'indexeddb'
-        };
-      } else if (dataUrlLen > 250000) {
-        // Para archivos de 250KB a 700KB, guardar el payload en la subcolección dedicada
-        try {
-          const attDocRef = doc(db, PURCHASES_COLLECTION, purchase.id, 'attachments', 'f56Document');
-          await setDoc(attDocRef, {
-            nombre: fullDoc.nombre,
-            tamano: fullDoc.tamano,
-            tipo: fullDoc.tipo,
-            fechaSubida: fullDoc.fechaSubida,
-            dataUrl: fullDoc.dataUrl,
-            actualizadoEn: new Date().toISOString()
-          });
-
-          // En el documento principal se preservan los metadatos con referencia a la subcolección
-          cleaned.f56Documento = {
-            nombre: fullDoc.nombre,
-            tamano: fullDoc.tamano,
-            tipo: fullDoc.tipo,
-            fechaSubida: fullDoc.fechaSubida,
-            storageKey: 'subcollection:f56Document'
-          };
-        } catch (attErr) {
-          console.warn("Aviso al guardar adjunto en subcolección, guardando referencia IndexedDB:", attErr);
-          cleaned.f56Documento = {
-            nombre: fullDoc.nombre,
-            tamano: fullDoc.tamano,
-            tipo: fullDoc.tipo,
-            fechaSubida: fullDoc.fechaSubida,
-            storageKey: 'indexeddb'
-          };
-        }
-      }
-    }
-
+    const cleaned = cleanUndefined(purchase);
     await setDoc(docRef, cleaned, { merge: true });
     console.log("Adquisición guardada exitosamente en Firestore:", purchase.id);
     return { success: true };
   } catch (err: any) {
     console.error("Error guardando adquisición en Firestore:", err);
-    // Si falló por tamaño u otro error en el documento principal, guardar garantizado sin el payload pesado
-    if (
-      err?.message?.includes('exceeds the maximum') || 
-      err?.code === 'resource-exhausted' ||
-      err?.message?.includes('longer than')
-    ) {
-      try {
-        const fallbackPurchase = { ...purchase };
-        if (fallbackPurchase.f56Documento) {
-          fallbackPurchase.f56Documento = {
-            nombre: fallbackPurchase.f56Documento.nombre,
-            tamano: fallbackPurchase.f56Documento.tamano,
-            tipo: fallbackPurchase.f56Documento.tipo,
-            fechaSubida: fallbackPurchase.f56Documento.fechaSubida,
-            storageKey: 'indexeddb'
-          };
-        }
-        const docRef = doc(db, PURCHASES_COLLECTION, purchase.id);
-        await setDoc(docRef, cleanUndefined(fallbackPurchase), { merge: true });
-        console.log("Adquisición guardada en Firestore (fallback ligero preservando metadatos):", purchase.id);
-        return { success: true };
-      } catch (retryErr: any) {
-        console.error("Reintento fallback de guardado falló:", retryErr);
-      }
-    }
     return { success: false, error: err?.message || String(err) };
-  }
-}
-
-/**
- * Recupera el archivo adjunto completo desde la subcolección de Firestore si fue almacenado allí.
- */
-export async function fetchPurchaseAttachmentFromFirestore(
-  purchaseId: string
-): Promise<AttachedDocument | null> {
-  try {
-    const attDocRef = doc(db, PURCHASES_COLLECTION, purchaseId, 'attachments', 'f56Document');
-    const snapshot = await getDoc(attDocRef);
-    if (snapshot.exists()) {
-      return snapshot.data() as AttachedDocument;
-    }
-    return null;
-  } catch (err) {
-    console.warn("No se pudo obtener adjunto de subcolección:", err);
-    return null;
   }
 }
 
@@ -229,29 +143,6 @@ export async function removePurchaseFromFirestore(purchaseId: string): Promise<{
   }
 }
 
-export async function removeBatchPurchasesFromFirestore(purchaseIds: string[]): Promise<{ success: boolean; count: number; error?: string }> {
-  try {
-    if (!purchaseIds || purchaseIds.length === 0) {
-      return { success: true, count: 0 };
-    }
-    const CHUNK_SIZE = 450;
-    for (let i = 0; i < purchaseIds.length; i += CHUNK_SIZE) {
-      const chunk = purchaseIds.slice(i, i + CHUNK_SIZE);
-      const batch = writeBatch(db);
-      for (const id of chunk) {
-        const docRef = doc(db, PURCHASES_COLLECTION, id);
-        batch.delete(docRef);
-      }
-      await batch.commit();
-      console.log(`Lote de ${chunk.length} adquisiciones eliminado de Firestore (${Math.min(i + CHUNK_SIZE, purchaseIds.length)}/${purchaseIds.length})`);
-    }
-    return { success: true, count: purchaseIds.length };
-  } catch (err: any) {
-    console.error("Error eliminando lote de adquisiciones en Firestore:", err);
-    return { success: false, count: 0, error: err?.message || String(err) };
-  }
-}
-
 export async function saveAuditLogToFirestore(log: AuditLogEntry): Promise<void> {
   try {
     const docRef = doc(db, AUDIT_LOGS_COLLECTION, log.id);
@@ -283,60 +174,23 @@ export async function removeCatalogFromFirestore(catalogId: string): Promise<voi
   }
 }
 
+export async function saveUserToFirestore(user: User): Promise<void> {
+  try {
+    const docRef = doc(db, USERS_COLLECTION, user.id);
+    const cleaned = cleanUndefined(user);
+    await setDoc(docRef, cleaned, { merge: true });
+    console.log("Usuario actualizado en Firestore:", user.id);
+  } catch (err) {
+    console.error("Error guardando usuario en Firestore:", err);
+  }
+}
+
 export async function removeUserFromFirestore(userId: string): Promise<void> {
   try {
     const docRef = doc(db, USERS_COLLECTION, userId);
     await deleteDoc(docRef);
   } catch (err) {
     console.error("Error eliminando usuario en Firestore:", err);
-  }
-}
-
-// Sembrado inicial de contingencia si el directorio de usuarios está vacío o le faltan usuarios base
-export async function seedUsersIfEmpty(initialUsers: User[]): Promise<void> {
-  try {
-    const usersSnap = await getDocs(collection(db, USERS_COLLECTION));
-    if (usersSnap.empty) {
-      console.log("Sembrando directorio inicial de usuarios en Firestore...");
-      const batch = writeBatch(db);
-      // Solo sembrar las cuentas esenciales institucionales base (admin y kglopezd)
-      const essentialUsers = initialUsers.filter(u => 
-        ['admin', 'kglopezd'].includes(u.username.toLowerCase())
-      );
-      for (const u of (essentialUsers.length > 0 ? essentialUsers : initialUsers)) {
-        const ref = doc(db, USERS_COLLECTION, u.id);
-        batch.set(ref, cleanUndefined(u));
-      }
-      await batch.commit();
-      console.log("Directorio inicial de usuarios sembrado exitosamente en Firestore.");
-    } else {
-      // Verificar si falta ÚNICAMENTE alguna cuenta esencial (admin o kglopezd) para sincronizarla
-      // NO revivir usuarios que el administrador haya eliminado deliberadamente
-      const existingUsernames = new Set<string>();
-      usersSnap.forEach((d) => {
-        const data = d.data() as User;
-        if (data.username) existingUsernames.add(data.username.toLowerCase());
-      });
-      const essentialMissing = initialUsers.filter(u => 
-        ['admin', 'kglopezd'].includes(u.username.toLowerCase()) && 
-        !existingUsernames.has(u.username.toLowerCase())
-      );
-      if (essentialMissing.length > 0) {
-        const batch = writeBatch(db);
-        for (const u of essentialMissing) {
-          const ref = doc(db, USERS_COLLECTION, u.id);
-          batch.set(ref, cleanUndefined(u));
-        }
-        await batch.commit();
-        console.log(`Se sincronizaron ${essentialMissing.length} cuenta(s) institucional(es) esenciales a Firestore.`);
-      }
-    }
-  } catch (err: any) {
-    if (err?.message?.includes('Quota') || err?.code === 'resource-exhausted') {
-      console.warn("Firestore: Cuota diaria de lectura alcanzada. Usando almacén central seguro.");
-    } else {
-      console.warn("Nota sobre verificación o sembrado de usuarios en Firestore:", err);
-    }
   }
 }
 
@@ -348,61 +202,40 @@ export async function seedInitialDataIfEmpty(
   initialLogs: AuditLogEntry[]
 ): Promise<void> {
   try {
-    // Usar documento de estado de sembrado para NO recrear compras si el usuario las eliminó intencionalmente
-    const seedStatusRef = doc(db, SYSTEM_CONFIG_COLLECTION, 'sys-seed-status');
-    const seedSnap = await getDoc(seedStatusRef);
+    const purchasesSnap = await getDocs(query(collection(db, PURCHASES_COLLECTION), limit(1)));
+    if (purchasesSnap.empty) {
+      console.log("Sembrando datos institucionales iniciales en Firestore...");
+      const batch = writeBatch(db);
 
-    if (!seedSnap.exists()) {
-      const purchasesSnap = await getDocs(query(collection(db, PURCHASES_COLLECTION), limit(1)));
-      if (purchasesSnap.empty) {
-        console.log("Sembrando adquisiciones y catálogos iniciales en Firestore...");
-        const batch = writeBatch(db);
-
-        // Compras
-        for (const p of initialPurchases) {
-          const ref = doc(db, PURCHASES_COLLECTION, p.id);
-          batch.set(ref, cleanUndefined(p));
-        }
-
-        // Catálogos
-        for (const c of initialCatalogs) {
-          const ref = doc(db, CATALOGS_COLLECTION, c.id);
-          batch.set(ref, cleanUndefined(c));
-        }
-
-        // Auditoría
-        for (const log of initialLogs.slice(0, 15)) {
-          const ref = doc(db, AUDIT_LOGS_COLLECTION, log.id);
-          batch.set(ref, cleanUndefined(log));
-        }
-
-        // Registrar bandera permanente de inicialización para nunca más duplicar
-        batch.set(seedStatusRef, {
-          initialized: true,
-          seededAt: new Date().toISOString(),
-          version: 1
-        });
-
-        await batch.commit();
-        console.log("Sembrado inicial de compras y catálogos en Firestore completado con éxito.");
-      } else {
-        // La colección ya tiene datos, marcar bandera para no volver a evaluar
-        await setDoc(seedStatusRef, {
-          initialized: true,
-          detectedExisting: true,
-          checkedAt: new Date().toISOString()
-        });
+      // Compras
+      for (const p of initialPurchases) {
+        const ref = doc(db, PURCHASES_COLLECTION, p.id);
+        batch.set(ref, cleanUndefined(p));
       }
-    }
 
-    // Asegurar que las cuentas institucionales esenciales siempre existan
-    await seedUsersIfEmpty(initialUsers);
-  } catch (err: any) {
-    if (err?.message?.includes('Quota') || err?.code === 'resource-exhausted') {
-      console.warn("Firestore: Cuota diaria de lectura alcanzada. Sincronización respaldada en servidor central.");
-    } else {
-      console.warn("Nota sobre sembrado inicial en Firestore:", err);
+      // Catálogos
+      for (const c of initialCatalogs) {
+        const ref = doc(db, CATALOGS_COLLECTION, c.id);
+        batch.set(ref, cleanUndefined(c));
+      }
+
+      // Usuarios
+      for (const u of initialUsers) {
+        const ref = doc(db, USERS_COLLECTION, u.id);
+        batch.set(ref, cleanUndefined(u));
+      }
+
+      // Auditoría
+      for (const log of initialLogs.slice(0, 15)) {
+        const ref = doc(db, AUDIT_LOGS_COLLECTION, log.id);
+        batch.set(ref, cleanUndefined(log));
+      }
+
+      await batch.commit();
+      console.log("Sembrado inicial de Firestore completado con éxito.");
     }
+  } catch (err) {
+    console.warn("Nota sobre sembrado inicial en Firestore:", err);
   }
 }
 
@@ -486,235 +319,4 @@ export async function forceFetchAuditLogsFromServer(): Promise<AuditLogEntry[]> 
   items.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
   return items;
 }
-
-// ==========================================
-// OPERACIONES FIRESTORE PARA PRESUPUESTO
-// ==========================================
-
-export async function saveBudgetLineToFirestore(item: BudgetLineItem): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docId = String(item.id || `bl-${item.renglonPresupuestario || Date.now()}`).replace(/[\/\\]/g, '-');
-    const docRef = doc(db, BUDGET_LINES_COLLECTION, docId);
-    await setDoc(docRef, cleanUndefined({ ...item, id: docId }), { merge: true });
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error guardando renglón presupuestario en Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export async function saveBatchBudgetLinesToFirestore(lines: BudgetLineItem[]): Promise<{ success: boolean; count: number; error?: string }> {
-  try {
-    if (!lines || lines.length === 0) return { success: true, count: 0 };
-    const CHUNK_SIZE = 400;
-    for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
-      const chunk = lines.slice(i, i + CHUNK_SIZE);
-      const batch = writeBatch(db);
-      for (const l of chunk) {
-        const docRef = doc(db, BUDGET_LINES_COLLECTION, l.id);
-        batch.set(docRef, cleanUndefined(l), { merge: true });
-      }
-      await batch.commit();
-    }
-    return { success: true, count: lines.length };
-  } catch (err: any) {
-    console.error("Error guardando lote de renglones presupuestarios en Firestore:", err);
-    return { success: false, count: 0, error: err?.message || String(err) };
-  }
-}
-
-export async function removeBudgetLineFromFirestore(lineId: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docRef = doc(db, BUDGET_LINES_COLLECTION, lineId);
-    await deleteDoc(docRef);
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error eliminando renglón presupuestario en Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export async function saveBudgetModificationToFirestore(mod: BudgetModification): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docRef = doc(db, BUDGET_MODIFICATIONS_COLLECTION, mod.id);
-    await setDoc(docRef, cleanUndefined(mod), { merge: true });
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error guardando modificación presupuestaria en Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export async function removeBudgetModificationFromFirestore(modId: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docRef = doc(db, BUDGET_MODIFICATIONS_COLLECTION, modId);
-    await deleteDoc(docRef);
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error eliminando modificación presupuestaria en Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export function onBudgetLinesSnapshot(
-  onData: (lines: BudgetLineItem[]) => void,
-  onError?: (err: Error) => void
-): () => void {
-  try {
-    const colRef = collection(db, BUDGET_LINES_COLLECTION);
-    return onSnapshot(
-      colRef,
-      (snapshot) => {
-        const items: BudgetLineItem[] = [];
-        snapshot.forEach((d) => {
-          items.push(d.data() as BudgetLineItem);
-        });
-        items.sort((a, b) => String(a.renglonPresupuestario || '').localeCompare(String(b.renglonPresupuestario || '')));
-        onData(items);
-      },
-      (err) => {
-        console.warn("Error en listener de renglones presupuestarios:", err);
-        onError?.(err);
-      }
-    );
-  } catch (err) {
-    console.warn("Excepción al iniciar listener de presupuesto:", err);
-    onError?.(err as Error);
-    return () => {};
-  }
-}
-
-export function onBudgetModificationsSnapshot(
-  onData: (mods: BudgetModification[]) => void,
-  onError?: (err: Error) => void
-): () => void {
-  try {
-    const colRef = collection(db, BUDGET_MODIFICATIONS_COLLECTION);
-    return onSnapshot(
-      colRef,
-      (snapshot) => {
-        const items: BudgetModification[] = [];
-        snapshot.forEach((d) => {
-          items.push(d.data() as BudgetModification);
-        });
-        items.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-        onData(items);
-      },
-      (err) => {
-        console.warn("Error en listener de modificaciones presupuestarias:", err);
-        onError?.(err);
-      }
-    );
-  } catch (err) {
-    console.warn("Excepción al iniciar listener de modificaciones:", err);
-    onError?.(err as Error);
-    return () => {};
-  }
-}
-
-// ==========================================
-// OPERACIONES FIRESTORE PARA PERFILES Y USUARIOS
-// ==========================================
-
-export async function saveUserProfileToFirestore(profile: UserProfile): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docId = String(profile.id || `prof-${profile.codigo || Date.now()}`).replace(/[\/\\]/g, '-');
-    const docRef = doc(db, USER_PROFILES_COLLECTION, docId);
-    await setDoc(docRef, cleanUndefined({ ...profile, id: docId }), { merge: true });
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error guardando perfil de usuario en Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export async function deleteUserProfileFromFirestore(id: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docRef = doc(db, USER_PROFILES_COLLECTION, id);
-    await deleteDoc(docRef);
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error eliminando perfil de usuario de Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export function onUserProfilesSnapshot(
-  onData: (profiles: UserProfile[]) => void,
-  onError?: (err: Error) => void
-): () => void {
-  try {
-    const colRef = collection(db, USER_PROFILES_COLLECTION);
-    return onSnapshot(
-      colRef,
-      (snapshot) => {
-        const items: UserProfile[] = [];
-        snapshot.forEach((d) => {
-          items.push(d.data() as UserProfile);
-        });
-        items.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-        onData(items);
-      },
-      (err) => {
-        console.warn("Error en listener de perfiles de usuario:", err);
-        onError?.(err);
-      }
-    );
-  } catch (err) {
-    console.warn("Excepción al iniciar listener de perfiles de usuario:", err);
-    onError?.(err as Error);
-    return () => {};
-  }
-}
-
-export async function saveUserToFirestore(user: User): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docRef = doc(db, USERS_COLLECTION, user.id);
-    await setDoc(docRef, cleanUndefined(user), { merge: true });
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error guardando usuario en Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export async function deleteUserFromFirestore(id: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const docRef = doc(db, USERS_COLLECTION, id);
-    await deleteDoc(docRef);
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error eliminando usuario de Firestore:", err);
-    return { success: false, error: err?.message || String(err) };
-  }
-}
-
-export function onUsersSnapshot(
-  onData: (users: User[]) => void,
-  onError?: (err: Error) => void
-): () => void {
-  try {
-    const colRef = collection(db, USERS_COLLECTION);
-    return onSnapshot(
-      colRef,
-      (snapshot) => {
-        const items: User[] = [];
-        snapshot.forEach((d) => {
-          items.push(d.data() as User);
-        });
-        items.sort((a, b) => (a.nombreCompleto || '').localeCompare(b.nombreCompleto || ''));
-        onData(items);
-      },
-      (err) => {
-        console.warn("Error en listener de usuarios:", err);
-        onError?.(err);
-      }
-    );
-  } catch (err) {
-    console.warn("Excepción al iniciar listener de usuarios:", err);
-    onError?.(err as Error);
-    return () => {};
-  }
-}
-
 

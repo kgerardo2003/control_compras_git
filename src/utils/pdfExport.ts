@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PurchaseRecord } from '../types';
-import { formatQuetzales, formatDate, getModalidadCompraByMonto } from './formatters';
+import { formatQuetzales, formatDate } from './formatters';
 
 export interface ExportPurchasesPDFOptions {
   purchases: PurchaseRecord[];
@@ -83,7 +83,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(251, 191, 36); // Amber/Gold claro
-  doc.text('GERENCIA DE INFORMÁTICA', marginX + 6, currentY + 12);
+  doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES (GIT)', marginX + 6, currentY + 12);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
@@ -240,7 +240,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
       p.areaSolicitante || 'Soporte técnico',
       dictamenText,
       p.estatusEvento || 'Evaluación',
-      `${formatQuetzales(p.monto || 0)}\n(${getModalidadCompraByMonto(p.monto).nombre})`,
+      formatQuetzales(p.monto || 0),
       p.proveedorAdjudicado || (p.estatusEvento === 'Adjudicación' ? 'Sin registrar' : 'N/A'),
     ];
   });
@@ -343,7 +343,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
 
     // Texto izquierdo del pie
     doc.text(
-      'Documento oficial de control y auditoría interna • Gerencia de Informática • Organismo Judicial de Guatemala',
+      'Documento oficial de control y auditoría interna • Gerencia de Informática y Telecomunicaciones (GIT) • Organismo Judicial de Guatemala',
       marginX,
       pageHeight - 6
     );

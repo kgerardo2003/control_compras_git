@@ -13,11 +13,8 @@ import { PurchasesView } from './components/PurchasesView';
 import { CatalogsView } from './components/CatalogsView';
 import { AuditLogView } from './components/AuditLogView';
 import { UsersView } from './components/UsersView';
-import { ProfilesView } from './components/ProfilesView';
 import { ReportsView } from './components/ReportsView';
-import { BudgetView } from './components/budget/BudgetView';
 import { CustomizationView } from './components/CustomizationView';
-import { EmailConfigView } from './components/EmailConfigView';
 import { LoginModal } from './components/LoginModal';
 import { LoginView } from './components/LoginView';
 import { AdminAccessGate } from './components/AdminAccessGate';
@@ -25,23 +22,18 @@ import { PurchaseFormModal } from './components/PurchaseFormModal';
 import { PurchaseDetailModal } from './components/PurchaseDetailModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { ImportExcelModal } from './components/ImportExcelModal';
-import { GoogleAuthModal } from './components/GoogleAuthModal';
 import { ToastContainer } from './components/ToastContainer';
 
 const AppContent: React.FC = () => {
-  const { activeTab, setActiveTab, themeConfig, currentUser, hasModuleAccess } = useApp();
+  const { activeTab, setActiveTab, themeConfig, currentUser } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Redireccionar si el usuario actual no tiene permiso sobre la pestaña activa
+  // Redireccionar si un usuario estándar intenta ingresar al módulo de auditoría
   useEffect(() => {
-    if (currentUser && !hasModuleAccess(activeTab)) {
-      if (hasModuleAccess('dashboard')) {
-        setActiveTab('dashboard');
-      } else if (hasModuleAccess('compras')) {
-        setActiveTab('compras');
-      }
+    if (currentUser?.rol === 'usuario_estandar' && activeTab === 'auditoria') {
+      setActiveTab('dashboard');
     }
-  }, [currentUser, activeTab, hasModuleAccess, setActiveTab]);
+  }, [currentUser?.rol, activeTab, setActiveTab]);
 
   // PUERTA DE AUTENTICACIÓN: Si el usuario no está autenticado, muestra el Panel de Logueo
   if (!currentUser) {
@@ -52,6 +44,9 @@ const AppContent: React.FC = () => {
       </>
     );
   }
+
+  const isAdmin = currentUser.rol === 'administrador';
+  const isAuditorOrAdmin = currentUser.rol === 'administrador' || currentUser.rol === 'auditor';
 
   return (
     <div className={`flex h-screen w-full ${themeConfig.appBackground} text-slate-800 font-sans overflow-hidden`}>
@@ -71,58 +66,26 @@ const AppContent: React.FC = () => {
         {/* Contenedor con Scroll de Vistas */}
         <main className={`flex-1 overflow-y-auto p-4 sm:p-6 ${themeConfig.appBackground}`}>
           <div className="max-w-7xl mx-auto w-full">
-            {activeTab === 'dashboard' && (
-              hasModuleAccess('dashboard') ? <DashboardView /> : (
-                <AdminAccessGate 
-                  moduleTitle="Panel Principal de Disponibilidad y Compras" 
-                  moduleDescription="Métricas consolidadas, semáforos de disponibilidad y monitoreo de eventos" 
-                />
-              )
-            )}
-
-            {activeTab === 'compras' && (
-              hasModuleAccess('compras') ? <PurchasesView /> : (
-                <AdminAccessGate 
-                  moduleTitle="Compras y Eventos Tecnológicos" 
-                  moduleDescription="Gestión y seguimiento de expedientes F56-e, eventos NOG y actas GIT" 
-                />
-              )
-            )}
-
-            {activeTab === 'presupuesto' && (
-              hasModuleAccess('presupuesto') ? <BudgetView /> : (
-                <AdminAccessGate 
-                  moduleTitle="Presupuesto IT y Disponibilidad" 
-                  moduleDescription="Matriz de disponibilidad oficial (12 cols), modificaciones y catálogo de 39 renglones" 
-                />
-              )
-            )}
-
-            {activeTab === 'reportes' && (
-              hasModuleAccess('reportes') ? <ReportsView /> : (
-                <AdminAccessGate 
-                  moduleTitle="Reportes Oficiales & Dictámenes" 
-                  moduleDescription="Generación de dictámenes oficiales en PDF y reportes analíticos" 
-                />
-              )
-            )}
+            {activeTab === 'dashboard' && <DashboardView />}
+            {activeTab === 'compras' && <PurchasesView />}
+            {activeTab === 'reportes' && <ReportsView />}
             
             {/* Control & Auditoría */}
             {activeTab === 'auditoria' && (
-              hasModuleAccess('auditoria') ? (
+              isAuditorOrAdmin ? (
                 <AuditLogView />
               ) : (
                 <AdminAccessGate 
                   moduleTitle="Registro y Bitácora de Auditoría" 
-                  moduleDescription="Supervisión institucional y bitácora inmutable de eventos del sistema" 
-                  requiredRolesText="Acceso Exclusivo para Perfiles con Permiso de Auditoría"
+                  moduleDescription="Supervisión institucional y bitácora de eventos del sistema" 
+                  requiredRolesText="Acceso Exclusivo para Administrador y Auditoría"
                 />
               )
             )}
 
-            {/* PANELES DE ADMINISTRACIÓN Y CONTROL DE ACCESO (RBAC) */}
+            {/* PANELES DE ADMINISTRACIÓN (Acceso restringido exclusivamente a Administradores) */}
             {activeTab === 'catalogos' && (
-              hasModuleAccess('catalogos') ? (
+              isAdmin ? (
                 <CatalogsView />
               ) : (
                 <AdminAccessGate 
@@ -133,29 +96,18 @@ const AppContent: React.FC = () => {
             )}
 
             {activeTab === 'usuarios' && (
-              hasModuleAccess('usuarios') ? (
+              isAdmin ? (
                 <UsersView />
               ) : (
                 <AdminAccessGate 
                   moduleTitle="Gestión de Usuarios" 
-                  moduleDescription="Control de cuentas institucionales y credenciales del personal" 
-                />
-              )
-            )}
-
-            {activeTab === 'perfiles' && (
-              hasModuleAccess('perfiles') ? (
-                <ProfilesView />
-              ) : (
-                <AdminAccessGate 
-                  moduleTitle="Perfiles de Usuario y Permisos (RBAC)" 
-                  moduleDescription="Definición de roles institucionales y privilegios de acceso a los módulos del sistema" 
+                  moduleDescription="Control de cuentas, asignación de roles y permisos institucionales" 
                 />
               )
             )}
 
             {activeTab === 'personalizacion' && (
-              hasModuleAccess('personalizacion') ? (
+              isAdmin ? (
                 <CustomizationView />
               ) : (
                 <AdminAccessGate 
@@ -164,30 +116,13 @@ const AppContent: React.FC = () => {
                 />
               )
             )}
-
-            {activeTab === 'correo' && (
-              hasModuleAccess('correo') ? (
-                <EmailConfigView />
-              ) : (
-                <AdminAccessGate 
-                  moduleTitle="Configuración de Correo Electrónico" 
-                  moduleDescription="Parámetros de conexión Gmail SMTP, alertas para autoridades y notificaciones" 
-                />
-              )
-            )}
           </div>
         </main>
 
         {/* Pie de Página Institucional (Professional Polish) */}
-        <footer className="py-2 min-h-8 bg-slate-200 border-t border-slate-300 px-6 flex flex-wrap items-center justify-between text-[11px] font-medium text-slate-600 flex-shrink-0 print:hidden gap-2">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="font-semibold text-slate-700">© 2026 Organismo Judicial de Guatemala - Gerencia de Informática</span>
-            <span className="text-slate-400 hidden sm:inline">•</span>
-            <span className="text-slate-800">
-              Creador del Sistema: <strong className="text-blue-900 font-bold">Lic. Kevin Gerardo López de León</strong>
-            </span>
-          </div>
-          <div className="flex items-center space-x-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+        <footer className="h-8 bg-slate-200 px-6 flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest flex-shrink-0 print:hidden">
+          <span>© 2026 Organismo Judicial de Guatemala - Gerencia de Informática</span>
+          <div className="flex items-center space-x-4">
             <span className="flex items-center">
               <span className="w-2 h-2 bg-emerald-500 rounded-full mr-1.5 animate-pulse" />
               Sesión Verificada
@@ -203,7 +138,6 @@ const AppContent: React.FC = () => {
       <PurchaseFormModal />
       <PurchaseDetailModal />
       <ChangePasswordModal />
-      <GoogleAuthModal />
       <ImportExcelModal />
 
       {/* Notificaciones Flotantes (Toasts) */}

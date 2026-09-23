@@ -2,40 +2,19 @@
 <img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>
 
-# Sistema de Control de Compras y Presupuesto - Gerencia de Informática (OJ)
+# Run and deploy your AI Studio app
 
-Aplicación web institucional para la gestión y seguimiento de adquisiciones y disponibilidad presupuestaria financiera.
+This contains everything you need to run your app locally.
 
-### URLs oficiales de la aplicación en Google AI Studio:
-- **Vista Previa / Producción:** [https://ais-pre-vi5c44cjekhlithqnhldhr-24957351903.us-west2.run.app](https://ais-pre-vi5c44cjekhlithqnhldhr-24957351903.us-west2.run.app)
-- **Entorno de Desarrollo:** [https://ais-dev-vi5c44cjekhlithqnhldhr-24957351903.us-west2.run.app](https://ais-dev-vi5c44cjekhlithqnhldhr-24957351903.us-west2.run.app)
+View your app in AI Studio: https://ai.studio/apps/5592e35a-812a-481c-bad9-b7ae12134a41
 
----
+## Run Locally
 
-## Cómo publicar en Vercel (Recomendado con GitHub)
+**Prerequisites:**  Node.js
 
-1. Conecta tu repositorio de GitHub en [Vercel](https://vercel.com/new).
-2. Selecciona el framework: **Vite**.
-3. Configuración de Build:
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-   - **Install Command:** `npm install`
-4. En **Settings > Domains**, asigna tu dominio o subdominio (ejemplo: `control-compras-git.vercel.app`).
 
-## Ejecución Local
-
-**Requisitos:** Node.js 18+
-
-1. Instalar dependencias:
-   ```bash
-   npm install
-   ```
-2. Iniciar servidor de desarrollo:
-   ```bash
-   npm run dev
-   ```
-3. Construir para producción:
-   ```bash
-   npm run build
-   ```
-
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`

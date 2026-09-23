@@ -29,11 +29,6 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isValidId(purchaseId) && isValidPurchase(request.resource.data);
       allow delete: if isValidId(purchaseId);
-
-      // Subcolección para adjuntos y documentos digitalizados F56
-      match /attachments/{attachmentId} {
-        allow read, write: if true;
-      }
     }
 
     // Reglas para Bitácora de Auditoría (Creación y lectura, inmutable contra borrado accidental)
@@ -53,26 +48,6 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if true;
       allow write: if isValidId(userId);
-    }
-
-    // Reglas para Perfiles y Permisos de Usuarios
-    match /user_profiles/{profileId} {
-      allow read, write: if isValidId(profileId);
-    }
-
-    // Reglas para Renglones Presupuestarios y Matriz de Disponibilidad
-    match /budget_lines/{lineId} {
-      allow read, write: if true;
-    }
-
-    // Reglas para Modificaciones Presupuestarias
-    match /budget_modifications/{modId} {
-      allow read, write: if true;
-    }
-
-    // Reglas para Configuración del Sistema
-    match /system_config/{configId} {
-      allow read, write: if true;
     }
 
     // Default deny all other paths

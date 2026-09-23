@@ -1,100 +1,57 @@
-import { PurchaseRecord, User, UserProfile, Catalog, AuditLogEntry, AppNotification } from '../types';
-import { generateOfficialF56PdfDataUrl } from '../utils/documentUtils';
-
-export const INITIAL_USER_PROFILES: UserProfile[] = [
-  {
-    id: 'prof-admin',
-    codigo: 'administrador',
-    nombre: 'Administrador General',
-    descripcion: 'Control total de la plataforma, configuración global, gestión de compras, disponibilidad presupuestaria, usuarios, perfiles y bitácoras.',
-    esSistema: true,
-    color: 'rose',
-    modulosPermitidos: ['dashboard', 'compras', 'presupuesto', 'catalogos', 'auditoria', 'usuarios', 'reportes', 'personalizacion', 'correo'],
-    activo: true,
-    fechaCreacion: '2024-01-01T08:00:00Z'
-  },
-  {
-    id: 'prof-auditor',
-    codigo: 'auditor',
-    nombre: 'Auditor de Control Interno',
-    descripcion: 'Supervisión y fiscalización sin alteración. Acceso a paneles ejecutivos, compras, presupuesto, reportes y bitácora de auditoría inmutable.',
-    esSistema: true,
-    color: 'amber',
-    modulosPermitidos: ['dashboard', 'compras', 'presupuesto', 'reportes', 'auditoria'],
-    activo: true,
-    fechaCreacion: '2024-01-01T08:00:00Z'
-  },
-  {
-    id: 'prof-compras',
-    codigo: 'operador_compras',
-    nombre: 'Operador de Compras GIT',
-    descripcion: 'Gestión técnica y administrativa de procesos de adquisiciones de tecnología, solicitudes F56-e, seguimiento de NOG y ofertas.',
-    esSistema: true,
-    color: 'blue',
-    modulosPermitidos: ['dashboard', 'compras', 'reportes'],
-    activo: true,
-    fechaCreacion: '2024-01-01T08:00:00Z'
-  },
-  {
-    id: 'prof-presupuesto',
-    codigo: 'gestor_presupuesto',
-    nombre: 'Gestor Presupuestario y Financiero',
-    descripcion: 'Administración de la matriz de disponibilidad presupuestaria institucional, registro de modificaciones y asignación de renglones.',
-    esSistema: true,
-    color: 'emerald',
-    modulosPermitidos: ['dashboard', 'presupuesto', 'compras', 'reportes'],
-    activo: true,
-    fechaCreacion: '2024-01-01T08:00:00Z'
-  },
-  {
-    id: 'prof-consulta',
-    codigo: 'consulta_gerencial',
-    nombre: 'Consulta Gerencial / Presidencia',
-    descripcion: 'Visualización ejecutiva de indicadores clave, estadísticas de adquisiciones y dictámenes emitidos para toma de decisiones.',
-    esSistema: true,
-    color: 'purple',
-    modulosPermitidos: ['dashboard', 'reportes'],
-    activo: true,
-    fechaCreacion: '2024-01-01T08:00:00Z'
-  }
-];
+import { PurchaseRecord, User, Catalog, AuditLogEntry, AppNotification } from '../types';
 
 export const INITIAL_USERS: User[] = [
   {
     id: 'usr-admin-1',
     username: 'admin',
-    nombreCompleto: 'Lic. Kevin Gerardo López de León',
-    email: 'kgerardo2003@gmail.com',
-    telefono: '+502 5555-0199',
+    nombreCompleto: 'Lic. Kevin Gerarado López de León',
+    email: 'klopez@oj.gob.gt',
     password: 'Guate2026*',
     rol: 'administrador',
-    perfilId: 'prof-admin',
-    cargo: 'Gerente de Informática',
+    cargo: 'Gerente de Informática y Telecomunicaciones',
     departamento: 'Gerencia de Informática - OJ',
     activo: true,
-    dobleFactorHabilitado: true,
-    metodoPreferido2FA: 'totp',
-    totpSecret: 'PE54JG4IVKUMTCHQPS4E',
     fechaCreacion: '2024-01-10T08:00:00Z',
     ultimoAcceso: '2026-09-03T14:15:00Z',
   },
   {
-    id: 'usr-kglopezd-1',
-    username: 'kglopezd',
-    nombreCompleto: 'Lic. Kevin Gerardo López de León',
-    email: 'kgerardo2003@gmail.com',
-    telefono: '+502 5555-0199',
-    password: 'Jslb16042015@@',
-    rol: 'administrador',
-    perfilId: 'prof-admin',
-    cargo: 'Gerente de Informática',
-    departamento: 'Gerencia de Informática - OJ',
+    id: 'usr-auditor-1',
+    username: 'auditor',
+    nombreCompleto: 'Licda. Patricia Morales Estrada',
+    email: 'pmorales@oj.gob.gt',
+    password: 'audit',
+    rol: 'auditor',
+    cargo: 'Auditora Gubernamental Senior',
+    departamento: 'Dirección de Auditoría Interna - OJ',
     activo: true,
-    dobleFactorHabilitado: true,
-    metodoPreferido2FA: 'totp',
-    totpSecret: 'YTKL6RL7C5D3EVQHYRSX',
-    fechaCreacion: '2024-01-10T08:00:00Z',
-    ultimoAcceso: '2026-09-03T14:15:00Z',
+    fechaCreacion: '2024-02-01T09:30:00Z',
+    ultimoAcceso: '2026-09-03T11:20:00Z',
+  },
+  {
+    id: 'usr-operador-1',
+    username: 'operador',
+    nombreCompleto: 'Ing. Mario Roberto Gómez Salazar',
+    email: 'mgomez@oj.gob.gt',
+    password: 'user123',
+    rol: 'usuario_estandar',
+    cargo: 'Analista de Compras de Tecnología',
+    departamento: 'Unidad de Gestión de Adquisiciones GIT',
+    activo: true,
+    fechaCreacion: '2024-03-15T10:00:00Z',
+    ultimoAcceso: '2026-09-03T13:45:00Z',
+  },
+  {
+    id: 'usr-operador-2',
+    username: 'jfuentes',
+    nombreCompleto: 'Lic. Jorge Fuentes Alvarado',
+    email: 'jfuentes@oj.gob.gt',
+    password: 'user123',
+    rol: 'usuario_estandar',
+    cargo: 'Especialista en Infraestructura Informática',
+    departamento: 'Subgerencia de Redes y Telecomunicaciones',
+    activo: true,
+    fechaCreacion: '2024-04-10T08:30:00Z',
+    ultimoAcceso: '2026-09-02T16:10:00Z',
   }
 ];
 
@@ -103,28 +60,20 @@ export const INITIAL_CATALOGS: Catalog[] = [
     id: 'cat-estatus',
     codigo: 'ESTATUS_EVENTO',
     nombre: 'Estatus del Evento',
-    descripcion: 'Estados oficiales de los eventos de adquisiciones según matriz de la Gerencia de Informática',
+    descripcion: 'Estados oficiales de los eventos de adquisiciones según normativa Guatecompras y GIT',
     esSistema: true,
     items: [
-      { id: 'est-reg', codigo: 'REGISTRADA', valor: 'Registrada', descripcion: 'Evento registrado en sistema, compromete preventivamente saldo (Afecta: Sí)', activo: true, color: 'blue' },
-      { id: 'est-proc', codigo: 'EN_PROCESO', valor: 'En proceso', descripcion: 'Expediente en gestión técnica o recepción de plicas (Afecta: Sí)', activo: true, color: 'amber' },
-      { id: 'est-comp', codigo: 'COMPROMETIDA', valor: 'Comprometida', descripcion: 'Evento con reserva de saldo y compromiso formal (Afecta: Sí)', activo: true, color: 'indigo' },
-      { id: 'est-adj', codigo: 'ADJUDICADA', valor: 'Adjudicada', descripcion: 'Evento resuelto y adjudicado a proveedor (Afecta: Sí)', activo: true, color: 'emerald' },
-      { id: 'est-pag', codigo: 'PAGADA', valor: 'Pagada', descripcion: 'Factura devengada y pagada, rebaja en Pagado (Afecta: Sí)', activo: true, color: 'purple' },
-      { id: 'est-anul', codigo: 'ANULADA', valor: 'Anulada', descripcion: 'Evento anulado o dejado sin efecto legal (Afecta: No)', activo: true, color: 'slate' },
-      { id: 'est-rech', codigo: 'RECHAZADA', valor: 'Rechazada', descripcion: 'Evento no autorizado o rechazado (Afecta: No)', activo: true, color: 'rose' },
-      // Compatibilidad histórica
-      { id: 'est-1', codigo: 'EVALUACION', valor: 'Evaluación', descripcion: 'En proceso de calificación técnica y financiera (Afecta: Sí)', activo: true, color: 'blue' },
-      { id: 'est-2', codigo: 'ADJUDICACION', valor: 'Adjudicación', descripcion: 'Evento adjudicado a proveedor (Afecta: Sí)', activo: true, color: 'emerald' },
-      { id: 'est-3', codigo: 'PRESCINDIDO', valor: 'Prescindido', descripcion: 'Evento prescindido (Afecta: No)', activo: true, color: 'amber' },
-      { id: 'est-4', codigo: 'DESIERTO', valor: 'Desierto', descripcion: 'Evento desierto (Afecta: No)', activo: true, color: 'rose' },
+      { id: 'est-1', codigo: 'EVALUACION', valor: 'Evaluación', descripcion: 'En proceso de calificación técnica y financiera por la comisión', activo: true, color: 'blue' },
+      { id: 'est-2', codigo: 'ADJUDICACION', valor: 'Adjudicación', descripcion: 'Evento resuelto favorablemente a proveedor adjudicado', activo: true, color: 'emerald' },
+      { id: 'est-3', codigo: 'PRESCINDIDO', valor: 'Prescindido', descripcion: 'Evento dejado sin efecto por razones de interés institucional', activo: true, color: 'amber' },
+      { id: 'est-4', codigo: 'DESIERTO', valor: 'Desierto', descripcion: 'Ninguna oferta cumplió con los requerimientos técnicos o no hubo postores', activo: true, color: 'rose' },
     ]
   },
   {
     id: 'cat-evaluado-git',
     codigo: 'EVALUADO_GIT',
     nombre: 'Evaluado por la GIT',
-    descripcion: 'Dictamen técnico y validación por la Gerencia de Informática',
+    descripcion: 'Dictamen técnico y validación por la Gerencia de Informática y Telecomunicaciones',
     esSistema: true,
     items: [
       { id: 'git-1', codigo: 'SI', valor: 'Sí', descripcion: 'Cuenta con dictamen técnico favorable de la GIT', activo: true, color: 'emerald' },
@@ -181,15 +130,13 @@ export const INITIAL_CATALOGS: Catalog[] = [
     id: 'cat-modalidades',
     codigo: 'MODALIDAD_COMPRA',
     nombre: 'Modalidad de Compra',
-    descripcion: 'Modalidades de contratación pública según Ley de Contrataciones y Normas del Organismo Judicial',
+    descripcion: 'Modalidades de contratación pública según Ley de Contrataciones del Estado',
     esSistema: false,
     items: [
-      { id: 'mod-bc', codigo: 'BAJA_CUANTIA', valor: 'Baja cuantía', descripcion: 'Orden 1: Montos de hasta Q.25,000.00', activo: true },
-      { id: 'mod-cd', codigo: 'COMPRA_DIRECTA', valor: 'Compra directa', descripcion: 'Orden 2: De Q.25,000.01 hasta Q.90,000.00', activo: true },
-      { id: 'mod-cot', codigo: 'COTIZACION', valor: 'Cotización', descripcion: 'Orden 3: De Q.90,000.01 hasta Q.900,000.00', activo: true },
-      { id: 'mod-lic', codigo: 'LICITACION', valor: 'Licitación', descripcion: 'Orden 4: Supera los Q.900,000.00', activo: true },
-      { id: 'mod-fr', codigo: 'FONDO_ROTATIVO', valor: 'Fondo rotativo', descripcion: 'Orden 5: Fondo privativo institucional para gastos menores y urgentes', activo: true },
-      { id: 'mod-ca', codigo: 'CONTRATO_ABIERTO', valor: 'Contrato Abierto', descripcion: 'Convenio marco con precios fijados por Minfin', activo: true },
+      { id: 'mod-1', codigo: 'COMPRA_DIRECTA', valor: 'Compra Directa', descripcion: 'Montos menores a Q.90,000.00', activo: true },
+      { id: 'mod-2', codigo: 'COTIZACION', valor: 'Cotización Pública', descripcion: 'Montos entre Q.90,000.01 y Q.900,000.00', activo: true },
+      { id: 'mod-3', codigo: 'LICITACION', valor: 'Licitación Pública', descripcion: 'Montos mayores a Q.900,000.00', activo: true },
+      { id: 'mod-4', codigo: 'CONTRATO_ABIERTO', valor: 'Contrato Abierto', descripcion: 'Convenio marco con precios fijados por Minfin', activo: true },
     ]
   }
 ];
@@ -205,16 +152,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
       tamano: 245760,
       tipo: 'application/pdf',
       fechaSubida: '2026-01-16T11:20:00Z',
-      dataUrl: generateOfficialF56PdfDataUrl({
-        f56e: '000001-2026',
-        f56: '000001',
-        descripcion: 'Adquisición de servidores en rack de alta disponibilidad para el Sistema de Gestión de Tribunales (SGT) en el Data Center Central.',
-        monto: 845000,
-        dependenciaSolicitante: 'Centro de Cómputo Principal Torre de Tribunales',
-        proveedorAdjudicado: 'Tecnologías y Sistemas Corporativos, S.A.',
-        fechaDictamenGIT: '2026-02-18',
-        fechaElaboracionOficioGIT: '2026-02-20'
-      }, 'F56_Oficial_Servidores_SGT_000001.pdf')
+      dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbMyAwIFJdCi9Db3VudCAxCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9QYWdlCi9QYXJlbnQgMiAwIFIKL01lZGlhQm94IFswIDAgNjEyIDc5Ml0KL0NvbnRlbnRzIDQgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9MZW5ndGggNzgKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihGb3JtdWxhcmlvIEY1NiBPZmljaWFsIC0gT3JnYW5pc21vIEp1ZGljaWFsIGRlIEd1YXRlbWFsYSkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA2OCAwMDAwMCBuIAowMDAwMDAwMTI1IDAwMDAwIG4gCjAwMDAwMDAyMjEgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA1Ci9Sb290IDEgMCBSCj4+CnN0YXJ0eHJlZgoxMzU2CiUlRU9G'
     },
     fechaSolicitud: '2026-01-15',
     fechaVoBo: '2026-01-22',
@@ -226,7 +164,6 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     monto: 845000.00,
     evaluadoGIT: 'Sí',
     fechaDictamenGIT: '2026-02-18',
-    fechaElaboracionOficioGIT: '2026-02-20',
     estatusEvento: 'Adjudicación',
     areaSolicitante: 'Departamento de Servicios Informáticos',
     categoriaTecnologica: 'Servidores y Almacenamiento',
@@ -247,16 +184,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
       tamano: 189440,
       tipo: 'application/pdf',
       fechaSubida: '2026-02-02T14:10:00Z',
-      dataUrl: generateOfficialF56PdfDataUrl({
-        f56e: '000012-2026',
-        f56: '000012',
-        descripcion: 'Renovación de licenciamiento anual de motor de bases de datos Enterprise y soporte técnico especializado para registros judiciales.',
-        monto: 1250000,
-        dependenciaSolicitante: 'Subgerencia de Desarrollo de Sistemas GIT',
-        proveedorAdjudicado: 'Oracle Corporation / Distribuidor Autorizado',
-        fechaDictamenGIT: '2026-02-25',
-        fechaElaboracionOficioGIT: '2026-02-27'
-      }, 'Dictamen_F56_Licenciamiento_000012.pdf')
+      dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbMyAwIFJdCi9Db3VudCAxCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9MZW5ndGggNzYKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihGb3JtdWxhcmlvIEY1NiAtIExpY2VuY2lhbWllbnRvIEJhc2VzIGRlIERhdG9zIE9KKSBUagpFVAplbmRzdHJlYW0KZW5kb2Jq'
     },
     fechaSolicitud: '2026-02-01',
     fechaVoBo: '2026-02-08',
@@ -268,7 +196,6 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     monto: 1250000.00,
     evaluadoGIT: 'Sí',
     fechaDictamenGIT: '2026-02-25',
-    fechaElaboracionOficioGIT: '2026-02-27',
     estatusEvento: 'Evaluación',
     areaSolicitante: 'Desarrollo y Administración de Sistemas',
     categoriaTecnologica: 'Licenciamiento y Software Judicial',
@@ -293,7 +220,6 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     monto: 690000.00,
     evaluadoGIT: 'Sí',
     fechaDictamenGIT: '2026-02-15',
-    fechaElaboracionOficioGIT: '2026-02-17',
     estatusEvento: 'Adjudicación',
     areaSolicitante: 'Soporte técnico',
     categoriaTecnologica: 'Estaciones de Trabajo y Periféricos',
@@ -338,16 +264,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
       tamano: 312000,
       tipo: 'application/pdf',
       fechaSubida: '2026-01-11T09:00:00Z',
-      dataUrl: generateOfficialF56PdfDataUrl({
-        f56e: '000044-2026',
-        f56: '000044',
-        descripcion: 'Implementación de sistema perimetral Firewall Next-Gen y módulo de prevención de intrusiones para protección de expedientes judiciales.',
-        monto: 480000,
-        dependenciaSolicitante: 'Unidad de Seguridad de la Información',
-        proveedorAdjudicado: 'Fortinet Security Systems, S.A.',
-        fechaDictamenGIT: '2026-01-28',
-        fechaElaboracionOficioGIT: '2026-01-30'
-      }, 'F56_Aprobada_Firewall_Perimetral_000044.pdf')
+      dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9MZW5ndGggNzYKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihGb3JtdWxhcmlvIEY1NiAtIFNlZ3VyaWRhZCBQZXJpbWV0cmFsIEZpcmV3YWxsKSBUagpFVAplbmRzdHJlYW0KZW5kb2Jq'
     },
     fechaSolicitud: '2026-01-10',
     fechaVoBo: '2026-01-18',
