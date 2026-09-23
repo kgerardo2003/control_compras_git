@@ -7,10 +7,20 @@ import {
   Edit3, 
   Trash2, 
   X,
-  ShieldAlert
+  ShieldAlert,
+  Mail,
+  Key,
+  ShieldCheck,
+  Building2,
+  Shield,
+  Eye,
+  Phone,
+  MessageSquare
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
+import { TECHNICAL_AREAS_LIST, ALL_AREAS_LABEL, isUserGlobalAdmin } from '../utils/rbacUtils';
+import { validatePhoneNumber, formatPhoneNumber } from '../utils/smsService';
 
 export const UsersView: React.FC = () => {
   const { 
@@ -19,8 +29,14 @@ export const UsersView: React.FC = () => {
     updateUser, 
     toggleUserStatus, 
     deleteUser, 
+    userProfiles,
+    getUserProfile,
+    setActiveTab,
     currentUser,
-    themeConfig
+    catalogs,
+    themeConfig,
+    sendUserWelcomeEmail,
+    showToast
   } = useApp();
 
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState(false);
@@ -30,10 +46,20 @@ export const UsersView: React.FC = () => {
   const [username, setUsername] = useState('');
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [password, setPassword] = useState('Guate2026*');
   const [rol, setRol] = useState<UserRole>('usuario_estandar');
+  const [perfilId, setPerfilId] = useState<string>('');
   const [cargo, setCargo] = useState('');
   const [departamento, setDepartamento] = useState('Gerencia de Informática - OJ');
+  const [area, setArea] = useState<string>(TECHNICAL_AREAS_LIST[1]);
+  const [isCustomArea, setIsCustomArea] = useState(false);
+  const [customAreaText, setCustomAreaText] = useState('');
+  const [notifyByEmail, setNotifyByEmail] = useState(true);
+  const [dobleFactorHabilitado, setDobleFactorHabilitado] = useState(false);
+  const [metodoPreferido2FA, setMetodoPreferido2FA] = useState<'totp' | 'sms' | 'email'>('totp');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resendingEmailUserId, setResendingEmailUserId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
   const canManage = currentUser?.rol === 'administrador';
@@ -42,10 +68,20 @@ export const UsersView: React.FC = () => {
     setUsername('');
     setNombreCompleto('');
     setEmail('');
-    setPassword('');
-    setRol('usuario_estandar');
+    setTelefono('');
+    setPassword('Guate2026*');
+    const defaultProf = userProfiles.find(p => p.codigo === 'usuario_estandar') || userProfiles[0];
+    setRol(defaultProf ? (defaultProf.codigo as UserRole) : 'usuario_estandar');
+    setPerfilId(defaultProf ? defaultProf.id : '');
     setCargo('');
     setDepartamento('Gerencia de Informática - OJ');
+    setArea(TECHNICAL_AREAS_LIST[1]);
+    setIsCustomArea(false);
+    setCustomAreaText('');
+    setNotifyByEmail(true);
+    setDobleFactorHabilitado(true);
+    setMetodoPreferido2FA('totp');
+    setIsSubmitting(false);
     setErrorMsg('');
     setIsNewUserModalOpen(true);
   };
@@ -55,28 +91,112 @@ export const UsersView: React.FC = () => {
     setUsername(user.username);
     setNombreCompleto(user.nombreCompleto);
     setEmail(user.email);
+    setTelefono(user.telefono || '');
     setPassword('');
     setRol(user.rol);
+    setPerfilId(user.perfilId || '');
     setCargo(user.cargo);
     setDepartamento(user.departamento);
+    setMetodoPreferido2FA(user.metodoPreferido2FA === 'sms' ? 'sms' : (user.metodoPreferido2FA === 'email' ? 'email' : 'totp'));
+    
+    const assigned = user.area || user.departamento || '';
+    setDobleFactorHabilitado(Boolean(user.dobleFactorHabilitado));
+    if (TECHNICAL_AREAS_LIST.includes(assigned as any)) {
+      setArea(assigned);
+      setIsCustomArea(false);
+      setCustomAreaText('');
+    } else if (assigned) {
+      setArea('custom');
+      setIsCustomArea(true);
+      setCustomAreaText(assigned);
+    } else {
+      setArea(user.rol === 'administrador' ? ALL_AREAS_LABEL : TECHNICAL_AREAS_LIST[1]);
+      setIsCustomArea(false);
+      setCustomAreaText('');
+    }
+
+    setIsSubmitting(false);
     setErrorMsg('');
   };
 
-  const handleSubmitUser = (e: React.FormEvent) => {
+  const handleResendEmail = async (user: User) => {
+    if (!user.email) {
+      showToast({
+        type: 'warning',
+        title: 'Sin Correo Institucional',
+        message: `El usuario @${user.username} no tiene configurado un correo electrónico.`
+      });
+      return;
+    }
+
+    setResendingEmailUserId(user.id);
+    try {
+      const res = await sendUserWelcomeEmail(user, user.password || 'Guate2026*');
+      if (res.success) {
+        showToast({
+          type: 'success',
+          title: 'Credenciales Enviadas por Correo',
+          message: `Se enviaron las credenciales de acceso a ${user.email} con el enlace y las instrucciones de seguridad.`,
+          duration: 5000
+        });
+      } else {
+        showToast({
+          type: 'warning',
+          title: 'Aviso al Enviar Correo',
+          message: res.message || 'No se pudo enviar el correo de credenciales.',
+          duration: 7000
+        });
+      }
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Error de Envío',
+        message: err?.message || 'Ocurrió un error inesperado al enviar el correo.'
+      });
+    } finally {
+      setResendingEmailUserId(null);
+    }
+  };
+
+  const handleSubmitUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !nombreCompleto.trim() || !email.trim()) {
       setErrorMsg('Por favor complete todos los campos obligatorios.');
       return;
     }
 
+    if (telefono.trim()) {
+      const phoneValidation = validatePhoneNumber(telefono);
+      if (!phoneValidation.valid) {
+        setErrorMsg(phoneValidation.error || 'Formato de número telefónico no válido.');
+        return;
+      }
+    } else if (dobleFactorHabilitado && metodoPreferido2FA === 'sms') {
+      setErrorMsg('Para habilitar el método 2FA por SMS, debe ingresar un número de teléfono móvil válido.');
+      return;
+    }
+
+    const formattedPhone = telefono.trim() ? formatPhoneNumber(telefono) : undefined;
+    const resolvedArea = isCustomArea ? customAreaText.trim() : area;
+
     if (editingUser) {
       updateUser(editingUser.id, {
         nombreCompleto: nombreCompleto.trim(),
         email: email.trim(),
+        telefono: formattedPhone,
         rol,
+        perfilId: perfilId || undefined,
         cargo: cargo.trim(),
-        departamento: departamento.trim(),
-        password: password ? password : editingUser.password,
+        departamento: departamento.trim() || resolvedArea,
+        area: resolvedArea,
+        dobleFactorHabilitado,
+        metodoPreferido2FA,
+        password: password.trim() ? password.trim() : editingUser.password,
+      });
+      showToast({
+        type: 'success',
+        title: 'Usuario Actualizado',
+        message: `Los datos del usuario @${editingUser.username} fueron actualizados correctamente.`
       });
       setEditingUser(null);
     } else {
@@ -85,22 +205,79 @@ export const UsersView: React.FC = () => {
         return;
       }
 
-      addUser({
+      const assignedPassword = password.trim() || 'Guate2026*';
+      setIsSubmitting(true);
+
+      const newUser = addUser({
         username: username.trim().toLowerCase(),
         nombreCompleto: nombreCompleto.trim(),
         email: email.trim(),
-        password: password || '123456',
+        telefono: formattedPhone,
+        password: assignedPassword,
         rol,
+        perfilId: perfilId || undefined,
         cargo: cargo.trim() || 'Funcionario OJ',
-        departamento: departamento.trim(),
+        departamento: departamento.trim() || resolvedArea,
+        area: resolvedArea,
+        dobleFactorHabilitado,
+        metodoPreferido2FA,
         activo: true,
       });
+
+      if (notifyByEmail) {
+        try {
+          const emailRes = await sendUserWelcomeEmail(newUser, assignedPassword);
+          if (emailRes.success) {
+            showToast({
+              type: 'success',
+              title: 'Usuario Creado y Notificado',
+              message: `El usuario @${newUser.username} fue registrado exitosamente y se despacharon sus credenciales de acceso a ${newUser.email}.`,
+              duration: 6000
+            });
+          } else {
+            showToast({
+              type: 'warning',
+              title: 'Usuario Creado (Aviso de Envío)',
+              message: `Usuario registrado. Sin embargo: ${emailRes.message}. Las credenciales son: Usuario: ${newUser.username} / Contraseña temporal: ${assignedPassword}`,
+              duration: 9000
+            });
+          }
+        } catch (err: any) {
+          showToast({
+            type: 'warning',
+            title: 'Usuario Creado',
+            message: `Usuario registrado con contraseña temporal: ${assignedPassword}. Falló el envío de correo: ${err?.message}`,
+            duration: 8000
+          });
+        }
+      } else {
+        showToast({
+          type: 'success',
+          title: 'Usuario Creado Exitosamente',
+          message: `El usuario @${newUser.username} fue registrado con contraseña temporal: ${assignedPassword}.`,
+          duration: 5000
+        });
+      }
+
+      setIsSubmitting(false);
       setIsNewUserModalOpen(false);
     }
   };
 
-  const getRoleBadge = (r: UserRole) => {
-    switch (r) {
+  const getRoleBadge = (u: User) => {
+    const profile = getUserProfile(u);
+    if (profile) {
+      return (
+        <span 
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-900 border border-blue-200"
+          title={`${profile.modulosPermitidos.length} módulos autorizados: ${profile.modulosPermitidos.join(', ')}`}
+        >
+          <Key className="w-2.5 h-2.5 text-blue-600" />
+          <span>{profile.nombre}</span>
+        </span>
+      );
+    }
+    switch (u.rol) {
       case 'administrador':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">ADMINISTRADOR</span>;
       case 'auditor':
@@ -118,29 +295,41 @@ export const UsersView: React.FC = () => {
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-800">
-            Administración de Usuarios y Perfiles
+            Administración de Usuarios y Perfiles Institucionales
           </h2>
           <p className="text-xs text-slate-500">
-            Control de cuentas y asignación de roles (Administrador, Auditor, Estándar)
+            Control de cuentas, asignación de perfiles RBAC y control de acceso a los módulos
           </p>
         </div>
 
-        {canManage ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Botón para administrar perfiles */}
           <button
-            id="btn-create-user"
             type="button"
-            onClick={handleOpenCreate}
-            className={`px-3.5 py-1.5 rounded-lg ${themeConfig.primaryBtn} text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer`}
+            onClick={() => setActiveTab('perfiles')}
+            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Crear Usuario</span>
+            <Key className="w-3.5 h-3.5 text-blue-700" />
+            <span>Configurar Perfiles ({userProfiles.length})</span>
           </button>
-        ) : (
-          <div className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-1.5">
-            <ShieldAlert className="w-4 h-4 text-amber-600" />
-            <span>Solo administradores pueden crear o modificar cuentas</span>
-          </div>
-        )}
+
+          {canManage ? (
+            <button
+              id="btn-create-user"
+              type="button"
+              onClick={handleOpenCreate}
+              className={`px-3.5 py-2 rounded-xl ${themeConfig.primaryBtn} text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer`}
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>+ Nuevo Usuario</span>
+            </button>
+          ) : (
+            <div className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600" />
+              <span>Solo administradores pueden crear o modificar cuentas</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Matriz Explicativa de Perfiles */}
@@ -190,16 +379,18 @@ export const UsersView: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">Usuario</th>
                 <th className="px-4 py-3">Nombre Completo</th>
-                <th className="px-3 py-3">Correo Institucional</th>
                 <th className="px-3 py-3 text-center">Perfil / Rol</th>
-                <th className="px-3 py-3">Cargo & Dependencia</th>
-                <th className="px-3 py-3 text-center">Estado</th>
+                <th className="px-3 py-3">Área / Depto. Asignado</th>
+                <th className="px-3 py-3 text-center">Estado / 2FA</th>
                 <th className="px-3 py-3">Último Acceso</th>
                 {canManage && <th className="px-4 py-3 text-center">Acciones</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {users.map((u) => (
+              {users.map((u) => {
+                const isAdmin = isUserGlobalAdmin(u);
+                const assignedArea = u.area || u.departamento || '';
+                return (
                 <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                   
                   {/* Usuario */}
@@ -212,42 +403,84 @@ export const UsersView: React.FC = () => {
                     {u.nombreCompleto}
                   </td>
 
-                  {/* Email */}
-                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap">
-                    {u.email}
-                  </td>
-
                   {/* Rol */}
                   <td className="px-3 py-3 text-center whitespace-nowrap">
-                    {getRoleBadge(u.rol)}
+                    {getRoleBadge(u)}
                   </td>
 
-                  {/* Cargo */}
-                  <td className="px-3 py-3 text-slate-600 text-[11px]">
-                    <span className="font-medium text-slate-800 block">{u.cargo}</span>
-                    <span className="text-slate-400 block">{u.departamento}</span>
-                  </td>
-
-                  {/* Estado */}
-                  <td className="px-3 py-3 text-center whitespace-nowrap">
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleUserStatus(u.id)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors ${
-                          u.activo ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-                        }`}
-                      >
-                        {u.activo ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                        <span>{u.activo ? 'Activo' : 'Inactivo'}</span>
-                      </button>
-                    ) : (
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        u.activo ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {u.activo ? 'Activo' : 'Inactivo'}
+                  {/* Área Asignada (Control de Visibilidad) */}
+                  <td className="px-3 py-3 text-[11px]">
+                    {isAdmin ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 font-bold border border-purple-200">
+                        <Shield className="w-3 h-3 text-purple-600" />
+                        <span>Acceso Global (Todas las Áreas)</span>
                       </span>
+                    ) : (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-semibold border border-blue-200 w-fit">
+                          <Building2 className="w-3 h-3 text-blue-600 shrink-0" />
+                          <span>{assignedArea || 'Sin Área Específica'}</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Solo visualiza expedientes de su área
+                        </span>
+                      </div>
                     )}
+                  </td>
+
+                  {/* Estado y Seguridad 2FA */}
+                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                    <div className="flex flex-col items-center gap-1">
+                      {canManage ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleUserStatus(u.id)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors ${
+                            u.activo ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                          }`}
+                        >
+                          {u.activo ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                          <span>{u.activo ? 'Activo' : 'Inactivo'}</span>
+                        </button>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          u.activo ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {u.activo ? 'Activo' : 'Inactivo'}
+                        </span>
+                      )}
+                      <span 
+                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                          u.dobleFactorHabilitado !== false
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+                        }`}
+                        title={u.dobleFactorHabilitado !== false ? 'Doble factor de autenticación 2FA activado' : '2FA desactivado para este usuario'}
+                      >
+                        <ShieldCheck className={`w-2.5 h-2.5 ${u.dobleFactorHabilitado !== false ? 'text-blue-600' : 'text-slate-400'}`} />
+                        {u.dobleFactorHabilitado !== false ? '2FA Activo' : '2FA Inactivo'}
+                      </span>
+                      {u.dobleFactorHabilitado !== false && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          {u.metodoPreferido2FA === 'sms' ? (
+                            <>
+                              <MessageSquare className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>SMS Móvil</span>
+                            </>
+                          ) : u.metodoPreferido2FA === 'email' ? (
+                            <>
+                              <Mail className="w-2.5 h-2.5 text-blue-600" />
+                              <span>Correo Ficha</span>
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="w-2.5 h-2.5 text-amber-600" />
+                              <span>Authenticator</span>
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Último Acceso */}
@@ -259,6 +492,19 @@ export const UsersView: React.FC = () => {
                   {canManage && (
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleResendEmail(u)}
+                          disabled={resendingEmailUserId === u.id}
+                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                          title="Enviar credenciales de acceso por correo"
+                        >
+                          {resendingEmailUserId === u.id ? (
+                            <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Mail className="w-3.5 h-3.5" />
+                          )}
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(u)}
@@ -282,7 +528,8 @@ export const UsersView: React.FC = () => {
                   )}
 
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -349,17 +596,57 @@ export const UsersView: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-blue-600" />
+                    Número de Teléfono Móvil (Para 2FA vía SMS)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">Formato: +502 XXXX-XXXX</span>
+                </label>
+                <input
+                  type="tel"
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  placeholder="ej. +502 5555-0199 o 55550199"
+                  className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono text-xs"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Número de línea de contacto móvil del usuario.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Perfil / Rol *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Perfil Institucional / Rol *</label>
                   <select
-                    value={rol}
-                    onChange={(e) => setRol(e.target.value as UserRole)}
-                    className="w-full p-2 border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-1 focus:ring-amber-500"
+                    value={perfilId || rol}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const selectedProf = userProfiles.find(p => p.id === val || p.codigo === val);
+                      if (selectedProf) {
+                        setPerfilId(selectedProf.id);
+                        setRol(selectedProf.codigo as UserRole);
+                      } else {
+                        setRol(val as UserRole);
+                        setPerfilId('');
+                      }
+                    }}
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-1 focus:ring-blue-500"
                   >
-                    <option value="usuario_estandar">Usuario Estándar</option>
-                    <option value="auditor">Auditor</option>
-                    <option value="administrador">Administrador</option>
+                    {userProfiles.length > 0 ? (
+                      userProfiles.map(prof => (
+                        <option key={prof.id} value={prof.id}>
+                          {prof.nombre} ({prof.modulosPermitidos.length} módulos)
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="usuario_estandar">Usuario Estándar</option>
+                        <option value="auditor">Auditor</option>
+                        <option value="administrador">Administrador</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
@@ -368,14 +655,127 @@ export const UsersView: React.FC = () => {
                     {editingUser ? 'Nueva Contraseña' : 'Contraseña *'}
                   </label>
                   <input
-                    type="password"
+                    type={editingUser ? "password" : "text"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={editingUser ? 'Mantener actual' : 'Contraseña'}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
+                    placeholder={editingUser ? 'Mantener actual' : 'Guate2026*'}
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500 font-mono text-xs"
                     required={!editingUser}
                   />
                 </div>
+              </div>
+
+              {/* Configuración de Seguridad 2FA */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dobleFactorHabilitado}
+                    onChange={(e) => setDobleFactorHabilitado(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                  />
+                  <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                    Exigir Doble Factor de Autenticación (2FA)
+                  </span>
+                </label>
+                <p className="text-[11px] text-slate-600 pl-6 leading-tight">
+                  Al iniciar sesión, el sistema exigirá un segundo factor de seguridad con código numérico temporal de 6 dígitos con vigencia de 5 minutos.
+                </p>
+
+                {dobleFactorHabilitado && (
+                  <div className="pt-2 pl-6 border-t border-blue-100 space-y-2">
+                    <span className="block text-[11px] font-bold text-slate-700">
+                      Método de Segundo Factor Preferido:
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMetodoPreferido2FA('totp')}
+                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                          metodoPreferido2FA === 'totp'
+                            ? 'border-blue-600 bg-white shadow-xs text-blue-900 font-bold ring-1 ring-blue-500'
+                            : 'border-slate-200 bg-white/60 text-slate-700 hover:bg-white font-medium'
+                        }`}
+                      >
+                        <span className="text-[11px] flex items-center gap-1 font-bold">
+                          <ShieldCheck className="w-3 h-3 text-amber-600" /> Google Auth
+                        </span>
+                        <span className="text-[9px] text-slate-500 mt-0.5">App móvil</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMetodoPreferido2FA('email')}
+                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                          metodoPreferido2FA === 'email'
+                            ? 'border-blue-600 bg-white shadow-xs text-blue-900 font-bold ring-1 ring-blue-500'
+                            : 'border-slate-200 bg-white/60 text-slate-700 hover:bg-white font-medium'
+                        }`}
+                      >
+                        <span className="text-[11px] flex items-center gap-1 font-bold">
+                          <Mail className="w-3 h-3 text-blue-600" /> Correo Ficha
+                        </span>
+                        <span className="text-[9px] text-slate-500 mt-0.5">Código email</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Asignación de Área o Departamento para control de visibilidad RBAC */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-1.5 text-slate-800 font-bold text-xs">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <span>Área o Departamento Asignado *</span>
+                </div>
+                
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Define a qué expedientes tendrá acceso el usuario. Los usuarios de áreas técnicas (ej. <strong>Desarrollo</strong>, <strong>Redes y Telecomunicaciones</strong>) únicamente podrán ver las adquisiciones de su área. Los Administradores tienen visibilidad global.
+                </p>
+
+                <select
+                  value={isCustomArea ? 'custom' : area}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'custom') {
+                      setIsCustomArea(true);
+                    } else {
+                      setIsCustomArea(false);
+                      setArea(val);
+                      if (!departamento || departamento === 'Gerencia de Informática - OJ' || TECHNICAL_AREAS_LIST.includes(departamento as any)) {
+                        setDepartamento(val === ALL_AREAS_LABEL ? 'Gerencia de Informática - OJ' : val);
+                      }
+                    }
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-semibold text-xs text-slate-800"
+                >
+                  {TECHNICAL_AREAS_LIST.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                  <option value="custom">+ Otra Área / Dependencia Personalizada...</option>
+                </select>
+
+                {isCustomArea && (
+                  <div className="pt-1">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Nombre del Área o Dependencia Técnica:
+                    </label>
+                    <input
+                      type="text"
+                      value={customAreaText}
+                      onChange={(e) => {
+                        setCustomAreaText(e.target.value);
+                        setDepartamento(e.target.value);
+                      }}
+                      placeholder="ej. Unidad de Seguridad Informática y Auditoría"
+                      className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-xs"
+                      required={isCustomArea}
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -384,18 +784,18 @@ export const UsersView: React.FC = () => {
                   type="text"
                   value={cargo}
                   onChange={(e) => setCargo(e.target.value)}
-                  placeholder="ej. Analista de Redes y Telecomunicaciones"
+                  placeholder="ej. Analista de Sistemas / Ingeniero de Redes"
                   className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Departamento / Dependencia</label>
+                <label className="block font-bold text-slate-700 mb-1">Dependencia Institucional (Texto complementario)</label>
                 <input
                   type="text"
                   value={departamento}
                   onChange={(e) => setDepartamento(e.target.value)}
-                  placeholder="ej. Gerencia de Informática - OJ"
+                  placeholder="ej. Gerencia de Informática - Organismo Judicial"
                   className="w-full p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-amber-500"
                 />
               </div>
@@ -410,9 +810,17 @@ export const UsersView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold rounded-xl text-xs shadow-2xs cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  {editingUser ? 'Actualizar Usuario' : 'Guardar Usuario'}
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <span>{editingUser ? 'Actualizar Usuario' : 'Guardar Usuario'}</span>
+                  )}
                 </button>
               </div>
             </form>

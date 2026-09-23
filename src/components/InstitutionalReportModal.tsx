@@ -1,8 +1,9 @@
 import React from 'react';
 import { PurchaseRecord } from '../types';
-import { formatQuetzales, formatDate, formatDateTime } from '../utils/formatters';
+import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { Printer, X } from 'lucide-react';
 import { OJLogo } from './OJLogo';
+import { getPurchaseTimeline } from '../utils/timelineUtils';
 
 interface InstitutionalReportModalProps {
   purchase: PurchaseRecord;
@@ -10,6 +11,9 @@ interface InstitutionalReportModalProps {
 }
 
 export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> = ({ purchase, onClose }) => {
+  const modalidadLCE = getModalidadCompraByMonto(purchase.monto);
+  const timelineEvents = getPurchaseTimeline(purchase);
+
   const handlePrint = () => {
     window.print();
   };
@@ -96,15 +100,26 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
                 <tr className="bg-slate-50">
                   <td className="border border-slate-300 p-2 font-bold text-slate-700">Monto Estimado / Adjudicado:</td>
                   <td className="border border-slate-300 p-2 font-bold text-slate-900 font-mono text-sm">{formatQuetzales(purchase.monto)}</td>
-                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Evaluado por la GIT:</td>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Evaluado por el Área Técnica Correspondiente:</td>
                   <td className="border border-slate-300 p-2 font-bold">
                     {purchase.evaluadoGIT === 'Sí' 
-                      ? `SÍ (Dictamen Favorable${purchase.fechaDictamenGIT ? ` - Fecha: ${formatDate(purchase.fechaDictamenGIT)}` : ''})` 
+                      ? `SÍ (Dictamen Favorable${purchase.fechaDictamenGIT ? ` - Fecha: ${formatDate(purchase.fechaDictamenGIT)}` : ''}${purchase.fechaElaboracionOficioGIT ? ` - Oficio GIT: ${formatDate(purchase.fechaElaboracionOficioGIT)}` : ''})` 
                       : 'NO'}
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Área Solicitante (GIT):</td>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Modalidad de Compra (LCE):</td>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-900" colSpan={3}>
+                    <span className="bg-slate-100 border border-slate-300 px-2 py-0.5 rounded font-bold mr-2 text-slate-900">
+                      {modalidadLCE.nombre}
+                    </span>
+                    <span className="text-slate-700 font-normal">
+                      ({modalidadLCE.descripcionRango} — {modalidadLCE.fundamentoLegal})
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Área Solicitante:</td>
                   <td className="border border-slate-300 p-2 font-bold text-slate-900" colSpan={3}>{purchase.areaSolicitante || 'Soporte técnico'}</td>
                 </tr>
                 <tr className="bg-slate-50">
@@ -157,6 +172,65 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
               </tbody>
             </table>
           </div>
+
+          {/* Bloque: Tracking y Línea de Tiempo del Estatus del Evento */}
+          {timelineEvents.length > 0 && (
+            <div className="my-5">
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 mb-1">
+                Línea de Tiempo y Tracking del Estatus del Evento:
+              </h3>
+              <table className="w-full border-collapse border border-slate-300 text-xs">
+                <thead className="bg-slate-100 font-bold text-center">
+                  <tr>
+                    <th className="border border-slate-300 p-1.5 w-24">Fecha</th>
+                    <th className="border border-slate-300 p-1.5 text-left">Hito / Estatus</th>
+                    <th className="border border-slate-300 p-1.5 text-left">Fase</th>
+                    <th className="border border-slate-300 p-1.5 text-left">Responsable / Unidad</th>
+                    <th className="border border-slate-300 p-1.5">No. Documento / Ref.</th>
+                    <th className="border border-slate-300 p-1.5">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timelineEvents.map((evt, idx) => (
+                    <tr key={evt.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                      <td className="border border-slate-300 p-1.5 text-center font-mono text-[11px] whitespace-nowrap">
+                        {formatDate(evt.fecha)}
+                        {evt.hora && <span className="block text-[10px] text-slate-400 font-normal">{evt.hora}</span>}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 font-semibold text-slate-900">
+                        {evt.titulo}
+                        {evt.observaciones && (
+                          <span className="block font-normal text-[10px] text-slate-500 mt-0.5">
+                            {evt.observaciones}
+                          </span>
+                        )}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 text-slate-700 text-[11px]">
+                        {evt.fase || 'Gestión'}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 text-slate-700 text-[11px]">
+                        {evt.responsable || 'GIT'}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 text-center font-mono text-[11px]">
+                        {evt.documentoReferencia || '—'}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 text-center text-[10px] font-bold">
+                        <span className={`px-1.5 py-0.5 rounded ${
+                          evt.estado === 'completado' 
+                            ? 'bg-emerald-100 text-emerald-800' 
+                            : evt.estado === 'en_proceso' 
+                            ? 'bg-amber-100 text-amber-800' 
+                            : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {evt.estado === 'completado' ? 'Completado' : evt.estado === 'en_proceso' ? 'En Proceso' : 'Pendiente'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Bloque 4: Proveedor y Observaciones */}
           {purchase.proveedorAdjudicado && (

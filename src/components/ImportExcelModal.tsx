@@ -443,7 +443,7 @@ export const ImportExcelModal: React.FC = () => {
                 </span>
               </h3>
               <p className="text-xs text-slate-300">
-                Carga masiva de expedientes para la Gerencia de Informática y Telecomunicaciones
+                Carga masiva de expedientes para la Gerencia de Informática
               </p>
             </div>
           </div>
@@ -614,8 +614,8 @@ export const ImportExcelModal: React.FC = () => {
                     <span className="text-[10.5px] text-slate-500">Postores recibidos (numérico)</span>
                   </div>
                   <div className="bg-white p-2 rounded-lg border border-slate-200">
-                    <strong className="text-slate-900 block font-mono text-[11px]">13. Evaluado GIT</strong>
-                    <span className="text-[10.5px] text-slate-500">Evaluado por GIT (Sí / No)</span>
+                    <strong className="text-slate-900 block font-mono text-[11px]">13. Evaluado por Área Técnica</strong>
+                    <span className="text-[10.5px] text-slate-500">Evaluado por Área Técnica (Sí / No)</span>
                   </div>
                   <div className="bg-white p-2 rounded-lg border border-slate-200">
                     <strong className="text-slate-900 block font-mono text-[11px]">14. Dictamen GIT</strong>

@@ -16,11 +16,14 @@ import {
   Check,
   Database,
   Cloud,
-  KeyRound
+  KeyRound,
+  Smartphone,
+  QrCode
 } from 'lucide-react';
 import { UserRole, SystemThemeId } from '../types';
 import { formatDateTime } from '../utils/formatters';
 import { SYSTEM_THEMES } from '../utils/themeConfig';
+import { FirestoreStatusModal } from './FirestoreStatusModal';
 
 interface NavbarProps {
   onOpenMobileMenu: () => void;
@@ -32,6 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
     logout, 
     setIsLoginModalOpen, 
     setIsChangePasswordModalOpen,
+    setIsGoogleAuthModalOpen,
     switchDemoUser,
     notifications, 
     unreadNotificationsCount, 
@@ -44,7 +48,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
     theme,
     setTheme,
     themeConfig,
-    firestoreStatus
+    firestoreStatus,
+    isFirestoreStatusModalOpen,
+    setIsFirestoreStatusModalOpen
   } = useApp();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -122,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
             Gestión de Adquisiciones Institucionales
           </h1>
           <p className="hidden sm:block text-[11px] text-slate-500 font-medium">
-            Gerencia de Informática y Telecomunicaciones • Organismo Judicial
+            Gerencia de Informática • Organismo Judicial
           </p>
         </div>
       </div>
@@ -131,10 +137,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
       <div className="flex items-center space-x-3 sm:space-x-5">
         
         {/* Indicador de Base de Datos en la Nube Firestore (Multiusuario en Tiempo Real) */}
-        <div 
+        <button 
           id="badge-firestore-status"
-          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 bg-slate-50/80 text-slate-700 select-none shadow-2xs"
-          title={firestoreStatus === 'conectado' ? 'Base de datos Firestore sincronizada en tiempo real' : 'Conectando con base de datos en la nube...'}
+          type="button"
+          onClick={() => setIsFirestoreStatusModalOpen(true)}
+          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 bg-slate-50/80 hover:bg-slate-100 hover:border-slate-300 text-slate-700 select-none shadow-2xs transition-colors cursor-pointer"
+          title={firestoreStatus === 'conectado' ? 'Base de datos Firestore sincronizada en tiempo real. Clic para verificar estado detallado.' : 'Conectando con base de datos en la nube... Clic para verificar estado.'}
         >
           <span className="relative flex h-2 w-2">
             {firestoreStatus === 'conectado' ? (
@@ -150,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
           <span className="font-semibold text-slate-800 tracking-tight">
             {firestoreStatus === 'conectado' ? 'BD Firestore Activa' : 'Conectando BD...'}
           </span>
-        </div>
+        </button>
 
         {/* Selector de Tema Rápido (3 Temas) */}
         <div className="relative" ref={themeMenuRef}>
@@ -395,11 +403,29 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                 <div className="border-t border-slate-100 pt-1 px-2 space-y-0.5">
                   <button
                     type="button"
+                    onClick={() => { setIsGoogleAuthModalOpen(true); setIsUserMenuOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-amber-700 hover:bg-amber-50 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Google Authenticator (QR)</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => { setIsChangePasswordModalOpen(true); setIsUserMenuOpen(false); }}
                     className="w-full text-left px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
                   >
                     <KeyRound className="w-3.5 h-3.5 text-blue-600" />
                     <span>Cambiar Contraseña</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setIsFirestoreStatusModalOpen(true); setIsUserMenuOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 font-semibold transition-colors cursor-pointer"
+                  >
+                    <Database className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Estado BD Firestore</span>
                   </button>
 
                   <button
@@ -417,6 +443,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
         </div>
 
       </div>
+
+      {/* Modal de Verificación de Estado Firestore */}
+      <FirestoreStatusModal 
+        isOpen={isFirestoreStatusModalOpen} 
+        onClose={() => setIsFirestoreStatusModalOpen(false)} 
+      />
 
     </header>
   );

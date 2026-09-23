@@ -139,11 +139,60 @@ app.get('/api/health', (req, res) => {
 // RUTAS DE SINCRONIZACIÓN CENTRALIZADA Y BASE DE DATOS RESILIENTE
 // =============================================================
 
+// Clientes suscritos al canal reactivo en tiempo real (Server-Sent Events)
+const sseClients = new Set<express.Response>();
+
+export function notifyChange(type: string, payload?: any) {
+  const v = getStoreVersion();
+  const data = JSON.stringify({ type, version: v.version, payload, timestamp: new Date().toISOString() });
+  for (const client of sseClients) {
+    try {
+      client.write(`data: ${data}\n\n`);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
+// Canal reactivo SSE: Notifica a todas las estaciones de trabajo en menos de 50ms sin esperar sondeo
+app.get('/api/db/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const initial = getStoreVersion();
+  res.write(`data: ${JSON.stringify({ type: 'connected', version: initial.version })}\n\n`);
+
+  sseClients.add(res);
+
+  // Latido periódico para mantener vivo el canal y evitar cierres de proxy/reverse-proxy
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': keepalive\n\n');
+    } catch {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
+});
+
 // Obtener versión ligera para sondeo ultra-rápido multi-estación
 app.get('/api/db/version', (req, res) => {
   try {
     const versionInfo = getStoreVersion();
-    res.json({ success: true, ...versionInfo });
+    res.json({
+      success: true,
+      version: versionInfo.version,
+      ...versionInfo,
+      data: versionInfo
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Error consultando versión.' });
   }
@@ -269,6 +318,7 @@ app.post('/api/db/users', (req, res) => {
       return res.status(400).json({ success: false, message: 'Datos de usuario incompletos.' });
     }
     const saved = saveUser(req.body);
+    notifyChange('user_saved', { id: saved.id, username: saved.username });
     res.json({ success: true, user: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error guardando usuario.' });
@@ -279,6 +329,7 @@ app.post('/api/db/users', (req, res) => {
 app.delete('/api/db/users/:id', (req, res) => {
   try {
     const deleted = deleteUser(req.params.id);
+    notifyChange('user_deleted', { id: req.params.id });
     res.json({ success: true, deleted });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error eliminando usuario.' });
@@ -292,6 +343,7 @@ app.post('/api/db/purchases', (req, res) => {
       return res.status(400).json({ success: false, message: 'ID de compra requerida.' });
     }
     const saved = savePurchase(req.body);
+    notifyChange('purchase_saved', { id: saved.id, nog: saved.nog });
     res.json({ success: true, purchase: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error guardando compra.' });
@@ -302,6 +354,7 @@ app.post('/api/db/purchases', (req, res) => {
 app.delete('/api/db/purchases/:id', (req, res) => {
   try {
     const deleted = deletePurchase(req.params.id);
+    notifyChange('purchase_deleted', { id: req.params.id });
     res.json({ success: true, deleted });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error eliminando compra.' });
@@ -316,6 +369,7 @@ app.post('/api/db/purchases/batch-delete', (req, res) => {
       return res.status(400).json({ success: false, message: 'Lista de IDs a eliminar requerida.' });
     }
     const count = batchDeletePurchases(ids);
+    notifyChange('purchases_batch_deleted', { count, ids });
     res.json({ success: true, count });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error en eliminación en lote.' });
@@ -331,6 +385,7 @@ app.post('/api/db/purchases/batch', (req, res) => {
       return res.status(400).json({ success: false, message: 'Lista de compras inválida.' });
     }
     const saved = saveBatchPurchases(purchases, replaceAll);
+    notifyChange('purchases_batch_saved', { count: saved.length, replaceAll });
     res.json({ success: true, count: saved.length });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error guardando compras por lote.' });
@@ -341,6 +396,7 @@ app.post('/api/db/purchases/batch', (req, res) => {
 app.post('/api/db/purchases/clear-all', (req, res) => {
   try {
     const count = clearAllPurchases();
+    notifyChange('purchases_cleared', { count });
     res.json({ success: true, count });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error vaciando compras.' });
@@ -354,6 +410,7 @@ app.post('/api/db/catalogs', (req, res) => {
       return res.status(400).json({ success: false, message: 'Datos de catálogo incompletos.' });
     }
     const saved = saveCatalog(req.body);
+    notifyChange('catalog_saved', { id: saved.id });
     res.json({ success: true, catalog: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error guardando catálogo.' });
@@ -364,6 +421,7 @@ app.post('/api/db/catalogs', (req, res) => {
 app.delete('/api/db/catalogs/:id', (req, res) => {
   try {
     const deleted = deleteCatalog(req.params.id);
+    notifyChange('catalog_deleted', { id: req.params.id });
     res.json({ success: true, deleted });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error eliminando catálogo.' });
@@ -375,9 +433,11 @@ app.post('/api/db/budget-lines', (req, res) => {
   try {
     if (Array.isArray(req.body)) {
       const saved = setBudgetLines(req.body);
+      notifyChange('budget_lines_updated');
       return res.json({ success: true, budgetLines: saved });
     }
     const saved = saveBudgetLine(req.body);
+    notifyChange('budget_line_saved', { id: saved.id });
     res.json({ success: true, budgetLine: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error guardando renglón.' });
@@ -388,6 +448,7 @@ app.post('/api/db/budget-lines', (req, res) => {
 app.delete('/api/db/budget-lines/:id', (req, res) => {
   try {
     const deleted = deleteBudgetLine(req.params.id);
+    notifyChange('budget_line_deleted', { id: req.params.id });
     res.json({ success: true, deleted });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error eliminando renglón.' });
@@ -398,6 +459,7 @@ app.delete('/api/db/budget-lines/:id', (req, res) => {
 app.post('/api/db/budget-modifications', (req, res) => {
   try {
     const saved = addBudgetModification(req.body);
+    notifyChange('budget_modification_saved', { id: saved.id });
     res.json({ success: true, modification: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error guardando modificación.' });
@@ -408,6 +470,7 @@ app.post('/api/db/budget-modifications', (req, res) => {
 app.post('/api/db/audit-logs', (req, res) => {
   try {
     const saved = addAuditLog(req.body);
+    notifyChange('audit_log_saved', { id: saved.id });
     res.json({ success: true, log: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error registrando bitácora.' });
