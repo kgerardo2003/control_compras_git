@@ -12,6 +12,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     cableadoEstructurado: 'Si',
     enlaceDatos: 'Si',
     fechaInauguracion: '2026-04-15',
+    estadoInauguracion: 'Inaugurado',
     observaciones: [
       {
         id: 'obs-001-3',
@@ -48,7 +49,8 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     equipoAudio: 'No',
     cableadoEstructurado: 'Si',
     enlaceDatos: 'Si',
-    fechaInauguracion: '2026-05-10',
+    fechaInauguracion: '',
+    estadoInauguracion: 'Pendiente Fecha',
     observaciones: [
       {
         id: 'obs-002-2',
@@ -79,6 +81,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     cableadoEstructurado: 'Si',
     enlaceDatos: 'No',
     fechaInauguracion: '2026-07-01',
+    estadoInauguracion: 'Reprogramado',
     observaciones: [
       {
         id: 'obs-003-2',
@@ -108,7 +111,8 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     equipoAudio: 'No',
     cableadoEstructurado: 'Si',
     enlaceDatos: 'No',
-    fechaInauguracion: '2026-08-15',
+    fechaInauguracion: '',
+    estadoInauguracion: 'Pendiente Fecha',
     observaciones: [
       {
         id: 'obs-004-1',
@@ -132,6 +136,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     cableadoEstructurado: 'Si',
     enlaceDatos: 'Si',
     fechaInauguracion: '2026-04-28',
+    estadoInauguracion: 'Inaugurado',
     observaciones: [
       {
         id: 'obs-005-3',
@@ -169,6 +174,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     cableadoEstructurado: 'No',
     enlaceDatos: 'No',
     fechaInauguracion: '2026-09-25',
+    estadoInauguracion: 'Reprogramado',
     observaciones: [
       {
         id: 'obs-006-1',

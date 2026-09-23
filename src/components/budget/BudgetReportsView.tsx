@@ -22,6 +22,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { BudgetLineItem, PurchaseRecord } from '../../types';
 import { formatQuetzales, formatDateTime } from '../../utils/formatters';
+import { OJ_LOGO_DATA_URI } from '../../utils/ojLogoAsset';
 
 export type BudgetReportVariant = 
   | 'matriz_consolidada'
@@ -336,21 +337,53 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
       gasto_grupo_renglon: 'REPORTE ANALÍTICO DE GASTO POR GRUPO Y RENGLÓN PRESUPUESTARIO'
     };
 
-    // Encabezado Institucional
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 14, 12);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • DEPARTAMENTO ADMINISTRATIVO FINANCIERO', 14, 16);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(titleMap[activeVariant], 14, 22);
+    // Encabezado Institucional con Logo Oficial del Organismo Judicial
+    try {
+      doc.setFillColor(15, 23, 42); // slate-900 institucional
+      doc.rect(14, 6, 251, 23, 'F');
+      doc.setFillColor(217, 119, 6); // amber-600
+      doc.rect(14, 6, 3, 23, 'F');
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(`Fecha y Hora de Emisión: ${fechaEmision} | Ejercicio Fiscal: 2026`, 14, 26);
-    doc.text(`Filtro Aplicado: ${filterRenglon === 'todos' ? 'Todos los Renglones' : `Renglón ${filterRenglon}`}`, 14, 30);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(20, 7.5, 19, 19, 2, 2, 'F');
+      doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 21, 8.5, 17, 17);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 43, 12);
+
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(203, 213, 225);
+      doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • DEPARTAMENTO ADMINISTRATIVO FINANCIERO', 43, 17);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(253, 224, 71); // amber-300
+      doc.text(titleMap[activeVariant], 43, 23);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(226, 232, 240);
+      doc.text(`Fecha Emisión: ${fechaEmision} | Ejercicio Fiscal: 2026`, 260, 12, { align: 'right' });
+      doc.text(`Filtro: ${filterRenglon === 'todos' ? 'Todos los Renglones' : `Renglón ${filterRenglon}`}`, 260, 17, { align: 'right' });
+    } catch (e) {
+      console.warn('Error al incrustar logo en reporte presupuestario', e);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 14, 12);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • DEPARTAMENTO ADMINISTRATIVO FINANCIERO', 14, 16);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(titleMap[activeVariant], 14, 22);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Fecha y Hora de Emisión: ${fechaEmision} | Ejercicio Fiscal: 2026`, 14, 26);
+      doc.text(`Filtro Aplicado: ${filterRenglon === 'todos' ? 'Todos los Renglones' : `Renglón ${filterRenglon}`}`, 14, 30);
+    }
 
     let head: string[][] = [];
     let body: any[][] = [];

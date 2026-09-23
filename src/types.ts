@@ -284,6 +284,7 @@ export type ActiveTab = 'dashboard' | 'compras' | 'judicaturas' | 'presupuesto' 
 
 export type TipoRamoJudicatura = 'Penal' | 'Civil';
 export type OpcionSiNo = 'Si' | 'No';
+export type EstadoInauguracionJudicatura = 'Pendiente Fecha' | 'Reprogramado' | 'Inaugurado';
 
 export interface JudicaturaObservacion {
   id: string;
@@ -303,7 +304,8 @@ export interface JudicaturaRecord {
   equipoAudio: OpcionSiNo;
   cableadoEstructurado: OpcionSiNo;
   enlaceDatos: OpcionSiNo;
-  fechaInauguracion: string;       // YYYY-MM-DD
+  fechaInauguracion?: string;       // YYYY-MM-DD (Opcional)
+  estadoInauguracion?: EstadoInauguracionJudicatura; // Reprogramado, Pendiente Fecha, Inaugurado
   observaciones: JudicaturaObservacion[];
   creadoPor: string;
   fechaCreacion: string;

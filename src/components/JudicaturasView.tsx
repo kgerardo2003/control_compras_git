@@ -1,8 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { JudicaturaRecord, JudicaturaObservacion } from '../types';
+import { JudicaturaRecord, JudicaturaObservacion, EstadoInauguracionJudicatura } from '../types';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { generateJudicaturasPDF } from '../utils/judicaturasPdfExport';
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip,
+} from 'recharts';
 import {
   Scale,
   PlusCircle,
@@ -33,7 +40,8 @@ import {
   Share2,
   FileDown,
   ArrowRight,
-  List
+  List,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 
 export const JudicaturasView: React.FC = () => {
@@ -52,6 +60,7 @@ export const JudicaturasView: React.FC = () => {
   const [searchField, setSearchField] = useState<'todos' | 'nombre' | 'ramo' | 'observaciones'>('todos');
   const [ramoFilter, setRamoFilter] = useState<'Todos' | 'Penal' | 'Civil'>('Todos');
   const [equipamientoFilter, setEquipamientoFilter] = useState<'Todos' | 'Completo' | 'Pendiente'>('Todos');
+  const [estatusInauguracionFilter, setEstatusInauguracionFilter] = useState<'Todos' | 'Inaugurado' | 'Pendiente Fecha' | 'Reprogramado'>('Todos');
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'gantt'>('table');
 
   // Paginación para vista listado tipo Control de Adquisiciones
@@ -74,6 +83,7 @@ export const JudicaturasView: React.FC = () => {
   const [cableadoEstructurado, setCableadoEstructurado] = useState<'Si' | 'No'>('No');
   const [enlaceDatos, setEnlaceDatos] = useState<'Si' | 'No'>('No');
   const [fechaInauguracion, setFechaInauguracion] = useState('');
+  const [estadoInauguracion, setEstadoInauguracion] = useState<EstadoInauguracionJudicatura>('Pendiente Fecha');
   const [observacionesIniciales, setObservacionesIniciales] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -129,9 +139,13 @@ export const JudicaturasView: React.FC = () => {
         (equipamientoFilter === 'Completo' && isCompleto) ||
         (equipamientoFilter === 'Pendiente' && !isCompleto);
 
-      return matchSearch && matchRamo && matchEquipamiento;
+      // Filtro Estatus de Inauguración
+      const currentEstatus = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+      const matchEstatus = estatusInauguracionFilter === 'Todos' || currentEstatus === estatusInauguracionFilter;
+
+      return matchSearch && matchRamo && matchEquipamiento && matchEstatus;
     });
-  }, [judicaturas, searchTerm, searchField, ramoFilter, equipamientoFilter]);
+  }, [judicaturas, searchTerm, searchField, ramoFilter, equipamientoFilter, estatusInauguracionFilter]);
 
   // Paginación
   const totalPages = Math.ceil(filteredJudicaturas.length / itemsPerPage) || 1;
@@ -140,11 +154,23 @@ export const JudicaturasView: React.FC = () => {
     return filteredJudicaturas.slice(start, start + itemsPerPage);
   }, [filteredJudicaturas, currentPage]);
 
-  // Métricas Estadísticas
+  // Métricas Estadísticas y Gráficas Circulares
   const stats = useMemo(() => {
     const total = judicaturas.length;
     const penal = judicaturas.filter(j => j.tipoRamo === 'Penal').length;
     const civil = judicaturas.filter(j => j.tipoRamo === 'Civil').length;
+
+    let inauguradosCount = 0;
+    let pendienteFechaCount = 0;
+    let reprogramadosCount = 0;
+
+    judicaturas.forEach(j => {
+      const st = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+      if (st === 'Inaugurado') inauguradosCount++;
+      else if (st === 'Reprogramado') reprogramadosCount++;
+      else pendienteFechaCount++;
+    });
+
     const equipamiento100 = judicaturas.filter(j =>
       j.equipoComputo === 'Si' &&
       j.equipoAudio === 'Si' &&
@@ -152,11 +178,61 @@ export const JudicaturasView: React.FC = () => {
       j.enlaceDatos === 'Si'
     ).length;
 
+    const equipamientoParcial = judicaturas.filter(j => {
+      const count = (j.equipoComputo === 'Si' ? 1 : 0) +
+                    (j.equipoAudio === 'Si' ? 1 : 0) +
+                    (j.cableadoEstructurado === 'Si' ? 1 : 0) +
+                    (j.enlaceDatos === 'Si' ? 1 : 0);
+      return count >= 1 && count < 4;
+    }).length;
+
+    const sinEquipar = judicaturas.filter(j => {
+      const count = (j.equipoComputo === 'Si' ? 1 : 0) +
+                    (j.equipoAudio === 'Si' ? 1 : 0) +
+                    (j.cableadoEstructurado === 'Si' ? 1 : 0) +
+                    (j.enlaceDatos === 'Si' ? 1 : 0);
+      return count === 0;
+    }).length;
+
     // Próximas a inaugurar (fechas futuras ordenadas)
     const hoy = new Date().toISOString().split('T')[0];
-    const proximas = judicaturas.filter(j => j.fechaInauguracion >= hoy).length;
+    const proximas = judicaturas.filter(j => j.fechaInauguracion && j.fechaInauguracion >= hoy).length;
 
-    return { total, penal, civil, equipamiento100, proximas };
+    // 1. Gráfica Circular de Estatus de Inauguración
+    const chartEstatusInauguracion = [
+      { name: 'Inaugurado', value: inauguradosCount, color: '#059669', porcentaje: total > 0 ? Math.round((inauguradosCount / total) * 100) : 0 },
+      { name: 'Pendiente Fecha', value: pendienteFechaCount, color: '#d97706', porcentaje: total > 0 ? Math.round((pendienteFechaCount / total) * 100) : 0 },
+      { name: 'Reprogramado', value: reprogramadosCount, color: '#dc2626', porcentaje: total > 0 ? Math.round((reprogramadosCount / total) * 100) : 0 },
+    ].filter(item => item.value > 0);
+
+    // 2. Gráfica Circular de Cámaras
+    const chartCamaras = [
+      { name: 'Cámara Penal', value: penal, color: '#7c3aed', porcentaje: total > 0 ? Math.round((penal / total) * 100) : 0 },
+      { name: 'Cámara Paz Civil', value: civil, color: '#2563eb', porcentaje: total > 0 ? Math.round((civil / total) * 100) : 0 },
+    ].filter(item => item.value > 0);
+
+    // 3. Gráfica Circular de Cobertura Tecnológica TIC
+    const chartEquipamiento = [
+      { name: '100% Equipado', value: equipamiento100, color: '#0d9488', porcentaje: total > 0 ? Math.round((equipamiento100 / total) * 100) : 0 },
+      { name: 'Parcial (1-3)', value: equipamientoParcial, color: '#f59e0b', porcentaje: total > 0 ? Math.round((equipamientoParcial / total) * 100) : 0 },
+      { name: 'Sin Equipar (0)', value: sinEquipar, color: '#64748b', porcentaje: total > 0 ? Math.round((sinEquipar / total) * 100) : 0 },
+    ].filter(item => item.value > 0);
+
+    return {
+      total,
+      penal,
+      civil,
+      inauguradosCount,
+      pendienteFechaCount,
+      reprogramadosCount,
+      equipamiento100,
+      equipamientoParcial,
+      sinEquipar,
+      proximas,
+      chartEstatusInauguracion,
+      chartCamaras,
+      chartEquipamiento
+    };
   }, [judicaturas]);
 
   // Apertura de Formulario de Creación
@@ -165,10 +241,8 @@ export const JudicaturasView: React.FC = () => {
     setNombreJudicatura('');
     setTipoRamo('Penal');
     const today = new Date();
-    const futureInauguration = new Date();
-    futureInauguration.setDate(today.getDate() + 30);
     const endAdecuaciones = new Date();
-    endAdecuaciones.setDate(today.getDate() + 20);
+    endAdecuaciones.setDate(today.getDate() + 30);
 
     setFechaInicioAdecuaciones(today.toISOString().split('T')[0]);
     setFechaFinAdecuaciones(endAdecuaciones.toISOString().split('T')[0]);
@@ -176,7 +250,8 @@ export const JudicaturasView: React.FC = () => {
     setEquipoAudio('No');
     setCableadoEstructurado('No');
     setEnlaceDatos('No');
-    setFechaInauguracion(futureInauguration.toISOString().split('T')[0]);
+    setFechaInauguracion(''); // Opcional por defecto
+    setEstadoInauguracion('Pendiente Fecha');
     setObservacionesIniciales('');
     setFormErrors({});
     setIsFormModalOpen(true);
@@ -193,7 +268,8 @@ export const JudicaturasView: React.FC = () => {
     setEquipoAudio(jud.equipoAudio);
     setCableadoEstructurado(jud.cableadoEstructurado);
     setEnlaceDatos(jud.enlaceDatos);
-    setFechaInauguracion(jud.fechaInauguracion);
+    setFechaInauguracion(jud.fechaInauguracion || '');
+    setEstadoInauguracion(jud.estadoInauguracion || (jud.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'));
     setObservacionesIniciales('');
     setFormErrors({});
     setIsFormModalOpen(true);
@@ -216,8 +292,10 @@ export const JudicaturasView: React.FC = () => {
     if (fechaInicioAdecuaciones && fechaFinAdecuaciones && fechaInicioAdecuaciones > fechaFinAdecuaciones) {
       errors.fechaFinAdecuaciones = 'La fecha final no puede ser anterior a la de inicio.';
     }
-    if (!fechaInauguracion) {
-      errors.fechaInauguracion = 'Indique la fecha de inauguración.';
+
+    // Fecha de inauguración ahora es opcional. Solo validamos coherencia si se especifica.
+    if (fechaInauguracion && fechaInicioAdecuaciones && fechaInauguracion < fechaInicioAdecuaciones) {
+      errors.fechaInauguracion = 'La fecha de inauguración no debe ser anterior al inicio de adecuaciones.';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -237,7 +315,8 @@ export const JudicaturasView: React.FC = () => {
           equipoAudio,
           cableadoEstructurado,
           enlaceDatos,
-          fechaInauguracion,
+          fechaInauguracion: fechaInauguracion || '',
+          estadoInauguracion,
         });
         showToast({
           title: 'Judicatura Actualizada',
@@ -254,7 +333,8 @@ export const JudicaturasView: React.FC = () => {
           equipoAudio,
           cableadoEstructurado,
           enlaceDatos,
-          fechaInauguracion,
+          fechaInauguracion: fechaInauguracion || '',
+          estadoInauguracion,
           observacionesIniciales: observacionesIniciales.trim() || undefined,
         });
         showToast({
@@ -369,7 +449,7 @@ export const JudicaturasView: React.FC = () => {
     judicaturas.forEach(j => {
       const d1 = new Date(j.fechaInicioAdecuaciones).getTime();
       const d2 = new Date(j.fechaFinAdecuaciones).getTime();
-      const d3 = new Date(j.fechaInauguracion).getTime();
+      const d3 = j.fechaInauguracion ? new Date(j.fechaInauguracion).getTime() : NaN;
 
       if (!isNaN(d1) && d1 < minDateMs) minDateMs = d1;
       if (!isNaN(d2) && d2 > maxDateMs) maxDateMs = d2;
@@ -468,56 +548,331 @@ export const JudicaturasView: React.FC = () => {
         </div>
       </div>
 
-      {/* TARJETAS DE INDICADORES / METRICAS */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Judicaturas</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-slate-900 font-mono">{stats.total}</span>
-            <Building2 className="w-5 h-5 text-slate-400" />
+      {/* SECCIÓN DE INDICADORES: TARJETAS EJECUTIVAS Y GRÁFICAS CIRCULARES */}
+      <div className="space-y-4">
+        {/* Fila 1: Tarjetas de Métricas Resumen */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Judicaturas</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-slate-900 font-mono">{stats.total}</span>
+              <Building2 className="w-5 h-5 text-slate-400" />
+            </div>
+            <span className="text-[10px] text-slate-500 mt-1 block">Registradas en sistema</span>
           </div>
-          <span className="text-[10px] text-slate-500 mt-1 block">Registradas en sistema</span>
+
+          <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-2xs">
+            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Inaugurados</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-emerald-950 font-mono">{stats.inauguradosCount}</span>
+              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">Activas</span>
+            </div>
+            <span className="text-[10px] text-emerald-600 mt-1 block">Sedes inauguradas</span>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-2xs">
+            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Pendiente Fecha</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-amber-950 font-mono">{stats.pendienteFechaCount}</span>
+              <Clock className="w-5 h-5 text-amber-500" />
+            </div>
+            <span className="text-[10px] text-amber-600 mt-1 block">Fecha por definir</span>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-2xs">
+            <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">Reprogramados</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-rose-950 font-mono">{stats.reprogramadosCount}</span>
+              <AlertCircle className="w-5 h-5 text-rose-500" />
+            </div>
+            <span className="text-[10px] text-rose-600 mt-1 block">Apertura calendarizada</span>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl border border-teal-200 shadow-2xs col-span-2 sm:col-span-1">
+            <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider block">Equipamiento 100%</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-teal-950 font-mono">{stats.equipamiento100}</span>
+              <CheckCircle2 className="w-5 h-5 text-teal-600" />
+            </div>
+            <span className="text-[10px] text-teal-600 mt-1 block">4 ítems listos</span>
+          </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-purple-200 shadow-2xs">
-          <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider block">Cámara Penal</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-purple-950 font-mono">{stats.penal}</span>
-            <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">Penal</span>
-          </div>
-          <span className="text-[10px] text-purple-600 mt-1 block">Juzgados y Tribunales</span>
-        </div>
+        {/* Fila 2: Panel de Gráficas Circulares de Indicadores */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Gráfica Circular 1: Estatus de Inauguración */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <PieChartIcon className="w-4 h-4 text-emerald-600" />
+                Estatus de Inauguración
+              </span>
+              <span className="text-[10px] font-bold text-slate-600 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                {stats.total} total
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-2">
+              Distribución porcentual por etapa de apertura de sedes
+            </p>
 
-        <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-2xs">
-          <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider block">Cámara Paz Civil</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-blue-950 font-mono">{stats.civil}</span>
-            <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">Paz Civil</span>
-          </div>
-          <span className="text-[10px] text-blue-600 mt-1 block">Juzgados de Paz / Instancia</span>
-        </div>
+            <div className="h-44 relative flex items-center justify-center">
+              {stats.total > 0 && stats.chartEstatusInauguracion.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={stats.chartEstatusInauguracion}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={36}
+                      outerRadius={58}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {stats.chartEstatusInauguracion.map((entry, index) => (
+                        <Cell key={`cell-estatus-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip
+                      formatter={(val: any, name: any) => [`${val} Judicatura${Number(val) === 1 ? '' : 's'}`, name]}
+                      contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-slate-400 text-xs italic">Sin registros de judicaturas</div>
+              )}
+              {stats.total > 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-base font-black font-mono text-slate-900 leading-none">
+                    {stats.total}
+                  </span>
+                  <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
+                    Judicaturas
+                  </span>
+                </div>
+              )}
+            </div>
 
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-2xs">
-          <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Equipamiento 100%</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-emerald-950 font-mono">{stats.equipamiento100}</span>
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            {/* Leyenda interactiva con filtros directos */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+              {[
+                { name: 'Inaugurado', count: stats.inauguradosCount, color: '#059669', bgBadge: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+                { name: 'Pendiente Fecha', count: stats.pendienteFechaCount, color: '#d97706', bgBadge: 'bg-amber-50 text-amber-800 border-amber-200' },
+                { name: 'Reprogramado', count: stats.reprogramadosCount, color: '#dc2626', bgBadge: 'bg-rose-50 text-rose-800 border-rose-200' },
+              ].map((item) => {
+                const pct = stats.total > 0 ? Math.round((item.count / stats.total) * 100) : 0;
+                return (
+                  <button
+                    key={item.name}
+                    type="button"
+                    onClick={() => {
+                      setEstatusInauguracionFilter(estatusInauguracionFilter === item.name ? 'Todos' : (item.name as any));
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
+                      estatusInauguracionFilter === item.name ? 'bg-blue-50 ring-1 ring-blue-800' : 'hover:bg-slate-50'
+                    }`}
+                    title={`Filtrar por ${item.name}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                      <span className="text-[11px] font-semibold text-slate-700 truncate">{item.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono text-slate-400">{pct}%</span>
+                      <span className={`text-[10px] font-black font-mono px-1.5 py-0.2 rounded border ${item.bgBadge}`}>
+                        {item.count}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <span className="text-[10px] text-emerald-600 mt-1 block">4 ítems listos</span>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-2xs col-span-2 sm:col-span-1">
-          <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Próximas a Inaugurar</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-amber-950 font-mono">{stats.proximas}</span>
-            <Flag className="w-5 h-5 text-amber-600" />
+          {/* Gráfica Circular 2: Distribución por Cámara */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <PieChartIcon className="w-4 h-4 text-purple-600" />
+                Cámara Jurisdiccional
+              </span>
+              <span className="text-[10px] font-bold text-slate-600 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                2 Ramos
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-2">
+              Proporción de sedes por competencia penal y civil
+            </p>
+
+            <div className="h-44 relative flex items-center justify-center">
+              {stats.total > 0 && stats.chartCamaras.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={stats.chartCamaras}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={36}
+                      outerRadius={58}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {stats.chartCamaras.map((entry, index) => (
+                        <Cell key={`cell-camara-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip
+                      formatter={(val: any, name: any) => [`${val} Judicatura${Number(val) === 1 ? '' : 's'}`, name]}
+                      contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-slate-400 text-xs italic">Sin datos de cámaras</div>
+              )}
+              {stats.total > 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-base font-black font-mono text-purple-950 leading-none">
+                    {stats.penal} / {stats.civil}
+                  </span>
+                  <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
+                    Penal / Civil
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Leyenda de Cámaras */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+              {[
+                { name: 'Cámara Penal', id: 'Penal', count: stats.penal, color: '#7c3aed', bgBadge: 'bg-purple-50 text-purple-800 border-purple-200' },
+                { name: 'Cámara Paz Civil', id: 'Civil', count: stats.civil, color: '#2563eb', bgBadge: 'bg-blue-50 text-blue-800 border-blue-200' },
+              ].map((item) => {
+                const pct = stats.total > 0 ? Math.round((item.count / stats.total) * 100) : 0;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setRamoFilter(ramoFilter === item.id ? 'Todos' : (item.id as any));
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
+                      ramoFilter === item.id ? 'bg-blue-50 ring-1 ring-blue-800' : 'hover:bg-slate-50'
+                    }`}
+                    title={`Filtrar por ${item.name}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                      <span className="text-[11px] font-semibold text-slate-700 truncate">{item.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono text-slate-400">{pct}%</span>
+                      <span className={`text-[10px] font-black font-mono px-1.5 py-0.2 rounded border ${item.bgBadge}`}>
+                        {item.count}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <span className="text-[10px] text-amber-600 mt-1 block">Calendario activo</span>
+
+          {/* Gráfica Circular 3: Avance de Infraestructura TIC */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <PieChartIcon className="w-4 h-4 text-teal-600" />
+                Infraestructura TIC
+              </span>
+              <span className="text-[10px] font-bold text-teal-700 font-mono bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
+                {stats.total > 0 ? Math.round((stats.equipamiento100 / stats.total) * 100) : 0}% al 100%
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-2">
+              Cumplimiento de 4 componentes (PC, Audio, Red, Fibra)
+            </p>
+
+            <div className="h-44 relative flex items-center justify-center">
+              {stats.total > 0 && stats.chartEquipamiento.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={stats.chartEquipamiento}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={36}
+                      outerRadius={58}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {stats.chartEquipamiento.map((entry, index) => (
+                        <Cell key={`cell-equip-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip
+                      formatter={(val: any, name: any) => [`${val} Judicatura${Number(val) === 1 ? '' : 's'}`, name]}
+                      contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-slate-400 text-xs italic">Sin datos de infraestructura</div>
+              )}
+              {stats.total > 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-base font-black font-mono text-teal-900 leading-none">
+                    {stats.equipamiento100}
+                  </span>
+                  <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
+                    100% TIC
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Leyenda de Infraestructura */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+              {[
+                { name: '100% Equipado (4/4)', id: 'Completo', count: stats.equipamiento100, color: '#0d9488', bgBadge: 'bg-teal-50 text-teal-800 border-teal-200' },
+                { name: 'Parcial (1 a 3 ítems)', id: 'Pendiente', count: stats.equipamientoParcial, color: '#f59e0b', bgBadge: 'bg-amber-50 text-amber-800 border-amber-200' },
+                { name: 'Sin Equipar (0 ítems)', id: 'Pendiente', count: stats.sinEquipar, color: '#64748b', bgBadge: 'bg-slate-100 text-slate-700 border-slate-200' },
+              ].map((item, idx) => {
+                const pct = stats.total > 0 ? Math.round((item.count / stats.total) * 100) : 0;
+                return (
+                  <button
+                    key={`equip-item-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      setEquipamientoFilter(equipamientoFilter === item.id ? 'Todos' : (item.id as any));
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
+                      equipamientoFilter === item.id ? 'bg-blue-50 ring-1 ring-blue-800' : 'hover:bg-slate-50'
+                    }`}
+                    title={`Filtrar judicaturas con equipamiento ${item.id}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                      <span className="text-[11px] font-semibold text-slate-700 truncate">{item.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono text-slate-400">{pct}%</span>
+                      <span className={`text-[10px] font-black font-mono px-1.5 py-0.2 rounded border ${item.bgBadge}`}>
+                        {item.count}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* BARRA DE BÚSQUEDA, FILTROS Y SELECTOR DE VISTA */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         {/* Barra de búsqueda interactiva */}
         <div className="flex items-center gap-2 flex-1 max-w-xl">
           <div className="relative flex-1">
@@ -568,12 +923,38 @@ export const JudicaturasView: React.FC = () => {
           </div>
         </div>
 
-        {/* Filtros de Cámara y Equipamiento */}
+        {/* Filtros de Estatus, Cámara y Selector de Modo de Vista */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Estatus de Inauguración */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+            {[
+              { id: 'Todos', label: 'Todos los Estatus' },
+              { id: 'Inaugurado', label: 'Inaugurado' },
+              { id: 'Pendiente Fecha', label: 'Pendiente Fecha' },
+              { id: 'Reprogramado', label: 'Reprogramado' }
+            ].map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => {
+                  setEstatusInauguracionFilter(st.id as any);
+                  setCurrentPage(1);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  estatusInauguracionFilter === st.id
+                    ? 'bg-white text-blue-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {st.label}
+              </button>
+            ))}
+          </div>
+
           {/* Cámara Asignada */}
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
             {[
-              { id: 'Todos', label: 'Todas las Cámaras' },
+              { id: 'Todos', label: 'Todas' },
               { id: 'Penal', label: 'Cámara Penal' },
               { id: 'Civil', label: 'Cámara Paz Civil' }
             ].map((r) => (
@@ -641,7 +1022,7 @@ export const JudicaturasView: React.FC = () => {
       </div>
 
       {/* Indicador de filtro activo */}
-      {(searchTerm.trim() || ramoFilter !== 'Todos' || equipamientoFilter !== 'Todos') && (
+      {(searchTerm.trim() || ramoFilter !== 'Todos' || equipamientoFilter !== 'Todos' || estatusInauguracionFilter !== 'Todos') && (
         <div className="px-4 py-2 bg-amber-50/80 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs text-amber-900 shadow-2xs">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold">Filtros aplicados:</span>
@@ -650,9 +1031,19 @@ export const JudicaturasView: React.FC = () => {
                 Buscando <strong className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300 text-slate-900">"{searchTerm}"</strong>
               </span>
             )}
+            {estatusInauguracionFilter !== 'Todos' && (
+              <span className="px-2 py-0.5 rounded bg-white border border-amber-300 font-bold">
+                Estatus: {estatusInauguracionFilter}
+              </span>
+            )}
             {ramoFilter !== 'Todos' && (
               <span className="px-2 py-0.5 rounded bg-white border border-amber-300 font-bold">
                 {ramoFilter === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
+              </span>
+            )}
+            {equipamientoFilter !== 'Todos' && (
+              <span className="px-2 py-0.5 rounded bg-white border border-amber-300 font-bold">
+                TIC: {equipamientoFilter === 'Completo' ? '100% Equipado' : 'Pendiente'}
               </span>
             )}
             <span className="text-slate-400 hidden sm:inline">•</span>
@@ -667,9 +1058,10 @@ export const JudicaturasView: React.FC = () => {
               setSearchField('todos');
               setRamoFilter('Todos');
               setEquipamientoFilter('Todos');
+              setEstatusInauguracionFilter('Todos');
               setCurrentPage(1);
             }}
-            className="text-amber-800 hover:text-amber-950 font-bold underline cursor-pointer text-xs shrink-0"
+            className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline ml-2 cursor-pointer shrink-0"
           >
             Restablecer todos
           </button>
@@ -732,8 +1124,11 @@ export const JudicaturasView: React.FC = () => {
                   <th className="px-4 py-3">Nombre de la Judicatura</th>
                   <th className="px-4 py-3">Cámara Asignada</th>
                   <th className="px-4 py-3">Período de Adecuaciones</th>
-                  <th className="px-4 py-3 text-center">Infraestructura TIC</th>
-                  <th className="px-4 py-3">Fecha Inauguración</th>
+                  <th className="px-3 py-3 text-center" title="Equipo de Cómputo">PC</th>
+                  <th className="px-3 py-3 text-center" title="Equipo de Audio">Audio</th>
+                  <th className="px-3 py-3 text-center" title="Cableado de Red Estructurado">Red</th>
+                  <th className="px-3 py-3 text-center" title="Enlace de Datos y Fibra Óptica">Fibra</th>
+                  <th className="px-4 py-3 text-center">Estatus e Inauguración</th>
                   <th className="px-4 py-3">Última Acción / Bitácora</th>
                   <th className="px-4 py-3 text-center">Acciones</th>
                 </tr>
@@ -741,7 +1136,7 @@ export const JudicaturasView: React.FC = () => {
               <tbody className="divide-y divide-slate-100 text-xs">
                 {paginatedJudicaturas.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-400">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Search className="w-8 h-8 text-slate-300" />
                         <p className="font-semibold text-slate-600 text-sm">
@@ -820,81 +1215,88 @@ export const JudicaturasView: React.FC = () => {
                           </div>
                         </td>
 
-                        {/* 4. Infraestructura TIC (Cómputo, Audio, Cableado, Enlace) */}
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Cómputo */}
-                            <span
-                              className={`p-1.5 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                                j.equipoComputo === 'Si'
-                                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200'
-                              }`}
-                              title={`Equipo de Cómputo: ${j.equipoComputo}`}
-                            >
-                              <Monitor className="w-3 h-3" />
-                              <span className="hidden sm:inline">PC: {j.equipoComputo}</span>
-                            </span>
-
-                            {/* Audio */}
-                            <span
-                              className={`p-1.5 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                                j.equipoAudio === 'Si'
-                                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200'
-                              }`}
-                              title={`Equipo de Audio: ${j.equipoAudio}`}
-                            >
-                              <Volume2 className="w-3 h-3" />
-                              <span className="hidden sm:inline">Aud: {j.equipoAudio}</span>
-                            </span>
-
-                            {/* Cableado */}
-                            <span
-                              className={`p-1.5 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                                j.cableadoEstructurado === 'Si'
-                                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200'
-                              }`}
-                              title={`Cableado Estructurado: ${j.cableadoEstructurado}`}
-                            >
-                              <Network className="w-3 h-3" />
-                              <span className="hidden sm:inline">Red: {j.cableadoEstructurado}</span>
-                            </span>
-
-                            {/* Enlace de Datos */}
-                            <span
-                              className={`p-1.5 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                                j.enlaceDatos === 'Si'
-                                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200'
-                              }`}
-                              title={`Enlace de Datos: ${j.enlaceDatos}`}
-                            >
-                              <Wifi className="w-3 h-3" />
-                              <span className="hidden sm:inline">Fibra: {j.enlaceDatos}</span>
-                            </span>
-                          </div>
-
-                          <div className="text-center mt-1">
-                            {isAllEquipped ? (
-                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.2 rounded-full border border-emerald-200">
-                                100% Equipado
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.2 rounded-full border border-amber-200">
-                                En Proceso
-                              </span>
-                            )}
-                          </div>
+                        {/* 4. PC */}
+                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                              j.equipoComputo === 'Si'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                            title={`Equipo de Cómputo (PC): ${j.equipoComputo}`}
+                          >
+                            {j.equipoComputo}
+                          </span>
                         </td>
 
-                        {/* 5. Fecha Inauguración */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 font-bold text-slate-900">
-                            <Flag className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <span>{formatDate(j.fechaInauguracion)}</span>
-                          </div>
+                        {/* 5. Audio */}
+                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                              j.equipoAudio === 'Si'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                            title={`Equipo de Audio: ${j.equipoAudio}`}
+                          >
+                            {j.equipoAudio}
+                          </span>
+                        </td>
+
+                        {/* 6. Red */}
+                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                              j.cableadoEstructurado === 'Si'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                            title={`Cableado de Red Estructurado: ${j.cableadoEstructurado}`}
+                          >
+                            {j.cableadoEstructurado}
+                          </span>
+                        </td>
+
+                        {/* 7. Fibra */}
+                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                              j.enlaceDatos === 'Si'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                            title={`Enlace de Datos y Fibra Óptica: ${j.enlaceDatos}`}
+                          >
+                            {j.enlaceDatos}
+                          </span>
+                        </td>
+
+                        {/* 5. Estatus e Inauguración */}
+                        <td className="px-4 py-3.5 whitespace-nowrap text-center">
+                          {(() => {
+                            const est = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+                            const badgeStyle =
+                              est === 'Inaugurado'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                : est === 'Reprogramado'
+                                ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300';
+                            return (
+                              <div className="inline-flex flex-col items-center gap-1">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${badgeStyle}`}>
+                                  {est}
+                                </span>
+                                {j.fechaInauguracion ? (
+                                  <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-800 font-mono">
+                                    <Flag className="w-3 h-3 text-amber-500 shrink-0" />
+                                    <span>{formatDate(j.fechaInauguracion)}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic font-medium">Fecha por definir</span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         {/* 6. Última Acción / Observaciones */}
@@ -1079,11 +1481,28 @@ export const JudicaturasView: React.FC = () => {
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Inauguración</span>
-                      <span className="text-blue-900 font-bold mt-0.5 flex items-center gap-1">
-                        <Flag className="w-3.5 h-3.5 text-amber-500" />
-                        {formatDate(j.fechaInauguracion)}
-                      </span>
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Estatus e Inauguración</span>
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-black border uppercase tracking-wider w-fit ${
+                            (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Inaugurado'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                              : (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Reprogramado'
+                              ? 'bg-rose-50 text-rose-800 border-rose-300'
+                              : 'bg-amber-50 text-amber-800 border-amber-300'
+                          }`}
+                        >
+                          {j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')}
+                        </span>
+                        {j.fechaInauguracion ? (
+                          <span className="text-blue-900 font-bold flex items-center gap-1 text-[11px]">
+                            <Flag className="w-3.5 h-3.5 text-amber-500" />
+                            {formatDate(j.fechaInauguracion)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px] italic">Fecha por definir</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1576,23 +1995,68 @@ export const JudicaturasView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Fecha de Inauguración */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                  <Flag className="w-3.5 h-3.5 text-amber-500" />
-                  Fecha de Inauguración <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={fechaInauguracion}
-                  onChange={(e) => setFechaInauguracion(e.target.value)}
-                  className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 ${
-                    formErrors.fechaInauguracion ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
-                  }`}
-                />
-                {formErrors.fechaInauguracion && (
-                  <p className="text-[11px] text-rose-600 mt-1 font-semibold">{formErrors.fechaInauguracion}</p>
-                )}
+              {/* Estatus de Inauguración y Fecha de Inauguración (Opcional) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-blue-50/50 p-3.5 rounded-xl border border-blue-100">
+                {/* Estatus de Inauguración (Lista Desplegable) */}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <Flag className="w-3.5 h-3.5 text-blue-900" />
+                    Estatus de Inauguración <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    id="select-estado-inauguracion"
+                    value={estadoInauguracion}
+                    onChange={(e) => setEstadoInauguracion(e.target.value as EstadoInauguracionJudicatura)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                  >
+                    <option value="Pendiente Fecha">Pendiente Fecha</option>
+                    <option value="Reprogramado">Reprogramado</option>
+                    <option value="Inaugurado">Inaugurado</option>
+                  </select>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Etapa actual del proceso de inauguración
+                  </span>
+                </div>
+
+                {/* Fecha de Inauguración (Opcional) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                      Fecha de Inauguración
+                    </label>
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase bg-slate-100 px-1.5 py-0.2 rounded">
+                      Opcional
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={fechaInauguracion}
+                      onChange={(e) => setFechaInauguracion(e.target.value)}
+                      className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 bg-white ${
+                        formErrors.fechaInauguracion ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                      }`}
+                    />
+                    {fechaInauguracion && (
+                      <button
+                        type="button"
+                        onClick={() => setFechaInauguracion('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                        title="Quitar fecha"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                  {formErrors.fechaInauguracion ? (
+                    <p className="text-[11px] text-rose-600 mt-1 font-semibold">{formErrors.fechaInauguracion}</p>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Dejar en blanco si aún no hay fecha estipulada
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Observaciones iniciales (solo al crear) */}
@@ -1713,11 +2177,28 @@ export const JudicaturasView: React.FC = () => {
                     <span className="font-semibold text-slate-900">{formatDate(activeDetailJudicatura.fechaFinAdecuaciones)}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] uppercase text-slate-400 font-bold block">Inauguración</span>
-                    <span className="font-bold text-blue-900 flex items-center gap-1">
-                      <Flag className="w-3.5 h-3.5 text-amber-500" />
-                      {formatDate(activeDetailJudicatura.fechaInauguracion)}
-                    </span>
+                    <span className="text-[10px] uppercase text-slate-400 font-bold block">Estatus e Inauguración</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span
+                        className={`px-2 py-0.2 rounded text-[10px] font-black border uppercase ${
+                          (activeDetailJudicatura.estadoInauguracion || (activeDetailJudicatura.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Inaugurado'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : (activeDetailJudicatura.estadoInauguracion || (activeDetailJudicatura.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Reprogramado'
+                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}
+                      >
+                        {activeDetailJudicatura.estadoInauguracion || (activeDetailJudicatura.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')}
+                      </span>
+                      {activeDetailJudicatura.fechaInauguracion ? (
+                        <span className="font-bold text-blue-950 flex items-center gap-1">
+                          <Flag className="w-3 h-3 text-amber-500" />
+                          {formatDate(activeDetailJudicatura.fechaInauguracion)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic text-[11px]">Por definir</span>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <span className="text-[10px] uppercase text-slate-400 font-bold block">Cámara</span>
@@ -1882,7 +2363,7 @@ export const JudicaturasView: React.FC = () => {
                 {deleteConfirmJudicatura.nombreJudicatura}
               </p>
               <p className="text-[11px] text-slate-600">
-                Cámara: <strong>{deleteConfirmJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}</strong> • Inauguración: <strong>{formatDate(deleteConfirmJudicatura.fechaInauguracion)}</strong>
+                Cámara: <strong>{deleteConfirmJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}</strong> • Estatus: <strong>{deleteConfirmJudicatura.estadoInauguracion || (deleteConfirmJudicatura.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')}</strong> • Inauguración: <strong>{deleteConfirmJudicatura.fechaInauguracion ? formatDate(deleteConfirmJudicatura.fechaInauguracion) : 'Por definir'}</strong>
               </p>
               <p className="text-[10px] text-rose-800 mt-2 font-medium">
                 Esta acción removerá definitivamente la judicatura y todo su árbol de acciones registradas.

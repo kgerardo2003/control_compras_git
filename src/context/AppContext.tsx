@@ -444,7 +444,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return parsed.map((j: JudicaturaRecord) => ({
+            ...j,
+            estadoInauguracion: j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'),
+          }));
         }
       } catch {}
     }
@@ -3675,7 +3678,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       equipoAudio: data.equipoAudio,
       cableadoEstructurado: data.cableadoEstructurado,
       enlaceDatos: data.enlaceDatos,
-      fechaInauguracion: data.fechaInauguracion,
+      fechaInauguracion: data.fechaInauguracion || '',
+      estadoInauguracion: data.estadoInauguracion || (data.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'),
       observaciones: observacionInicial,
       creadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
       fechaCreacion: nowIso

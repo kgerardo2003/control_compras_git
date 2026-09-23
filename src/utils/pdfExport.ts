@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, getModalidadCompraByMonto } from './formatters';
+import { OJ_LOGO_DATA_URI } from './ojLogoAsset';
 
 export interface ExportPurchasesPDFOptions {
   purchases: PurchaseRecord[];
@@ -74,21 +75,30 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   doc.setFillColor(184, 134, 11); // Gold (#b8860b)
   doc.rect(marginX, currentY + headerHeight - 1.5, pageWidth - (marginX * 2), 1.5, 'F');
 
+  // Logo Oficial del Organismo Judicial de Guatemala
+  try {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(marginX + 2.5, currentY + 2, 18, 18, 2, 2, 'F');
+    doc.addImage(OJ_LOGO_DATA_URI, 'PNG', marginX + 3.5, currentY + 3, 16, 16);
+  } catch (err) {
+    console.warn('Error al incrustar el logo en el PDF', err);
+  }
+
   // Textos de la Cabecera Institucional
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', marginX + 6, currentY + 7);
+  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', marginX + 24, currentY + 7);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(251, 191, 36); // Amber/Gold claro
-  doc.text('GERENCIA DE INFORMÁTICA', marginX + 6, currentY + 12);
+  doc.text('GERENCIA DE INFORMÁTICA', marginX + 24, currentY + 12);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(226, 232, 240); // Slate 200
-  doc.text('SISTEMA INTEGRAL DE CONTROL DE ADQUISICIONES Y PROCESOS DE TI', marginX + 6, currentY + 16.5);
+  doc.text('SISTEMA INTEGRAL DE CONTROL DE ADQUISICIONES Y PROCESOS DE TI', marginX + 24, currentY + 16.5);
 
   // Insignia de Control de Auditoría en la esquina superior derecha
   doc.setFillColor(30, 58, 138); // Blue 900

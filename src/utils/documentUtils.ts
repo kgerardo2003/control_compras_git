@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { AttachedDocument, PurchaseRecord } from '../types';
+import { OJ_LOGO_DATA_URI } from './ojLogoAsset';
 
 /**
  * Verifica si un Data URL base64 tiene estructura mínima válida
@@ -34,13 +35,22 @@ export function generateOfficialF56PdfDataUrl(
   doc.setFillColor(28, 57, 187); // #1c39bb Azul Institucional OJ
   doc.rect(0, 0, 210, 24, 'F');
   
+  // Logo Oficial del Organismo Judicial
+  try {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(10, 2.5, 19, 19, 2, 2, 'F');
+    doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 11, 3.5, 17, 17);
+  } catch (e) {
+    console.warn('Error al incrustar el logo en el PDF F56-e', e);
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 105, 10, { align: 'center' });
+  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 112, 10, { align: 'center' });
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.text('GERENCIA DE INFORMÁTICA  |  DIRECCIÓN DE COMPRAS', 105, 17, { align: 'center' });
+  doc.text('GERENCIA DE INFORMÁTICA  |  DIRECCIÓN DE COMPRAS', 112, 17, { align: 'center' });
 
   // Título principal
   doc.setTextColor(30, 41, 59);

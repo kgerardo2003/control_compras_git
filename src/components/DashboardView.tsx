@@ -802,6 +802,41 @@ export const DashboardView: React.FC = () => {
     const adjudicadosMonto = adjudicados.reduce((acc, p) => acc + (p.monto || 0), 0);
     const adjudicadosPorcentaje = totalEventos > 0 ? Math.round((adjudicadosCount / totalEventos) * 100) : 0;
 
+    // Desglose de NOG Adjudicados por Área Solicitante con paleta temática institucional
+    const areasAdjudicadasMap: Record<string, { count: number; monto: number }> = {};
+    adjudicados.forEach(p => {
+      const area = p.areaSolicitante || p.dependenciaSolicitante || 'Soporte técnico';
+      if (!areasAdjudicadasMap[area]) {
+        areasAdjudicadasMap[area] = { count: 0, monto: 0 };
+      }
+      areasAdjudicadasMap[area].count += 1;
+      areasAdjudicadasMap[area].monto += (p.monto || 0);
+    });
+
+    const AREA_PALETTE = [
+      '#059669', // Esmeralda
+      '#2563eb', // Azul
+      '#7c3aed', // Violeta
+      '#d97706', // Ámbar
+      '#0891b2', // Cian
+      '#4f46e5', // Índigo
+      '#db2777', // Rosa
+      '#0d9488', // Verde Azulado
+      '#475569', // Pizarra
+    ];
+
+    const adjudicadosPorArea = Object.entries(areasAdjudicadasMap)
+      .map(([area, data], idx) => ({
+        area,
+        name: area,
+        count: data.count,
+        value: data.count,
+        monto: data.monto,
+        porcentaje: adjudicadosCount > 0 ? Math.round((data.count / adjudicadosCount) * 100) : 0,
+        color: AREA_PALETTE[idx % AREA_PALETTE.length],
+      }))
+      .sort((a, b) => b.count - a.count);
+
     // 2. Indicador de dictámenes técnicos por la GIT
     const dictamenesGIT = filteredPurchases.filter(p => p.evaluadoGIT === 'Sí');
     const dictamenesGITCount = dictamenesGIT.length;
@@ -848,6 +883,7 @@ export const DashboardView: React.FC = () => {
       enEvaluacionPorcentaje,
       semaforoAdjudicados,
       semaforoEvaluacion,
+      adjudicadosPorArea,
     };
   }, [filteredPurchases]);
 
@@ -1252,6 +1288,97 @@ export const DashboardView: React.FC = () => {
             <span className="text-sm sm:text-base font-black font-mono text-emerald-400">
               {formatQuetzales(metrics.adjudicadosMonto)}
             </span>
+          </div>
+
+          {/* Gráfica Circular y Desglose de Áreas para NOG Adjudicados */}
+          <div className="mt-4 pt-3 border-t border-slate-200/80 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                <PieChartIcon className="w-3.5 h-3.5 text-emerald-600" />
+                Áreas de NOGs Adjudicados
+              </span>
+              <span className="text-[10px] text-slate-500 font-semibold">
+                {metrics.adjudicadosPorArea.length} área{metrics.adjudicadosPorArea.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+              {/* Gráfica de Círculo (Donut) */}
+              <div className="sm:col-span-5 h-28 relative flex items-center justify-center">
+                {metrics.adjudicadosCount > 0 && metrics.adjudicadosPorArea.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={metrics.adjudicadosPorArea}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={24}
+                        outerRadius={42}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {metrics.adjudicadosPorArea.map((entry, index) => (
+                          <Cell key={`adj-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={1.5} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: any, name: any) => [`${val} NOGs`, name]}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px] italic">
+                    Sin eventos adjudicados
+                  </div>
+                )}
+                {metrics.adjudicadosCount > 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-xs font-black font-mono text-slate-800">
+                      {metrics.adjudicadosCount}
+                    </span>
+                    <span className="text-[8px] font-bold uppercase text-slate-500">
+                      NOGs
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Lista Detallada de Áreas con Contador y Porcentaje */}
+              <div className="sm:col-span-7 flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
+                {metrics.adjudicadosPorArea.length > 0 ? (
+                  metrics.adjudicadosPorArea.map((item, idx) => (
+                    <div
+                      key={`adj-area-item-${idx}`}
+                      className="p-1.5 px-2 rounded-lg bg-white border border-slate-200/90 flex items-center justify-between shadow-2xs text-[11px]"
+                      title={`${item.area}: ${item.count} NOGs adjudicados (${item.porcentaje}%) • Total: ${formatQuetzales(item.monto)}`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-[10px] font-bold text-slate-800 truncate" title={item.area}>
+                          {item.area}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-mono font-bold text-slate-500">
+                          {item.porcentaje}%
+                        </span>
+                        <span className="text-xs font-black text-emerald-900 font-mono bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                          {item.count}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px] italic py-2">
+                    No hay adjudicaciones registradas
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

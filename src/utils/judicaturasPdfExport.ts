@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { JudicaturaRecord } from '../types';
 import { formatDate, formatDateTime } from './formatters';
+import { OJ_LOGO_DATA_URI } from './ojLogoAsset';
 
 export interface ExportJudicaturasPDFOptions {
   judicaturas: JudicaturaRecord[];
@@ -68,21 +69,30 @@ export function generateJudicaturasPDF(options: ExportJudicaturasPDFOptions): st
   doc.setFillColor(217, 119, 6); // amber-600
   doc.rect(marginX, currentY, 3, 22, 'F');
 
+  // Logo Oficial del Organismo Judicial de Guatemala
+  try {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(marginX + 6, currentY + 2, 18, 18, 2, 2, 'F');
+    doc.addImage(OJ_LOGO_DATA_URI, 'PNG', marginX + 7, currentY + 3, 16, 16);
+  } catch (err) {
+    console.warn('Error al incrustar el logo en el PDF de judicaturas', err);
+  }
+
   // Textos del Banner
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
   doc.setTextColor(255, 255, 255);
-  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', marginX + 7, currentY + 7);
+  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', marginX + 28, currentY + 7);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(203, 213, 225); // slate-300
-  doc.text('GERENCIA DE INFORMÁTICA • DIRECCIÓN DE INFRAESTRUCTURA Y SISTEMAS', marginX + 7, currentY + 13);
+  doc.text('GERENCIA DE INFORMÁTICA • DIRECCIÓN DE INFRAESTRUCTURA Y SISTEMAS', marginX + 28, currentY + 13);
 
   doc.setFont('courier', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(253, 224, 71); // amber-300
-  doc.text(`CÓDIGO DE AUDITORÍA: ${auditCode}`, marginX + 7, currentY + 18.5);
+  doc.text(`CÓDIGO DE AUDITORÍA: ${auditCode}`, marginX + 28, currentY + 18.5);
 
   // Metadatos a la derecha del Banner
   doc.setFont('helvetica', 'normal');
@@ -179,7 +189,10 @@ export function generateJudicaturasPDF(options: ExportJudicaturasPDFOptions): st
     const isPenal = j.tipoRamo === 'Penal';
     const camaraText = isPenal ? 'Cámara Penal' : 'Cámara Paz Civil';
     const adecuacionesText = `${formatDate(j.fechaInicioAdecuaciones)} al ${formatDate(j.fechaFinAdecuaciones)}`;
-    const fechaInaug = formatDate(j.fechaInauguracion);
+    const estatus = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+    const fechaInaug = j.fechaInauguracion
+      ? `${formatDate(j.fechaInauguracion)} (${estatus})`
+      : `Por definir (${estatus})`;
 
     const isAllReady =
       j.equipoComputo === 'Si' &&
@@ -218,10 +231,10 @@ export function generateJudicaturasPDF(options: ExportJudicaturasPDFOptions): st
         'Nombre de la Judicatura',
         'Cámara Asignada',
         'Período de Adecuaciones',
-        'Cómputo',
+        'PC',
         'Audio',
-        'Cableado',
-        'Enlace',
+        'Red',
+        'Fibra',
         'Estado TIC',
         'Inauguración',
         'Última Acción en Árbol',
