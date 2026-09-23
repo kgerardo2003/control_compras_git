@@ -518,95 +518,22 @@ export const LoginView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Selector de Método de Doble Factor (2FA) */}
-                <div className="pt-2 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-200">
-                      Segundo Factor de Autenticación (2FA):
-                    </label>
-                    <span className="text-[10px] text-amber-300 font-semibold flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3 text-amber-400" />
-                      Obligatorio
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMethod('totp')}
-                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden ${
-                        selectedMethod === 'totp'
-                          ? 'bg-[#102452] border-amber-400 shadow-md ring-1 ring-amber-400/60 text-white'
-                          : 'bg-[#060f26]/70 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:border-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
-                          <Smartphone className="w-3.5 h-3.5 text-amber-400" />
-                          Google Authenticator
-                        </span>
-                        {selectedMethod === 'totp' && (
-                          <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/40" />
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-300 mt-1 leading-tight">
-                        App en su móvil (Recomendado)
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMethod('email')}
-                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden ${
-                        selectedMethod === 'email'
-                          ? 'bg-[#102452] border-blue-400 shadow-md ring-1 ring-blue-400/60 text-white'
-                          : 'bg-[#060f26]/70 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:border-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-blue-300 flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-blue-400" />
-                          Correo Institucional
-                        </span>
-                        {selectedMethod === 'email' && (
-                          <span className="w-2 h-2 rounded-full bg-blue-400 ring-2 ring-blue-400/40" />
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-300 mt-1 leading-tight">
-                        Código al correo en su ficha
-                      </p>
-                    </button>
-                  </div>
-
-                  {/* Enlace para ver QR o instrucciones de Google Authenticator */}
-                  <div className="pt-1 flex items-center justify-between text-[11px]">
-                    <button
-                      type="button"
-                      onClick={handleOpenStep1QrModal}
-                      className="text-amber-300 hover:text-amber-200 flex items-center gap-1.5 cursor-pointer font-medium transition-colors"
-                    >
-                      <QrCode className="w-3.5 h-3.5 text-amber-400" />
-                      <span className="underline">¿Primera vez? Ver instrucciones y vincular QR de Google Authenticator</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Botón Continuar / Paso 1 */}
+                {/* Botón Continuar */}
                 <button
                   id="btn-login-submit"
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider shadow-lg border border-slate-300 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer disabled:opacity-50 mt-2"
+                  className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider shadow-lg border border-slate-300 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer disabled:opacity-50 mt-4"
                 >
                   {isLoading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-slate-800 border-t-transparent rounded-full animate-spin" />
-                      <span>Verificando Credenciales...</span>
+                      <span>Iniciando Sesión...</span>
                     </>
                   ) : (
                     <>
                       <Lock className="w-4 h-4 text-slate-900" />
-                      <span>Continuar con Doble Factor (2FA)</span>
+                      <span>Continuar</span>
                       <ArrowRight className="w-4 h-4 text-slate-900" />
                     </>
                   )}
@@ -911,10 +838,10 @@ export const LoginView: React.FC = () => {
                 <ShieldCheck className="w-5 h-5 text-[#4682b4] flex-shrink-0 mt-0.5" />
                 <div className="space-y-1 leading-relaxed text-left">
                   <p className="font-bold text-xs text-white">
-                    Acceso Oficial Protegido con Doble Factor (2FA)
+                    Acceso Oficial Institucional Protegido
                   </p>
                   <p className="text-[11px] text-slate-300">
-                    El ingreso a esta plataforma requiere autenticación en dos pasos. Toda sesión y transacción es fiscalizada y registrada en la bitácora de auditoría interna de la GIT.
+                    El ingreso a esta plataforma está restringido a funcionarios y personal autorizado del Organismo Judicial. Toda sesión y transacción es fiscalizada y registrada en la bitácora de auditoría interna de la GIT.
                   </p>
                 </div>
               </div>
@@ -927,7 +854,7 @@ export const LoginView: React.FC = () => {
             <span>TERMINAL: GIT-SEC-01</span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              SISTEMA OPERATIVO SEGURO (2FA ACTIVO)
+              SISTEMA OPERATIVO SEGURO (CONEXIÓN ACTIVA)
             </span>
           </div>
 

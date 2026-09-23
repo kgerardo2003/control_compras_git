@@ -381,7 +381,7 @@ export const UsersView: React.FC = () => {
                 <th className="px-4 py-3">Nombre Completo</th>
                 <th className="px-3 py-3 text-center">Perfil / Rol</th>
                 <th className="px-3 py-3">Área / Depto. Asignado</th>
-                <th className="px-3 py-3 text-center">Estado / 2FA</th>
+                <th className="px-3 py-3 text-center">Estado</th>
                 <th className="px-3 py-3">Último Acceso</th>
                 {canManage && <th className="px-4 py-3 text-center">Acciones</th>}
               </tr>
@@ -447,37 +447,6 @@ export const UsersView: React.FC = () => {
                           u.activo ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                         }`}>
                           {u.activo ? 'Activo' : 'Inactivo'}
-                        </span>
-                      )}
-                      <span 
-                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
-                          u.dobleFactorHabilitado !== false
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : 'bg-slate-100 text-slate-500 border border-slate-200'
-                        }`}
-                        title={u.dobleFactorHabilitado !== false ? 'Doble factor de autenticación 2FA activado' : '2FA desactivado para este usuario'}
-                      >
-                        <ShieldCheck className={`w-2.5 h-2.5 ${u.dobleFactorHabilitado !== false ? 'text-blue-600' : 'text-slate-400'}`} />
-                        {u.dobleFactorHabilitado !== false ? '2FA Activo' : '2FA Inactivo'}
-                      </span>
-                      {u.dobleFactorHabilitado !== false && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                          {u.metodoPreferido2FA === 'sms' ? (
-                            <>
-                              <MessageSquare className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>SMS Móvil</span>
-                            </>
-                          ) : u.metodoPreferido2FA === 'email' ? (
-                            <>
-                              <Mail className="w-2.5 h-2.5 text-blue-600" />
-                              <span>Correo Ficha</span>
-                            </>
-                          ) : (
-                            <>
-                              <ShieldCheck className="w-2.5 h-2.5 text-amber-600" />
-                              <span>Authenticator</span>
-                            </>
-                          )}
                         </span>
                       )}
                     </div>
@@ -663,64 +632,6 @@ export const UsersView: React.FC = () => {
                     required={!editingUser}
                   />
                 </div>
-              </div>
-
-              {/* Configuración de Seguridad 2FA */}
-              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2.5">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={dobleFactorHabilitado}
-                    onChange={(e) => setDobleFactorHabilitado(e.target.checked)}
-                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                  />
-                  <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                    Exigir Doble Factor de Autenticación (2FA)
-                  </span>
-                </label>
-                <p className="text-[11px] text-slate-600 pl-6 leading-tight">
-                  Al iniciar sesión, el sistema exigirá un segundo factor de seguridad con código numérico temporal de 6 dígitos con vigencia de 5 minutos.
-                </p>
-
-                {dobleFactorHabilitado && (
-                  <div className="pt-2 pl-6 border-t border-blue-100 space-y-2">
-                    <span className="block text-[11px] font-bold text-slate-700">
-                      Método de Segundo Factor Preferido:
-                    </span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setMetodoPreferido2FA('totp')}
-                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                          metodoPreferido2FA === 'totp'
-                            ? 'border-blue-600 bg-white shadow-xs text-blue-900 font-bold ring-1 ring-blue-500'
-                            : 'border-slate-200 bg-white/60 text-slate-700 hover:bg-white font-medium'
-                        }`}
-                      >
-                        <span className="text-[11px] flex items-center gap-1 font-bold">
-                          <ShieldCheck className="w-3 h-3 text-amber-600" /> Google Auth
-                        </span>
-                        <span className="text-[9px] text-slate-500 mt-0.5">App móvil</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setMetodoPreferido2FA('email')}
-                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                          metodoPreferido2FA === 'email'
-                            ? 'border-blue-600 bg-white shadow-xs text-blue-900 font-bold ring-1 ring-blue-500'
-                            : 'border-slate-200 bg-white/60 text-slate-700 hover:bg-white font-medium'
-                        }`}
-                      >
-                        <span className="text-[11px] flex items-center gap-1 font-bold">
-                          <Mail className="w-3 h-3 text-blue-600" /> Correo Ficha
-                        </span>
-                        <span className="text-[9px] text-slate-500 mt-0.5">Código email</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Asignación de Área o Departamento para control de visibilidad RBAC */}

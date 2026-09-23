@@ -423,7 +423,7 @@ export const LoginModal: React.FC = () => {
                 ) : (
                   <>
                     <Lock className="w-4 h-4 text-white" />
-                    <span>Iniciar Sesión Institucional</span>
+                    <span>Continuar</span>
                     <ArrowRight className="w-4 h-4 text-white" />
                   </>
                 )}
