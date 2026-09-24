@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { JudicaturaRecord, JudicaturaObservacion, EstadoInauguracionJudicatura } from '../types';
 import { formatDate, formatDateTime } from '../utils/formatters';
-import { generateJudicaturasPDF, generateConsolidatedJudicaturasPDF } from '../utils/judicaturasPdfExport';
+import { generateJudicaturasPDF, generateConsolidatedJudicaturasPDF, generateIndividualJudicaturaPDF } from '../utils/judicaturasPdfExport';
 import { ConsolidatedJudicaturasPdfModal } from './ConsolidatedJudicaturasPdfModal';
 import {
   ResponsiveContainer,
@@ -10,6 +10,12 @@ import {
   Pie,
   Cell,
   Tooltip as RechartsTooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
 } from 'recharts';
 import {
   Scale,
@@ -51,7 +57,8 @@ import {
   RefreshCw,
   TrendingUp,
   Timer,
-  ArrowUpRight
+  ArrowUpRight,
+  FolderTree,
 } from 'lucide-react';
 
 export const JudicaturasView: React.FC = () => {
@@ -61,6 +68,7 @@ export const JudicaturasView: React.FC = () => {
     updateJudicatura,
     deleteJudicatura,
     addJudicaturaObservacion,
+    catalogs,
     currentUser,
     showToast,
     forceSyncToProductionDatabase
@@ -71,9 +79,10 @@ export const JudicaturasView: React.FC = () => {
   const [searchField, setSearchField] = useState<'todos' | 'nombre' | 'ramo' | 'observaciones'>('todos');
   const [ramoFilter, setRamoFilter] = useState<'Todos' | 'Penal' | 'Civil'>('Todos');
   const [equipamientoFilter, setEquipamientoFilter] = useState<'Todos' | 'Completo' | 'Pendiente'>('Todos');
-  const [estatusInauguracionFilter, setEstatusInauguracionFilter] = useState<'Todos' | 'Inaugurado' | 'Pendiente Fecha' | 'Reprogramado'>('Todos');
+  const [estatusInauguracionFilter, setEstatusInauguracionFilter] = useState<string>('Todos');
   const [durationFilter, setDurationFilter] = useState<'Todos' | '<=30' | '31-60' | '>60'>('Todos');
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'gantt'>('table');
+  const [isGroupedByRamo, setIsGroupedByRamo] = useState<boolean>(true);
   const [isSyncingProduction, setIsSyncingProduction] = useState(false);
 
   // Paginación para vista listado tipo Control de Adquisiciones
@@ -106,6 +115,33 @@ export const JudicaturasView: React.FC = () => {
   // Nueva Observación para Ficha Detalle
   const [nuevaObservacionTexto, setNuevaObservacionTexto] = useState('');
   const [isAddingObs, setIsAddingObs] = useState(false);
+
+  // Nueva Observación y Edición para Modal de Formulario
+  const [nuevaObservacionModal, setNuevaObservacionModal] = useState('');
+  const [isAddingObsInEdit, setIsAddingObsInEdit] = useState(false);
+
+  // Permisos RBAC sobre el Módulo de Judicaturas
+  const canEdit = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.rol === 'administrador') return true;
+    if (currentUser.permisoJudicaturas === 'total') return true;
+    if (currentUser.permisoJudicaturas === 'lectura' || currentUser.permisoJudicaturas === 'denegado') return false;
+    return currentUser.rol !== 'auditor';
+  }, [currentUser]);
+
+  // Lista dinámica de Estatus obtenida desde Catálogos (ESTATUS_JUDICATURA)
+  const estatusOptions = useMemo(() => {
+    const defaultList = ['Pendiente Fecha', 'Reprogramado', 'Inaugurado', 'Finalizado', 'Traslado'];
+    const cat = (catalogs || []).find(c => c.codigo === 'ESTATUS_JUDICATURA');
+    if (!cat || !cat.items || cat.items.length === 0) {
+      return defaultList;
+    }
+    const catItems = cat.items.filter(i => i.activo).map(i => i.valor);
+    defaultList.forEach(d => {
+      if (!catItems.includes(d)) catItems.push(d);
+    });
+    return catItems;
+  }, [catalogs]);
 
   // Encontrar Judicatura Seleccionada para Detalle
   const activeDetailJudicatura = useMemo(() => {
@@ -186,10 +222,14 @@ export const JudicaturasView: React.FC = () => {
     let inauguradosCount = 0;
     let pendienteFechaCount = 0;
     let reprogramadosCount = 0;
+    let finalizadosCount = 0;
+    let trasladosCount = 0;
 
     judicaturas.forEach(j => {
       const st = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
       if (st === 'Inaugurado') inauguradosCount++;
+      else if (st === 'Finalizado') finalizadosCount++;
+      else if (st === 'Traslado') trasladosCount++;
       else if (st === 'Reprogramado') reprogramadosCount++;
       else pendienteFechaCount++;
     });
@@ -221,11 +261,13 @@ export const JudicaturasView: React.FC = () => {
     const hoy = new Date().toISOString().split('T')[0];
     const proximas = judicaturas.filter(j => j.fechaInauguracion && j.fechaInauguracion >= hoy).length;
 
-    // 1. Gráfica Circular de Estatus de Inauguración
+    // 1. Gráfica Circular de Estatus de Inauguración (todos los estatus)
     const chartEstatusInauguracion = [
       { name: 'Inaugurado', value: inauguradosCount, color: '#059669', porcentaje: total > 0 ? Math.round((inauguradosCount / total) * 100) : 0 },
       { name: 'Pendiente Fecha', value: pendienteFechaCount, color: '#d97706', porcentaje: total > 0 ? Math.round((pendienteFechaCount / total) * 100) : 0 },
       { name: 'Reprogramado', value: reprogramadosCount, color: '#dc2626', porcentaje: total > 0 ? Math.round((reprogramadosCount / total) * 100) : 0 },
+      { name: 'Finalizado', value: finalizadosCount, color: '#2563eb', porcentaje: total > 0 ? Math.round((finalizadosCount / total) * 100) : 0 },
+      { name: 'Traslado', value: trasladosCount, color: '#7c3aed', porcentaje: total > 0 ? Math.round((trasladosCount / total) * 100) : 0 },
     ].filter(item => item.value > 0);
 
     // 2. Gráfica Circular de Cámaras
@@ -248,6 +290,8 @@ export const JudicaturasView: React.FC = () => {
       inauguradosCount,
       pendienteFechaCount,
       reprogramadosCount,
+      finalizadosCount,
+      trasladosCount,
       equipamiento100,
       equipamientoParcial,
       sinEquipar,
@@ -257,6 +301,182 @@ export const JudicaturasView: React.FC = () => {
       chartEquipamiento
     };
   }, [judicaturas]);
+
+  // Métricas avanzadas ejecutivas para Tarjetas y Gráficos Recharts (Total por Estatus y Desglose por Ramo)
+  const statusExecutiveMetrics = useMemo(() => {
+    const defaultStatuses = ['Inaugurado', 'Pendiente Fecha', 'Reprogramado', 'Finalizado', 'Traslado'];
+    const cat = (catalogs || []).find(c => c.codigo === 'ESTATUS_JUDICATURA');
+    const dynamicStatuses = cat?.items?.filter(i => i.activo).map(i => i.valor) || [];
+    const allStatuses = Array.from(new Set([...defaultStatuses, ...dynamicStatuses]));
+
+    const total = judicaturas.length;
+    const getStatus = (j: JudicaturaRecord) =>
+      j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+
+    const statusStyleMap: Record<string, { color: string; badge: string; border: string; bg: string }> = {
+      'Inaugurado': {
+        color: '#059669',
+        badge: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+        border: 'border-emerald-200',
+        bg: 'hover:bg-emerald-50/50'
+      },
+      'Pendiente Fecha': {
+        color: '#d97706',
+        badge: 'bg-amber-50 text-amber-800 border-amber-300',
+        border: 'border-amber-200',
+        bg: 'hover:bg-amber-50/50'
+      },
+      'Reprogramado': {
+        color: '#dc2626',
+        badge: 'bg-rose-50 text-rose-800 border-rose-300',
+        border: 'border-rose-200',
+        bg: 'hover:bg-rose-50/50'
+      },
+      'Finalizado': {
+        color: '#2563eb',
+        badge: 'bg-blue-50 text-blue-800 border-blue-300',
+        border: 'border-blue-200',
+        bg: 'hover:bg-blue-50/50'
+      },
+      'Traslado': {
+        color: '#7c3aed',
+        badge: 'bg-purple-50 text-purple-800 border-purple-300',
+        border: 'border-purple-200',
+        bg: 'hover:bg-purple-50/50'
+      },
+    };
+
+    const statusCards = allStatuses.map(st => {
+      const matching = judicaturas.filter(j => getStatus(j) === st);
+      const count = matching.length;
+      const penalCount = matching.filter(j => j.tipoRamo === 'Penal').length;
+      const civilCount = matching.filter(j => j.tipoRamo === 'Civil').length;
+      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+      const style = statusStyleMap[st] || {
+        color: '#4f46e5',
+        badge: 'bg-indigo-50 text-indigo-800 border-indigo-300',
+        border: 'border-indigo-200',
+        bg: 'hover:bg-indigo-50/50'
+      };
+
+      return {
+        status: st,
+        count,
+        penalCount,
+        civilCount,
+        pct,
+        ...style
+      };
+    });
+
+    // Dataset para el BarChart Recharts (Estatus x Ramo)
+    const barChartData = allStatuses.map(st => {
+      const matching = judicaturas.filter(j => getStatus(j) === st);
+      const penal = matching.filter(j => j.tipoRamo === 'Penal').length;
+      const civil = matching.filter(j => j.tipoRamo === 'Civil').length;
+      return {
+        estatus: st,
+        'Cámara Penal': penal,
+        'Cámara Paz Civil': civil,
+        total: penal + civil
+      };
+    });
+
+    // Dataset para el PieChart Recharts
+    const pieChartData = statusCards
+      .filter(item => item.count > 0)
+      .map(item => ({
+        name: item.status,
+        value: item.count,
+        color: item.color,
+        porcentaje: item.pct,
+        penal: item.penalCount,
+        civil: item.civilCount
+      }));
+
+    return {
+      statusCards,
+      barChartData,
+      pieChartData,
+      total
+    };
+  }, [judicaturas, catalogs]);
+
+  // Segmentación reactiva de judicaturas por Ramo (Penal y Civil) para análisis visual y reportes
+  const judicaturasByRamo = useMemo(() => {
+    const getStatus = (j: JudicaturaRecord) =>
+      j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+
+    const penalList = filteredJudicaturas.filter(j => j.tipoRamo === 'Penal');
+    const civilList = filteredJudicaturas.filter(j => j.tipoRamo === 'Civil');
+
+    const calculateRamoStats = (list: JudicaturaRecord[]) => ({
+      total: list.length,
+      inaugurados: list.filter(j => getStatus(j) === 'Inaugurado').length,
+      pendientes: list.filter(j => getStatus(j) === 'Pendiente Fecha').length,
+      reprogramados: list.filter(j => getStatus(j) === 'Reprogramado').length,
+      finalizados: list.filter(j => getStatus(j) === 'Finalizado').length,
+      traslados: list.filter(j => getStatus(j) === 'Traslado').length,
+      equip100: list.filter(j =>
+        j.equipoComputo === 'Si' &&
+        j.equipoAudio === 'Si' &&
+        j.cableadoEstructurado === 'Si' &&
+        j.enlaceDatos === 'Si'
+      ).length
+    });
+
+    return {
+      penal: penalList,
+      penalStats: calculateRamoStats(penalList),
+      civil: civilList,
+      civilStats: calculateRamoStats(civilList)
+    };
+  }, [filteredJudicaturas]);
+
+  // Handler para exportar directamente el reporte de un Ramo específico
+  const handleExportRamoPDF = (ramo: 'Penal' | 'Civil') => {
+    const list = filteredJudicaturas.filter(j => j.tipoRamo === ramo);
+    if (list.length === 0) {
+      showToast({
+        title: 'Sin Registros',
+        message: `No existen judicaturas activas en Cámara ${ramo === 'Penal' ? 'Penal' : 'Paz Civil'} para exportar.`,
+        type: 'warning'
+      });
+      return;
+    }
+
+    try {
+      const filename = generateConsolidatedJudicaturasPDF({
+        judicaturas: list,
+        title: `REPORTE OFICIAL DE JUDICATURAS: CÁMARA ${ramo.toUpperCase()}`,
+        subtitle: `Gerencia de Informática • Seguimiento de Adecuaciones e Hitos de Apertura del Ramo ${ramo}`,
+        includeTable: true,
+        includeGantt: true,
+        includeStatusMatrix: true,
+        groupByRamo: false,
+        filterInfo: {
+          ramo,
+          search: searchTerm.trim() || undefined,
+          estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
+        },
+        currentUser,
+        filenamePrefix: `Reporte_Judicaturas_Camara_${ramo}`
+      });
+
+      showToast({
+        title: 'Reporte de Ramo Descargado',
+        message: `Se descargó el reporte institucional de Cámara ${ramo}: "${filename}".`,
+        type: 'success'
+      });
+    } catch (err) {
+      console.error(err);
+      showToast({
+        title: 'Error al exportar',
+        message: 'No se pudo generar el reporte en PDF del ramo.',
+        type: 'error'
+      });
+    }
+  };
 
   // Dashboard de Rendimiento Operativo: Métricas de Tiempo Promedio de Ejecución de Adecuaciones y Plazos
   const performanceMetrics = useMemo(() => {
@@ -421,8 +641,55 @@ export const JudicaturasView: React.FC = () => {
     setFechaInauguracion(jud.fechaInauguracion || '');
     setEstadoInauguracion(jud.estadoInauguracion || (jud.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'));
     setObservacionesIniciales('');
+    setNuevaObservacionModal('');
     setFormErrors({});
     setIsFormModalOpen(true);
+  };
+
+  // Generación y Descarga de la Ficha Técnica Individual en PDF
+  const handleGenerateFicha = (jud: JudicaturaRecord) => {
+    try {
+      const filename = generateIndividualJudicaturaPDF(jud, currentUser);
+      showToast({
+        title: 'Ficha Técnica Generada',
+        message: `Se descargó el documento institucional oficial "${filename}".`,
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('Error generando ficha técnica:', err);
+      showToast({
+        title: 'Error al generar Ficha',
+        message: 'No fue posible generar la ficha técnica en PDF.',
+        type: 'error'
+      });
+    }
+  };
+
+  // Agregar observación directamente desde el modal de edición
+  const handleAddObservationInEdit = async () => {
+    if (!editingJudicatura || !nuevaObservacionModal.trim()) return;
+    setIsAddingObsInEdit(true);
+    try {
+      const updated = await addJudicaturaObservacion(editingJudicatura.id, nuevaObservacionModal.trim());
+      if (updated) {
+        setEditingJudicatura(updated);
+      }
+      setNuevaObservacionModal('');
+      showToast({
+        title: 'Observación Registrada',
+        message: 'Se añadió la anotación a la judicatura exitosamente.',
+        type: 'success'
+      });
+    } catch (err) {
+      console.error(err);
+      showToast({
+        title: 'Error al guardar observación',
+        message: 'No se pudo agregar la acción.',
+        type: 'error'
+      });
+    } finally {
+      setIsAddingObsInEdit(false);
+    }
   };
 
   // Guardar Ficha
@@ -456,6 +723,10 @@ export const JudicaturasView: React.FC = () => {
     setIsSubmitting(true);
     try {
       if (editingJudicatura) {
+        if (nuevaObservacionModal.trim()) {
+          await addJudicaturaObservacion(editingJudicatura.id, nuevaObservacionModal.trim());
+          setNuevaObservacionModal('');
+        }
         await updateJudicatura(editingJudicatura.id, {
           nombreJudicatura: nombreJudicatura.trim(),
           tipoRamo,
@@ -655,6 +926,492 @@ export const JudicaturasView: React.FC = () => {
 
     return weeks;
   }, [judicaturas]);
+
+  // Renderizador reutilizable de Tabla de Judicaturas
+  const renderJudicaturasTable = (items: JudicaturaRecord[], hideRamoColumn = false) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left">
+        <thead className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase sticky top-0 border-b border-slate-200 tracking-wider">
+          <tr>
+            <th className="px-4 py-3">Nombre de la Judicatura</th>
+            {!hideRamoColumn && <th className="px-4 py-3">Cámara Asignada</th>}
+            <th className="px-4 py-3">Período de Adecuaciones</th>
+            <th className="px-3 py-3 text-center" title="Equipo de Cómputo">PC</th>
+            <th className="px-3 py-3 text-center" title="Equipo de Audio">Audio</th>
+            <th className="px-3 py-3 text-center" title="Cableado de Red Estructurado">Red</th>
+            <th className="px-3 py-3 text-center" title="Enlace de Datos">Enlace</th>
+            <th className="px-4 py-3 text-center">Estatus y Fecha</th>
+            <th className="px-4 py-3">Última Acción / Bitácora</th>
+            <th className="px-4 py-3 text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 text-xs">
+          {items.length === 0 ? (
+            <tr>
+              <td colSpan={hideRamoColumn ? 9 : 10} className="px-4 py-8 text-center text-slate-400">
+                <div className="flex flex-col items-center justify-center gap-1.5">
+                  <Search className="w-6 h-6 text-slate-300" />
+                  <p className="font-semibold text-slate-600 text-xs">
+                    No hay judicaturas registradas con los criterios o filtros seleccionados.
+                  </p>
+                </div>
+              </td>
+            </tr>
+          ) : (
+            items.map((j) => {
+              const latestObs = j.observaciones && j.observaciones.length > 0 ? j.observaciones[0] : null;
+
+              return (
+                <tr key={j.id} className="hover:bg-slate-50/80 transition-colors">
+                  {/* 1. Nombre de la Judicatura */}
+                  <td className="px-4 py-3.5 max-w-xs">
+                    <button
+                      type="button"
+                      onClick={() => setDetailJudicaturaId(j.id)}
+                      className="font-bold text-slate-900 hover:text-blue-900 text-left cursor-pointer group flex items-start gap-1.5"
+                    >
+                      <span className="line-clamp-2 leading-snug group-hover:underline">
+                        {j.nombreJudicatura}
+                      </span>
+                    </button>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
+                      ID: {j.id}
+                    </span>
+                  </td>
+
+                  {/* 2. Cámara Asignada */}
+                  {!hideRamoColumn && (
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      {j.tipoRamo === 'Penal' ? (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-purple-50 text-purple-900 border border-purple-200 inline-flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                          Cámara Penal
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-blue-50 text-blue-900 border border-blue-200 inline-flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                          Cámara Paz Civil
+                        </span>
+                      )}
+                    </td>
+                  )}
+
+                  {/* 3. Período de Adecuaciones */}
+                  <td className="px-4 py-3.5 whitespace-nowrap">
+                    <div className="flex flex-col text-slate-700">
+                      <span className="font-semibold text-[11px] text-slate-900">
+                        {formatDate(j.fechaInicioAdecuaciones)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        hasta {formatDate(j.fechaFinAdecuaciones)}
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* 4. PC */}
+                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                        j.equipoComputo === 'Si'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                      title={`Equipo de Cómputo (PC): ${j.equipoComputo}`}
+                    >
+                      {j.equipoComputo}
+                    </span>
+                  </td>
+
+                  {/* 5. Audio */}
+                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                        j.equipoAudio === 'Si'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                      title={`Equipo de Audio: ${j.equipoAudio}`}
+                    >
+                      {j.equipoAudio}
+                    </span>
+                  </td>
+
+                  {/* 6. Red */}
+                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                        j.cableadoEstructurado === 'Si'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                      title={`Cableado de Red Estructurado: ${j.cableadoEstructurado}`}
+                    >
+                      {j.cableadoEstructurado}
+                    </span>
+                  </td>
+
+                  {/* 7. Enlace */}
+                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                        j.enlaceDatos === 'Si'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                      title={`Enlace de Datos: ${j.enlaceDatos}`}
+                    >
+                      {j.enlaceDatos}
+                    </span>
+                  </td>
+
+                  {/* 8. Estatus y Fecha */}
+                  <td className="px-4 py-3.5 whitespace-nowrap text-center">
+                    {(() => {
+                      const est = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+                      const badgeStyle =
+                        est === 'Inaugurado'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : est === 'Finalizado'
+                          ? 'bg-blue-50 text-blue-800 border-blue-300'
+                          : est === 'Traslado'
+                          ? 'bg-purple-50 text-purple-800 border-purple-300'
+                          : est === 'Reprogramado'
+                          ? 'bg-rose-50 text-rose-800 border-rose-300'
+                          : 'bg-amber-50 text-amber-800 border-amber-300';
+                      return (
+                        <div className="inline-flex flex-col items-center gap-1">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${badgeStyle}`}>
+                            {est}
+                          </span>
+                          {j.fechaInauguracion ? (
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-800 font-mono">
+                              <Flag className="w-3 h-3 text-amber-500 shrink-0" />
+                              <span>{formatDate(j.fechaInauguracion)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic font-medium">Fecha por definir</span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </td>
+
+                  {/* 9. Última Acción / Observaciones */}
+                  <td className="px-4 py-3.5 max-w-xs">
+                    {latestObs ? (
+                      <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                        <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 mb-0.5">
+                          <span className="text-blue-900">Acción #{latestObs.numeroAccion}</span>
+                          <span>{formatDate(latestObs.fecha)}</span>
+                        </div>
+                        <p className="line-clamp-2 text-slate-700 text-[10px] leading-tight">
+                          {latestObs.texto}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 italic">Sin observaciones registradas</span>
+                    )}
+                  </td>
+
+                  {/* 10. Acciones: Visualizar, Generar Ficha, Editar, Eliminar */}
+                  <td className="px-4 py-3.5 whitespace-nowrap text-center">
+                    <div className="inline-flex items-center justify-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setDetailJudicaturaId(j.id)}
+                        className="p-1.5 rounded-lg text-slate-600 hover:text-blue-900 hover:bg-blue-50 transition-colors cursor-pointer"
+                        title="Visualizar Ficha y Árbol de Acciones"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateFicha(j)}
+                        className="p-1.5 rounded-lg text-slate-600 hover:text-blue-900 hover:bg-blue-50 transition-colors cursor-pointer"
+                        title="Generar Ficha Técnica Oficial de la Judicatura (PDF)"
+                      >
+                        <FileText className="w-4 h-4 text-blue-900" />
+                      </button>
+
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(j)}
+                          className="p-1.5 rounded-lg text-slate-600 hover:text-amber-800 hover:bg-amber-50 transition-colors cursor-pointer"
+                          title="Editar Ficha de Judicatura"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmJudicatura(j)}
+                          className="p-1.5 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Eliminar Judicatura"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  // Renderizador reutilizable de Fichas en Tarjetas
+  const renderJudicaturasCards = (items: JudicaturaRecord[]) => (
+    items.length === 0 ? (
+      <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-slate-400">
+        <p className="font-semibold text-slate-600 text-xs">
+          No hay judicaturas registradas en esta vista con los filtros seleccionados.
+        </p>
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {items.map((j) => {
+          const isAllEquipped =
+            j.equipoComputo === 'Si' &&
+            j.equipoAudio === 'Si' &&
+            j.cableadoEstructurado === 'Si' &&
+            j.enlaceDatos === 'Si';
+          const latestObs = j.observaciones && j.observaciones.length > 0 ? j.observaciones[0] : null;
+
+          return (
+            <div
+              key={j.id}
+              className="bg-white rounded-2xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden"
+            >
+              {/* Cabecera de Tarjeta */}
+              <div className="p-5 border-b border-slate-100">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                          j.tipoRamo === 'Penal'
+                            ? 'bg-purple-50 text-purple-800 border-purple-200'
+                            : 'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}
+                      >
+                        {j.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
+                      </span>
+                      {isAllEquipped ? (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          Equipamiento Completo
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-amber-600" />
+                          Equipamiento en Proceso
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 mt-2 truncate" title={j.nombreJudicatura}>
+                      {j.nombreJudicatura}
+                    </h3>
+                  </div>
+
+                  {/* Botones de acción rápida */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateFicha(j)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                      title="Generar Ficha Técnica de Judicatura (PDF)"
+                    >
+                      <FileText className="w-4 h-4 text-blue-900" />
+                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(j)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                        title="Editar Ficha"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmJudicatura(j)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Eliminar Judicatura"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Fechas de Adecuación e Inauguración */}
+                <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-100 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block">Adecuaciones</span>
+                    <span className="text-slate-800 font-semibold mt-0.5 block">
+                      {formatDate(j.fechaInicioAdecuaciones)} al {formatDate(j.fechaFinAdecuaciones)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block">Estatus y Fecha</span>
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-black border uppercase tracking-wider w-fit ${
+                          (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Inaugurado'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Finalizado'
+                            ? 'bg-blue-50 text-blue-800 border-blue-300'
+                            : (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Traslado'
+                            ? 'bg-purple-50 text-purple-800 border-purple-300'
+                            : (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Reprogramado'
+                            ? 'bg-rose-50 text-rose-800 border-rose-300'
+                            : 'bg-amber-50 text-amber-800 border-amber-300'
+                        }`}
+                      >
+                        {j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')}
+                      </span>
+                      {j.fechaInauguracion ? (
+                        <span className="text-blue-900 font-bold flex items-center gap-1 text-[11px]">
+                          <Flag className="w-3.5 h-3.5 text-amber-500" />
+                          {formatDate(j.fechaInauguracion)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[10px] italic">Fecha por definir</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Checklist de Equipamiento Tecnológico */}
+                <div className="mt-4 pt-3 border-t border-slate-100">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-2">
+                    Estado de Infraestructura TIC
+                  </span>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div
+                      className={`p-2 rounded-xl border flex items-center justify-between ${
+                        j.equipoComputo === 'Si'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                          : 'bg-slate-50 border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Monitor className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="text-[11px] font-semibold">Cómputo</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                          j.equipoComputo === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {j.equipoComputo}
+                      </span>
+                    </div>
+
+                    <div
+                      className={`p-2 rounded-xl border flex items-center justify-between ${
+                        j.equipoAudio === 'Si'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                          : 'bg-slate-50 border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Volume2 className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="text-[11px] font-semibold">Audio</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                          j.equipoAudio === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {j.equipoAudio}
+                      </span>
+                    </div>
+
+                    <div
+                      className={`p-2 rounded-xl border flex items-center justify-between ${
+                        j.cableadoEstructurado === 'Si'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                          : 'bg-slate-50 border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Network className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="text-[11px] font-semibold">Red</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                          j.cableadoEstructurado === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {j.cableadoEstructurado}
+                      </span>
+                    </div>
+
+                    <div
+                      className={`p-2 rounded-xl border flex items-center justify-between ${
+                        j.enlaceDatos === 'Si'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                          : 'bg-slate-50 border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Wifi className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="text-[11px] font-semibold">Enlace</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                          j.enlaceDatos === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {j.enlaceDatos}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pie de Tarjeta: Última Observación y Botón Ver Ficha */}
+              <div className="p-4 bg-slate-50/80 flex flex-col gap-3">
+                {latestObs ? (
+                  <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold mb-1">
+                      <span className="text-blue-900">Acción #{latestObs.numeroAccion}</span>
+                      <span>{formatDate(latestObs.fecha)}</span>
+                    </div>
+                    <p className="line-clamp-2 text-slate-700">{latestObs.texto}</p>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-400 italic text-center py-1">
+                    Sin observaciones registradas aún.
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setDetailJudicaturaId(j.id)}
+                  className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-blue-900 border border-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
+                >
+                  <GitBranch className="w-4 h-4 text-blue-700" />
+                  <span>Ver Ficha y Árbol de Acciones ({(j.observaciones || []).length})</span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )
+  );
 
   return (
     <div className="space-y-6">
@@ -939,324 +1696,424 @@ export const JudicaturasView: React.FC = () => {
         </div>
       </div>
 
-      {/* SECCIÓN DE INDICADORES: TARJETAS EJECUTIVAS Y GRÁFICAS CIRCULARES */}
+      {/* SECCIÓN DE RESUMEN EJECUTIVO: TARJETAS DE ESTATUS Y GRÁFICOS RECHARTS */}
       <div className="space-y-4">
-        {/* Fila 1: Tarjetas de Métricas Resumen */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Judicaturas</span>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-2xl font-black text-slate-900 font-mono">{stats.total}</span>
-              <Building2 className="w-5 h-5 text-slate-400" />
+        {/* Cabecera del Panel Ejecutivo */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white rounded-2xl p-4 sm:p-5 shadow-xs border border-indigo-900/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950">
+                Visión Ejecutiva
+              </span>
+              <span className="text-xs text-indigo-200 font-mono">
+                {statusExecutiveMetrics.total} Judicaturas en Control
+              </span>
             </div>
-            <span className="text-[10px] text-slate-500 mt-1 block">Registradas en sistema</span>
+            <h2 className="text-base sm:text-lg font-black text-white mt-1 flex items-center gap-2">
+              <BarChart2 className="w-5 h-5 text-amber-400" />
+              <span>Resumen Ejecutivo y Gráficos por Estatus</span>
+            </h2>
+            <p className="text-xs text-indigo-200 mt-0.5">
+              Monitoreo analítico de inauguraciones, distribución por estatus y comparativa institucional por ramo (Cámara Penal y Cámara Paz Civil)
+            </p>
           </div>
 
-          <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-2xs">
-            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Inaugurados</span>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-2xl font-black text-emerald-950 font-mono">{stats.inauguradosCount}</span>
-              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">Activas</span>
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <div className="px-3 py-1.5 rounded-xl bg-purple-900/60 border border-purple-500/40 text-purple-200 text-xs flex items-center gap-1.5 font-bold font-mono">
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+              <span>Penal: {statusExecutiveMetrics.penalTotal}</span>
             </div>
-            <span className="text-[10px] text-emerald-600 mt-1 block">Sedes inauguradas</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-2xs">
-            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Pendiente Fecha</span>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-2xl font-black text-amber-950 font-mono">{stats.pendienteFechaCount}</span>
-              <Clock className="w-5 h-5 text-amber-500" />
+            <div className="px-3 py-1.5 rounded-xl bg-blue-900/60 border border-blue-500/40 text-blue-200 text-xs flex items-center gap-1.5 font-bold font-mono">
+              <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+              <span>Civil: {statusExecutiveMetrics.civilTotal}</span>
             </div>
-            <span className="text-[10px] text-amber-600 mt-1 block">Fecha por definir</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-2xs">
-            <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">Reprogramados</span>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-2xl font-black text-rose-950 font-mono">{stats.reprogramadosCount}</span>
-              <AlertCircle className="w-5 h-5 text-rose-500" />
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-900/60 border border-emerald-500/40 text-emerald-200 text-xs flex items-center gap-1.5 font-bold font-mono">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>TIC 100%: {stats.equipamiento100}</span>
             </div>
-            <span className="text-[10px] text-rose-600 mt-1 block">Apertura calendarizada</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-teal-200 shadow-2xs col-span-2 sm:col-span-1">
-            <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider block">Equipamiento 100%</span>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-2xl font-black text-teal-950 font-mono">{stats.equipamiento100}</span>
-              <CheckCircle2 className="w-5 h-5 text-teal-600" />
-            </div>
-            <span className="text-[10px] text-teal-600 mt-1 block">4 ítems listos</span>
           </div>
         </div>
 
-        {/* Fila 2: Panel de Gráficas Circulares de Indicadores */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Gráfica Circular 1: Estatus de Inauguración */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <PieChartIcon className="w-4 h-4 text-emerald-600" />
-                Estatus de Inauguración
-              </span>
-              <span className="text-[10px] font-bold text-slate-600 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                {stats.total} total
-              </span>
+        {/* Fila 1: Tarjetas Ejecutivas de Resumen por Estatus */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+          {/* Tarjeta Global: Total Judicaturas */}
+          <div
+            onClick={() => {
+              setEstatusInauguracionFilter('Todos');
+              setCurrentPage(1);
+            }}
+            className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+              estatusInauguracionFilter === 'Todos'
+                ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-blue-500/30 shadow-md'
+                : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+            }`}
+            title="Mostrar todas las judicaturas"
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-black uppercase tracking-wider ${
+                  estatusInauguracionFilter === 'Todos' ? 'text-indigo-200' : 'text-slate-500'
+                }`}>
+                  Total General
+                </span>
+                <Building2 className={`w-4 h-4 ${
+                  estatusInauguracionFilter === 'Todos' ? 'text-amber-400' : 'text-slate-400'
+                }`} />
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className={`text-2xl font-black font-mono tracking-tight ${
+                  estatusInauguracionFilter === 'Todos' ? 'text-white' : 'text-slate-900'
+                }`}>
+                  {statusExecutiveMetrics.total}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                  estatusInauguracionFilter === 'Todos' ? 'bg-indigo-800 text-indigo-100' : 'bg-slate-100 text-slate-700'
+                }`}>
+                  100%
+                </span>
+              </div>
             </div>
-            <p className="text-[11px] text-slate-500 mb-2">
-              Distribución porcentual por etapa de apertura de sedes
-            </p>
+            <div className={`mt-2.5 pt-2 border-t flex items-center justify-between text-[10px] font-mono ${
+              estatusInauguracionFilter === 'Todos' ? 'border-slate-700 text-indigo-200' : 'border-slate-100 text-slate-500'
+            }`}>
+              <span>Penal: {statusExecutiveMetrics.penalTotal}</span>
+              <span>Civil: {statusExecutiveMetrics.civilTotal}</span>
+            </div>
+          </div>
 
-            <div className="h-44 relative flex items-center justify-center">
-              {stats.total > 0 && stats.chartEstatusInauguracion.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats.chartEstatusInauguracion}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={36}
-                      outerRadius={58}
-                      paddingAngle={3}
-                      dataKey="value"
+          {/* Tarjetas Dinámicas por Cada Estatus */}
+          {statusExecutiveMetrics.statusCards.map((sc) => {
+            const isSelected = estatusInauguracionFilter === sc.status;
+            return (
+              <div
+                key={sc.status}
+                onClick={() => {
+                  setEstatusInauguracionFilter(isSelected ? 'Todos' : sc.status);
+                  setCurrentPage(1);
+                }}
+                className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${
+                  isSelected
+                    ? 'ring-2 ring-offset-1 shadow-md'
+                    : 'bg-white shadow-2xs hover:shadow-sm'
+                }`}
+                style={{
+                  borderColor: isSelected ? sc.color : undefined,
+                  outlineColor: isSelected ? sc.color : undefined,
+                }}
+                title={`Filtrar judicaturas con estatus ${sc.status}`}
+              >
+                {/* Indicador superior de color */}
+                <div
+                  className="absolute top-0 left-0 right-0 h-1"
+                  style={{ backgroundColor: sc.color }}
+                />
+
+                <div>
+                  <div className="flex items-center justify-between gap-1">
+                    <span
+                      className="text-[10px] font-black uppercase tracking-wider truncate"
+                      style={{ color: sc.color }}
+                      title={sc.status}
                     >
-                      {stats.chartEstatusInauguracion.map((entry, index) => (
-                        <Cell key={`cell-estatus-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip
-                      formatter={(val: any, name: any) => [`${val} Judicatura${Number(val) === 1 ? '' : 's'}`, name]}
-                      contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      {sc.status}
+                    </span>
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: sc.color }}
                     />
-                  </PieChart>
+                  </div>
+
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-2xl font-black text-slate-900 font-mono tracking-tight">
+                      {sc.count}
+                    </span>
+                    <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                      {sc.pct}%
+                    </span>
+                  </div>
+
+                  {/* Barra visual de porcentaje */}
+                  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(100, Math.max(5, sc.pct))}%`,
+                        backgroundColor: sc.color,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Desglose por Ramo en la parte inferior */}
+                <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-slate-500">
+                  <span className="text-purple-700 font-bold">P: {sc.penalCount}</span>
+                  <span className="text-blue-700 font-bold">C: {sc.civilCount}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Tarjeta TIC 100% */}
+          <div
+            onClick={() => {
+              setEquipamientoFilter(equipamientoFilter === 'Completo' ? 'Todos' : 'Completo');
+              setCurrentPage(1);
+            }}
+            className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+              equipamientoFilter === 'Completo'
+                ? 'bg-teal-900 text-white border-teal-800 ring-2 ring-teal-500/30 shadow-md'
+                : 'bg-white border-teal-200 shadow-2xs hover:bg-teal-50/40'
+            }`}
+            title="Filtrar judicaturas con 100% de infraestructura TIC"
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-black uppercase tracking-wider ${
+                  equipamientoFilter === 'Completo' ? 'text-teal-200' : 'text-teal-700'
+                }`}>
+                  TIC 100%
+                </span>
+                <CheckCircle2 className={`w-4 h-4 ${
+                  equipamientoFilter === 'Completo' ? 'text-teal-300' : 'text-teal-600'
+                }`} />
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className={`text-2xl font-black font-mono tracking-tight ${
+                  equipamientoFilter === 'Completo' ? 'text-white' : 'text-teal-950'
+                }`}>
+                  {stats.equipamiento100}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                  equipamientoFilter === 'Completo' ? 'bg-teal-800 text-teal-100' : 'bg-teal-100 text-teal-800'
+                }`}>
+                  {statusExecutiveMetrics.total > 0 ? Math.round((stats.equipamiento100 / statusExecutiveMetrics.total) * 100) : 0}%
+                </span>
+              </div>
+            </div>
+            <div className={`mt-2.5 pt-2 border-t flex items-center justify-between text-[10px] ${
+              equipamientoFilter === 'Completo' ? 'border-teal-800 text-teal-200' : 'border-teal-100 text-teal-700'
+            }`}>
+              <span>4/4 Equipos</span>
+              <span className="font-bold">Completado</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Fila 2: Panel de Gráficos Recharts para Visión Ejecutiva */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Gráfico 1: Gráfico de Barras Recharts de Judicaturas por Estatus comparando Ramo Penal vs Ramo Civil */}
+          <div className="lg:col-span-2 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2 pb-3 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <BarChart2 className="w-4 h-4 text-blue-900" />
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Total de Judicaturas por Estatus y Cámara (Recharts)
+                  </h3>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Comparativa de distribución entre Cámara Penal (púrpura) y Cámara Paz Civil (azul) por cada estatus
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-purple-50 text-purple-900 border border-purple-200">
+                  Penal: {statusExecutiveMetrics.penalTotal}
+                </span>
+                <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-900 border border-blue-200">
+                  Civil: {statusExecutiveMetrics.civilTotal}
+                </span>
+              </div>
+            </div>
+
+            {/* Contenedor del Gráfico de Barras Recharts */}
+            <div className="h-64 sm:h-72 w-full pt-2">
+              {statusExecutiveMetrics.total > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={statusExecutiveMetrics.barChartData}
+                    margin={{ top: 15, right: 15, left: -15, bottom: 25 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="estatus"
+                      tick={{ fontSize: 11, fill: '#334155', fontWeight: 600 }}
+                      interval={0}
+                      angle={-12}
+                      textAnchor="end"
+                      height={40}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <RechartsTooltip
+                      cursor={{ fill: '#f1f5f9', opacity: 0.8 }}
+                      formatter={(val: any, name: any) => [
+                        `${val} Judicatura${Number(val) === 1 ? '' : 's'}`,
+                        name,
+                      ]}
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '12px',
+                        border: '1px solid #cbd5e1',
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                        fontSize: '11px',
+                        padding: '8px 12px',
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="top"
+                      align="right"
+                      wrapperStyle={{ paddingBottom: '10px', fontSize: '11px', fontWeight: 700 }}
+                    />
+                    <Bar
+                      dataKey="Cámara Penal"
+                      fill="#7c3aed"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
+                    />
+                    <Bar
+                      dataKey="Cámara Paz Civil"
+                      fill="#2563eb"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
+                    />
+                  </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="text-slate-400 text-xs italic">Sin registros de judicaturas</div>
-              )}
-              {stats.total > 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-base font-black font-mono text-slate-900 leading-none">
-                    {stats.total}
-                  </span>
-                  <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
-                    Judicaturas
-                  </span>
+                <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">
+                  No hay judicaturas registradas para generar el gráfico
                 </div>
               )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="font-semibold text-slate-700">
+                Total consolidado: <strong className="font-mono text-slate-900">{statusExecutiveMetrics.total}</strong> sedes judiciales
+              </span>
+              <span className="text-slate-400 text-[10px]">
+                Haga clic en una tarjeta de estatus para filtrar la lista
+              </span>
+            </div>
+          </div>
+
+          {/* Gráfico 2: Dona Recharts de Distribución Porcentual por Estatus */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-1 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <PieChartIcon className="w-4 h-4 text-emerald-600" />
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Distribución por Estatus
+                  </h3>
+                </div>
+                <span className="text-[10px] font-bold text-slate-700 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  {statusExecutiveMetrics.total} sedes
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mb-2">
+                Proporción porcentual por estado del proceso de apertura
+              </p>
+
+              {/* Dona Recharts */}
+              <div className="h-44 relative flex items-center justify-center">
+                {statusExecutiveMetrics.total > 0 && statusExecutiveMetrics.pieChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={statusExecutiveMetrics.pieChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={42}
+                        outerRadius={68}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {statusExecutiveMetrics.pieChartData.map((entry, index) => (
+                          <Cell
+                            key={`pie-cell-estatus-${index}`}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                          />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any, name: any) => [
+                          `${val} Judicatura${Number(val) === 1 ? '' : 's'}`,
+                          name,
+                        ]}
+                        contentStyle={{
+                          fontSize: '11px',
+                          borderRadius: '8px',
+                          padding: '6px 10px',
+                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-slate-400 text-xs italic">Sin registros disponibles</div>
+                )}
+                {statusExecutiveMetrics.total > 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-lg font-black font-mono text-slate-900 leading-none">
+                      {statusExecutiveMetrics.total}
+                    </span>
+                    <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
+                      Judicaturas
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Leyenda interactiva con filtros directos */}
             <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
-              {[
-                { name: 'Inaugurado', count: stats.inauguradosCount, color: '#059669', bgBadge: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
-                { name: 'Pendiente Fecha', count: stats.pendienteFechaCount, color: '#d97706', bgBadge: 'bg-amber-50 text-amber-800 border-amber-200' },
-                { name: 'Reprogramado', count: stats.reprogramadosCount, color: '#dc2626', bgBadge: 'bg-rose-50 text-rose-800 border-rose-200' },
-              ].map((item) => {
-                const pct = stats.total > 0 ? Math.round((item.count / stats.total) * 100) : 0;
-                return (
-                  <button
-                    key={item.name}
-                    type="button"
-                    onClick={() => {
-                      setEstatusInauguracionFilter(estatusInauguracionFilter === item.name ? 'Todos' : (item.name as any));
-                      setCurrentPage(1);
-                    }}
-                    className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
-                      estatusInauguracionFilter === item.name ? 'bg-blue-50 ring-1 ring-blue-800' : 'hover:bg-slate-50'
-                    }`}
-                    title={`Filtrar por ${item.name}`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                      <span className="text-[11px] font-semibold text-slate-700 truncate">{item.name}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-[10px] font-mono text-slate-400">{pct}%</span>
-                      <span className={`text-[10px] font-black font-mono px-1.5 py-0.2 rounded border ${item.bgBadge}`}>
-                        {item.count}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Gráfica Circular 2: Distribución por Cámara */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <PieChartIcon className="w-4 h-4 text-purple-600" />
-                Cámara Jurisdiccional
-              </span>
-              <span className="text-[10px] font-bold text-slate-600 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                2 Ramos
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 mb-2">
-              Proporción de sedes por competencia penal y civil
-            </p>
-
-            <div className="h-44 relative flex items-center justify-center">
-              {stats.total > 0 && stats.chartCamaras.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats.chartCamaras}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={36}
-                      outerRadius={58}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {stats.chartCamaras.map((entry, index) => (
-                        <Cell key={`cell-camara-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip
-                      formatter={(val: any, name: any) => [`${val} Judicatura${Number(val) === 1 ? '' : 's'}`, name]}
-                      contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+              {statusExecutiveMetrics.statusCards.map((item) => (
+                <button
+                  key={`pie-leg-${item.status}`}
+                  type="button"
+                  onClick={() => {
+                    setEstatusInauguracionFilter(
+                      estatusInauguracionFilter === item.status ? 'Todos' : item.status
+                    );
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
+                    estatusInauguracionFilter === item.status
+                      ? 'bg-blue-50 ring-1 ring-blue-800'
+                      : 'hover:bg-slate-50'
+                  }`}
+                  title={`Filtrar por ${item.status}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: item.color }}
                     />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="text-slate-400 text-xs italic">Sin datos de cámaras</div>
-              )}
-              {stats.total > 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-base font-black font-mono text-purple-950 leading-none">
-                    {stats.penal} / {stats.civil}
-                  </span>
-                  <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
-                    Penal / Civil
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Leyenda de Cámaras */}
-            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
-              {[
-                { name: 'Cámara Penal', id: 'Penal', count: stats.penal, color: '#7c3aed', bgBadge: 'bg-purple-50 text-purple-800 border-purple-200' },
-                { name: 'Cámara Paz Civil', id: 'Civil', count: stats.civil, color: '#2563eb', bgBadge: 'bg-blue-50 text-blue-800 border-blue-200' },
-              ].map((item) => {
-                const pct = stats.total > 0 ? Math.round((item.count / stats.total) * 100) : 0;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setRamoFilter(ramoFilter === item.id ? 'Todos' : (item.id as any));
-                      setCurrentPage(1);
-                    }}
-                    className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
-                      ramoFilter === item.id ? 'bg-blue-50 ring-1 ring-blue-800' : 'hover:bg-slate-50'
-                    }`}
-                    title={`Filtrar por ${item.name}`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                      <span className="text-[11px] font-semibold text-slate-700 truncate">{item.name}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-[10px] font-mono text-slate-400">{pct}%</span>
-                      <span className={`text-[10px] font-black font-mono px-1.5 py-0.2 rounded border ${item.bgBadge}`}>
-                        {item.count}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Gráfica Circular 3: Avance de Infraestructura TIC */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <PieChartIcon className="w-4 h-4 text-teal-600" />
-                Infraestructura TIC
-              </span>
-              <span className="text-[10px] font-bold text-teal-700 font-mono bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
-                {stats.total > 0 ? Math.round((stats.equipamiento100 / stats.total) * 100) : 0}% al 100%
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 mb-2">
-              Cumplimiento de 4 componentes (PC, Audio, Red, Enlace)
-            </p>
-
-            <div className="h-44 relative flex items-center justify-center">
-              {stats.total > 0 && stats.chartEquipamiento.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats.chartEquipamiento}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={36}
-                      outerRadius={58}
-                      paddingAngle={3}
-                      dataKey="value"
+                    <span className="text-[11px] font-semibold text-slate-700 truncate">
+                      {item.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-mono text-slate-400">{item.pct}%</span>
+                    <span
+                      className="text-[10px] font-black font-mono px-1.5 py-0.2 rounded border"
+                      style={{
+                        backgroundColor: `${item.color}15`,
+                        borderColor: `${item.color}35`,
+                        color: item.color,
+                      }}
                     >
-                      {stats.chartEquipamiento.map((entry, index) => (
-                        <Cell key={`cell-equip-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip
-                      formatter={(val: any, name: any) => [`${val} Judicatura${Number(val) === 1 ? '' : 's'}`, name]}
-                      contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="text-slate-400 text-xs italic">Sin datos de infraestructura</div>
-              )}
-              {stats.total > 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-base font-black font-mono text-teal-900 leading-none">
-                    {stats.equipamiento100}
-                  </span>
-                  <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
-                    100% TIC
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Leyenda de Infraestructura */}
-            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
-              {[
-                { name: '100% Equipado (4/4)', id: 'Completo', count: stats.equipamiento100, color: '#0d9488', bgBadge: 'bg-teal-50 text-teal-800 border-teal-200' },
-                { name: 'Parcial (1 a 3 ítems)', id: 'Pendiente', count: stats.equipamientoParcial, color: '#f59e0b', bgBadge: 'bg-amber-50 text-amber-800 border-amber-200' },
-                { name: 'Sin Equipar (0 ítems)', id: 'Pendiente', count: stats.sinEquipar, color: '#64748b', bgBadge: 'bg-slate-100 text-slate-700 border-slate-200' },
-              ].map((item, idx) => {
-                const pct = stats.total > 0 ? Math.round((item.count / stats.total) * 100) : 0;
-                return (
-                  <button
-                    key={`equip-item-${idx}`}
-                    type="button"
-                    onClick={() => {
-                      setEquipamientoFilter(equipamientoFilter === item.id ? 'Todos' : (item.id as any));
-                      setCurrentPage(1);
-                    }}
-                    className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
-                      equipamientoFilter === item.id ? 'bg-blue-50 ring-1 ring-blue-800' : 'hover:bg-slate-50'
-                    }`}
-                    title={`Filtrar judicaturas con equipamiento ${item.id}`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                      <span className="text-[11px] font-semibold text-slate-700 truncate">{item.name}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-[10px] font-mono text-slate-400">{pct}%</span>
-                      <span className={`text-[10px] font-black font-mono px-1.5 py-0.2 rounded border ${item.bgBadge}`}>
-                        {item.count}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+                      {item.count}
+                    </span>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -1316,13 +2173,15 @@ export const JudicaturasView: React.FC = () => {
 
         {/* Filtros de Estatus, Cámara y Selector de Modo de Vista */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Estatus de Inauguración */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+          {/* Filtro de Estatus */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold flex-wrap">
             {[
               { id: 'Todos', label: 'Todos los Estatus' },
-              { id: 'Inaugurado', label: 'Inaugurado' },
               { id: 'Pendiente Fecha', label: 'Pendiente Fecha' },
-              { id: 'Reprogramado', label: 'Reprogramado' }
+              { id: 'Reprogramado', label: 'Reprogramado' },
+              { id: 'Inaugurado', label: 'Inaugurado' },
+              { id: 'Finalizado', label: 'Finalizado' },
+              { id: 'Traslado', label: 'Traslado' },
             ].map((st) => (
               <button
                 key={st.id}
@@ -1365,6 +2224,23 @@ export const JudicaturasView: React.FC = () => {
                 {r.label}
               </button>
             ))}
+          </div>
+
+          {/* Selector de Agrupación por Ramo */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setIsGroupedByRamo(!isGroupedByRamo)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                isGroupedByRamo
+                  ? 'bg-purple-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 bg-transparent'
+              }`}
+              title="Separar visualmente las judicaturas por Ramo (Cámara Penal y Cámara Paz Civil) para un mejor análisis"
+            >
+              <FolderTree className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isGroupedByRamo ? 'Separado por Ramo' : 'Separar por Ramo'}</span>
+            </button>
           </div>
 
           {/* Selector de Modo de Vista */}
@@ -1466,11 +2342,142 @@ export const JudicaturasView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 1: LISTADO INSTITUCIONAL TIPO "CONTROL DE ADQUISICIONES RECIENTES"   */}
+      {/* VISTA SEPARADA POR RAMO (CÁMARA PENAL Y CÁMARA PAZ CIVIL)                */}
       {/* ========================================================================= */}
-      {viewMode === 'table' && (
+      {isGroupedByRamo && viewMode !== 'gantt' && (
+        <div className="space-y-6">
+          {/* BLOQUE 1: CÁMARA PENAL */}
+          <div className="bg-white border-2 border-purple-200/80 rounded-2xl shadow-xs overflow-hidden">
+            {/* Cabecera Distintiva de Cámara Penal */}
+            <div className="p-4 sm:p-5 border-b border-purple-100 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-900 text-white flex items-center justify-center shadow-md">
+                  <Scale className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-black text-slate-900 text-base tracking-tight">
+                      CÁMARA PENAL
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-300 font-mono">
+                      {judicaturasByRamo.penal.length} {judicaturasByRamo.penal.length === 1 ? 'Judicatura' : 'Judicaturas'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Órganos jurisdiccionales del Ramo Penal en adecuación física y tecnológica
+                  </p>
+                </div>
+              </div>
+
+              {/* Badges de estatus y acción de exportación para Penal */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-white/80 border border-purple-200 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold">
+                  <span className="text-emerald-700">Inaugurados: {judicaturasByRamo.penalStats.inaugurados}</span>
+                  <span>•</span>
+                  <span className="text-amber-700">Pendientes: {judicaturasByRamo.penalStats.pendientes}</span>
+                  <span>•</span>
+                  <span className="text-rose-700">Reprog: {judicaturasByRamo.penalStats.reprogramados}</span>
+                  <span>•</span>
+                  <span className="text-blue-700">Fin: {judicaturasByRamo.penalStats.finalizados}</span>
+                  <span>•</span>
+                  <span className="text-purple-700">Traslado: {judicaturasByRamo.penalStats.traslados}</span>
+                  <span>•</span>
+                  <span className="text-teal-700 font-black">TIC 100%: {judicaturasByRamo.penalStats.equip100}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportRamoPDF('Penal')}
+                  disabled={judicaturasByRamo.penal.length === 0}
+                  className="px-3 py-1.5 bg-purple-900 hover:bg-purple-800 text-white text-xs font-bold rounded-xl shadow-2xs border border-purple-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Exportar reporte oficial exclusivo de Cámara Penal en PDF"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Reporte Penal PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido Penal: Tabla o Fichas */}
+            {viewMode === 'table' ? (
+              renderJudicaturasTable(judicaturasByRamo.penal, true)
+            ) : (
+              <div className="p-4 sm:p-5">
+                {renderJudicaturasCards(judicaturasByRamo.penal)}
+              </div>
+            )}
+          </div>
+
+          {/* BLOQUE 2: CÁMARA PAZ CIVIL */}
+          <div className="bg-white border-2 border-blue-200/80 rounded-2xl shadow-xs overflow-hidden">
+            {/* Cabecera Distintiva de Cámara Paz Civil */}
+            <div className="p-4 sm:p-5 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-sky-50/50 to-white flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-900 text-white flex items-center justify-center shadow-md">
+                  <Building2 className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-black text-slate-900 text-base tracking-tight">
+                      CÁMARA PAZ CIVIL
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-900 border border-blue-300 font-mono">
+                      {judicaturasByRamo.civil.length} {judicaturasByRamo.civil.length === 1 ? 'Judicatura' : 'Judicaturas'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Órganos jurisdiccionales del Ramo Paz y Civil en adecuación física y tecnológica
+                  </p>
+                </div>
+              </div>
+
+              {/* Badges de estatus y acción de exportación para Civil */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-white/80 border border-blue-200 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold">
+                  <span className="text-emerald-700">Inaugurados: {judicaturasByRamo.civilStats.inaugurados}</span>
+                  <span>•</span>
+                  <span className="text-amber-700">Pendientes: {judicaturasByRamo.civilStats.pendientes}</span>
+                  <span>•</span>
+                  <span className="text-rose-700">Reprog: {judicaturasByRamo.civilStats.reprogramados}</span>
+                  <span>•</span>
+                  <span className="text-blue-700">Fin: {judicaturasByRamo.civilStats.finalizados}</span>
+                  <span>•</span>
+                  <span className="text-purple-700">Traslado: {judicaturasByRamo.civilStats.traslados}</span>
+                  <span>•</span>
+                  <span className="text-teal-700 font-black">TIC 100%: {judicaturasByRamo.civilStats.equip100}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportRamoPDF('Civil')}
+                  disabled={judicaturasByRamo.civil.length === 0}
+                  className="px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold rounded-xl shadow-2xs border border-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Exportar reporte oficial exclusivo de Cámara Paz Civil en PDF"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Reporte Civil PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido Civil: Tabla o Fichas */}
+            {viewMode === 'table' ? (
+              renderJudicaturasTable(judicaturasByRamo.civil, true)
+            ) : (
+              <div className="p-4 sm:p-5">
+                {renderJudicaturasCards(judicaturasByRamo.civil)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VISTA UNIFICADA: LISTADO (CONTROL DE ADQUISICIONES)                       */}
+      {/* ========================================================================= */}
+      {!isGroupedByRamo && viewMode === 'table' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
-          {/* Cabecera del Listado */}
+          {/* Cabecera del Listado Unificado */}
           <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-900 flex items-center justify-center font-bold">
@@ -1514,246 +2521,7 @@ export const JudicaturasView: React.FC = () => {
           </div>
 
           {/* Tabla de Judicaturas */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase sticky top-0 border-b border-slate-200 tracking-wider">
-                <tr>
-                  <th className="px-4 py-3">Nombre de la Judicatura</th>
-                  <th className="px-4 py-3">Cámara Asignada</th>
-                  <th className="px-4 py-3">Período de Adecuaciones</th>
-                  <th className="px-3 py-3 text-center" title="Equipo de Cómputo">PC</th>
-                  <th className="px-3 py-3 text-center" title="Equipo de Audio">Audio</th>
-                  <th className="px-3 py-3 text-center" title="Cableado de Red Estructurado">Red</th>
-                  <th className="px-3 py-3 text-center" title="Enlace de Datos">Enlace</th>
-                  <th className="px-4 py-3 text-center">Estatus e Inauguración</th>
-                  <th className="px-4 py-3">Última Acción / Bitácora</th>
-                  <th className="px-4 py-3 text-center">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {paginatedJudicaturas.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-10 text-center text-slate-400">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <Search className="w-8 h-8 text-slate-300" />
-                        <p className="font-semibold text-slate-600 text-sm">
-                          {searchTerm.trim()
-                            ? `No se encontraron judicaturas que coincidan con "${searchTerm}"`
-                            : 'No hay judicaturas registradas con los filtros seleccionados.'}
-                        </p>
-                        {searchTerm.trim() && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSearchTerm('');
-                              setCurrentPage(1);
-                            }}
-                            className="mt-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
-                          >
-                            Limpiar término de búsqueda
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedJudicaturas.map((j) => {
-                    const isAllEquipped =
-                      j.equipoComputo === 'Si' &&
-                      j.equipoAudio === 'Si' &&
-                      j.cableadoEstructurado === 'Si' &&
-                      j.enlaceDatos === 'Si';
-
-                    const obsCount = (j.observaciones || []).length;
-                    const latestObs = j.observaciones && j.observaciones.length > 0 ? j.observaciones[0] : null;
-
-                    return (
-                      <tr key={j.id} className="hover:bg-slate-50/80 transition-colors">
-                        {/* 1. Nombre de la Judicatura */}
-                        <td className="px-4 py-3.5 max-w-xs">
-                          <button
-                            type="button"
-                            onClick={() => setDetailJudicaturaId(j.id)}
-                            className="font-bold text-slate-900 hover:text-blue-900 text-left cursor-pointer group flex items-start gap-1.5"
-                          >
-                            <span className="line-clamp-2 leading-snug group-hover:underline">
-                              {j.nombreJudicatura}
-                            </span>
-                          </button>
-                          <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
-                            ID: {j.id}
-                          </span>
-                        </td>
-
-                        {/* 2. Cámara Asignada (Cámara Penal / Cámara Paz Civil) */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          {j.tipoRamo === 'Penal' ? (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-purple-50 text-purple-900 border border-purple-200 inline-flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
-                              Cámara Penal
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-blue-50 text-blue-900 border border-blue-200 inline-flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                              Cámara Paz Civil
-                            </span>
-                          )}
-                        </td>
-
-                        {/* 3. Período de Adecuaciones */}
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="flex flex-col text-slate-700">
-                            <span className="font-semibold text-[11px] text-slate-900">
-                              {formatDate(j.fechaInicioAdecuaciones)}
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              hasta {formatDate(j.fechaFinAdecuaciones)}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* 4. PC */}
-                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                              j.equipoComputo === 'Si'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                                : 'bg-slate-100 text-slate-500 border-slate-200'
-                            }`}
-                            title={`Equipo de Cómputo (PC): ${j.equipoComputo}`}
-                          >
-                            {j.equipoComputo}
-                          </span>
-                        </td>
-
-                        {/* 5. Audio */}
-                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                              j.equipoAudio === 'Si'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                                : 'bg-slate-100 text-slate-500 border-slate-200'
-                            }`}
-                            title={`Equipo de Audio: ${j.equipoAudio}`}
-                          >
-                            {j.equipoAudio}
-                          </span>
-                        </td>
-
-                        {/* 6. Red */}
-                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                              j.cableadoEstructurado === 'Si'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                                : 'bg-slate-100 text-slate-500 border-slate-200'
-                            }`}
-                            title={`Cableado de Red Estructurado: ${j.cableadoEstructurado}`}
-                          >
-                            {j.cableadoEstructurado}
-                          </span>
-                        </td>
-
-                        {/* 7. Enlace */}
-                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                              j.enlaceDatos === 'Si'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                                : 'bg-slate-100 text-slate-500 border-slate-200'
-                            }`}
-                            title={`Enlace de Datos: ${j.enlaceDatos}`}
-                          >
-                            {j.enlaceDatos}
-                          </span>
-                        </td>
-
-                        {/* 5. Estatus e Inauguración */}
-                        <td className="px-4 py-3.5 whitespace-nowrap text-center">
-                          {(() => {
-                            const est = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
-                            const badgeStyle =
-                              est === 'Inaugurado'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                : est === 'Reprogramado'
-                                ? 'bg-rose-50 text-rose-800 border-rose-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300';
-                            return (
-                              <div className="inline-flex flex-col items-center gap-1">
-                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${badgeStyle}`}>
-                                  {est}
-                                </span>
-                                {j.fechaInauguracion ? (
-                                  <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-800 font-mono">
-                                    <Flag className="w-3 h-3 text-amber-500 shrink-0" />
-                                    <span>{formatDate(j.fechaInauguracion)}</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 italic font-medium">Fecha por definir</span>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </td>
-
-                        {/* 6. Última Acción / Observaciones */}
-                        <td className="px-4 py-3.5 max-w-xs">
-                          {latestObs ? (
-                            <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 mb-0.5">
-                                <span className="text-blue-900">Acción #{latestObs.numeroAccion}</span>
-                                <span>{formatDate(latestObs.fecha)}</span>
-                              </div>
-                              <p className="line-clamp-2 text-slate-700 text-[10px] leading-tight">
-                                {latestObs.texto}
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-400 italic">Sin observaciones registradas</span>
-                          )}
-                        </td>
-
-                        {/* 7. Acciones: Visualizar, Editar, Eliminar (con consulta "¿Está seguro de eliminar?") */}
-                        <td className="px-4 py-3.5 whitespace-nowrap text-center">
-                          <div className="inline-flex items-center justify-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-2xs">
-                            {/* Visualizar Ficha y Árbol */}
-                            <button
-                              type="button"
-                              onClick={() => setDetailJudicaturaId(j.id)}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-blue-900 hover:bg-blue-50 transition-colors cursor-pointer"
-                              title="Visualizar Ficha y Árbol de Acciones"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-
-                            {/* Editar Judicatura */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(j)}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-amber-800 hover:bg-amber-50 transition-colors cursor-pointer"
-                              title="Editar Ficha de Judicatura"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-
-                            {/* Eliminar Judicatura (Abre confirmación) */}
-                            <button
-                              type="button"
-                              onClick={() => setDeleteConfirmJudicatura(j)}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Eliminar Judicatura"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          {renderJudicaturasTable(paginatedJudicaturas, false)}
 
           {/* Paginación de la Tabla */}
           {filteredJudicaturas.length > 0 && (
@@ -1799,233 +2567,10 @@ export const JudicaturasView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 2: TARJETAS DE FICHAS                                               */}
+      {/* VISTA UNIFICADA: FICHAS EN TARJETAS                                       */}
       {/* ========================================================================= */}
-      {viewMode === 'cards' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredJudicaturas.map((j) => {
-            const isAllEquipped =
-              j.equipoComputo === 'Si' &&
-              j.equipoAudio === 'Si' &&
-              j.cableadoEstructurado === 'Si' &&
-              j.enlaceDatos === 'Si';
-
-            const latestObs = j.observaciones && j.observaciones.length > 0 ? j.observaciones[0] : null;
-
-            return (
-              <div
-                key={j.id}
-                className="bg-white rounded-2xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden"
-              >
-                {/* Cabecera de Tarjeta */}
-                <div className="p-5 border-b border-slate-100">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                            j.tipoRamo === 'Penal'
-                              ? 'bg-purple-50 text-purple-800 border-purple-200'
-                              : 'bg-blue-50 text-blue-800 border-blue-200'
-                          }`}
-                        >
-                          {j.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
-                        </span>
-                        {isAllEquipped ? (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            Equipamiento Completo
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-amber-600" />
-                            Equipamiento en Proceso
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-base font-bold text-slate-900 mt-2 truncate" title={j.nombreJudicatura}>
-                        {j.nombreJudicatura}
-                      </h3>
-                    </div>
-
-                    {/* Botones de acción rápida */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(j)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-800 hover:bg-slate-100 transition-colors cursor-pointer"
-                        title="Editar Ficha"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmJudicatura(j)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Eliminar Judicatura"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Fechas de Adecuación e Inauguración */}
-                  <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-100 text-xs">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Adecuaciones</span>
-                      <span className="text-slate-800 font-semibold mt-0.5 block">
-                        {formatDate(j.fechaInicioAdecuaciones)} al {formatDate(j.fechaFinAdecuaciones)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Estatus e Inauguración</span>
-                      <div className="mt-1 flex flex-col gap-0.5">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-black border uppercase tracking-wider w-fit ${
-                            (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Inaugurado'
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                              : (j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')) === 'Reprogramado'
-                              ? 'bg-rose-50 text-rose-800 border-rose-300'
-                              : 'bg-amber-50 text-amber-800 border-amber-300'
-                          }`}
-                        >
-                          {j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')}
-                        </span>
-                        {j.fechaInauguracion ? (
-                          <span className="text-blue-900 font-bold flex items-center gap-1 text-[11px]">
-                            <Flag className="w-3.5 h-3.5 text-amber-500" />
-                            {formatDate(j.fechaInauguracion)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-[10px] italic">Fecha por definir</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Checklist de Equipamiento Tecnológico */}
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-2">
-                      Estado de Infraestructura TIC
-                    </span>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {/* Cómputo */}
-                      <div
-                        className={`p-2 rounded-xl border flex items-center justify-between ${
-                          j.equipoComputo === 'Si'
-                            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <Monitor className="w-3.5 h-3.5 text-slate-600" />
-                          <span className="text-[11px] font-semibold">Cómputo</span>
-                        </div>
-                        <span
-                          className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                            j.equipoComputo === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                          }`}
-                        >
-                          {j.equipoComputo}
-                        </span>
-                      </div>
-
-                      {/* Audio */}
-                      <div
-                        className={`p-2 rounded-xl border flex items-center justify-between ${
-                          j.equipoAudio === 'Si'
-                            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <Volume2 className="w-3.5 h-3.5 text-slate-600" />
-                          <span className="text-[11px] font-semibold">Audio</span>
-                        </div>
-                        <span
-                          className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                            j.equipoAudio === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                          }`}
-                        >
-                          {j.equipoAudio}
-                        </span>
-                      </div>
-
-                      {/* Cableado */}
-                      <div
-                        className={`p-2 rounded-xl border flex items-center justify-between ${
-                          j.cableadoEstructurado === 'Si'
-                            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <Network className="w-3.5 h-3.5 text-slate-600" />
-                          <span className="text-[11px] font-semibold">Cableado</span>
-                        </div>
-                        <span
-                          className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                            j.cableadoEstructurado === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                          }`}
-                        >
-                          {j.cableadoEstructurado}
-                        </span>
-                      </div>
-
-                      {/* Enlace */}
-                      <div
-                        className={`p-2 rounded-xl border flex items-center justify-between ${
-                          j.enlaceDatos === 'Si'
-                            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <Wifi className="w-3.5 h-3.5 text-slate-600" />
-                          <span className="text-[11px] font-semibold">Enlace Datos</span>
-                        </div>
-                        <span
-                          className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                            j.enlaceDatos === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                          }`}
-                        >
-                          {j.enlaceDatos}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Pie de Tarjeta: Última Observación y Botón Ver Ficha */}
-                <div className="p-4 bg-slate-50/80 flex flex-col gap-3">
-                  {latestObs ? (
-                    <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold mb-1">
-                        <span className="text-blue-900">Acción #{latestObs.numeroAccion}</span>
-                        <span>{formatDate(latestObs.fecha)}</span>
-                      </div>
-                      <p className="line-clamp-2 text-slate-700">{latestObs.texto}</p>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-slate-400 italic text-center py-1">
-                      Sin observaciones registradas aún.
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setDetailJudicaturaId(j.id)}
-                    className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-blue-900 border border-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <GitBranch className="w-4 h-4 text-blue-700" />
-                    <span>Ver Ficha y Árbol de Acciones ({(j.observaciones || []).length})</span>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {!isGroupedByRamo && viewMode === 'cards' && (
+        renderJudicaturasCards(filteredJudicaturas)
       )}
 
       {/* ========================================================================= */}
@@ -2088,9 +2633,12 @@ export const JudicaturasView: React.FC = () => {
                 ))}
               </div>
 
-              {/* Filas de Judicaturas */}
+              {/* Filas de Judicaturas (Ordenadas por Ramo si isGroupedByRamo está activo) */}
               <div className="divide-y divide-slate-100">
-                {filteredJudicaturas.map((j) => {
+                {(isGroupedByRamo
+                  ? [...filteredJudicaturas].sort((a, b) => (a.tipoRamo === 'Penal' && b.tipoRamo !== 'Penal' ? -1 : 1))
+                  : filteredJudicaturas
+                ).map((j) => {
                   const startMs = new Date(j.fechaInicioAdecuaciones).getTime();
                   const endMs = new Date(j.fechaFinAdecuaciones).getTime();
                   const inaugMs = new Date(j.fechaInauguracion).getTime();
@@ -2402,13 +2950,13 @@ export const JudicaturasView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Estatus de Inauguración y Fecha de Inauguración (Opcional) */}
+              {/* Estatus y Fecha (Requisito Solicitado) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-blue-50/50 p-3.5 rounded-xl border border-blue-100">
-                {/* Estatus de Inauguración (Lista Desplegable) */}
+                {/* Estatus */}
                 <div>
                   <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
                     <Flag className="w-3.5 h-3.5 text-blue-900" />
-                    Estatus de Inauguración <span className="text-rose-600">*</span>
+                    Estatus <span className="text-rose-600">*</span>
                   </label>
                   <select
                     id="select-estado-inauguracion"
@@ -2416,21 +2964,23 @@ export const JudicaturasView: React.FC = () => {
                     onChange={(e) => setEstadoInauguracion(e.target.value as EstadoInauguracionJudicatura)}
                     className="w-full p-2.5 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
                   >
-                    <option value="Pendiente Fecha">Pendiente Fecha</option>
-                    <option value="Reprogramado">Reprogramado</option>
-                    <option value="Inaugurado">Inaugurado</option>
+                    {estatusOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
                   </select>
                   <span className="text-[10px] text-slate-500 mt-1 block">
-                    Etapa actual del proceso de inauguración
+                    Estatus actual de la judicatura
                   </span>
                 </div>
 
-                {/* Fecha de Inauguración (Opcional) */}
+                {/* Fecha */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="font-bold text-slate-700 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                      Fecha de Inauguración
+                      Fecha
                     </label>
                     <span className="text-[10px] font-semibold text-slate-400 uppercase bg-slate-100 px-1.5 py-0.2 rounded">
                       Opcional
@@ -2466,8 +3016,73 @@ export const JudicaturasView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Observaciones iniciales (solo al crear) */}
-              {!editingJudicatura && (
+              {/* Sección de Observaciones: Edición (Permite agregar observaciones) o Creación */}
+              {editingJudicatura ? (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <GitBranch className="w-3.5 h-3.5 text-blue-900" />
+                      Observaciones Registradas ({(editingJudicatura.observaciones || []).length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateFicha(editingJudicatura)}
+                      className="text-[11px] font-bold text-blue-900 hover:text-blue-950 flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-blue-200 shadow-2xs hover:bg-blue-50 transition-colors cursor-pointer"
+                      title="Generar y descargar la Ficha Técnica Individual en PDF"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-900" />
+                      <span>Generar Ficha PDF</span>
+                    </button>
+                  </div>
+
+                  {/* Listado de observaciones existentes */}
+                  {editingJudicatura.observaciones && editingJudicatura.observaciones.length > 0 ? (
+                    <div className="max-h-36 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-200">
+                      {editingJudicatura.observaciones.map((obs) => (
+                        <div key={obs.id} className="pt-2 first:pt-0 text-[11px]">
+                          <div className="flex items-center justify-between font-bold text-slate-700">
+                            <span className="text-blue-900">Acción #{obs.numeroAccion}</span>
+                            <span className="text-slate-400 font-mono text-[10px]">{formatDateTime(obs.fecha)}</span>
+                          </div>
+                          <p className="text-slate-800 mt-0.5">{obs.texto}</p>
+                          <span className="text-[9px] text-slate-400 italic">Por: {obs.autor}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">No hay observaciones previas registradas.</p>
+                  )}
+
+                  {/* Agregar nueva observación en modo edición */}
+                  <div className="pt-2.5 border-t border-slate-200 space-y-1.5">
+                    <label className="block font-bold text-slate-700 text-xs">
+                      Agregar Observación / Acción al Historial
+                    </label>
+                    <div className="flex gap-2">
+                      <textarea
+                        rows={2}
+                        value={nuevaObservacionModal}
+                        onChange={(e) => setNuevaObservacionModal(e.target.value)}
+                        placeholder="Escriba aquí los avances o detalles de la observación para esta judicatura..."
+                        className="w-full p-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddObservationInEdit}
+                        disabled={isAddingObsInEdit || !nuevaObservacionModal.trim()}
+                        className="px-3 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded-xl self-end shrink-0 disabled:opacity-50 text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                        title="Añadir esta observación ahora al historial"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Añadir</span>
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-slate-500 block">
+                      Nota: También se guardará automáticamente al hacer clic en "Actualizar Ficha".
+                    </span>
+                  </div>
+                </div>
+              ) : (
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
                     Observaciones Iniciales (Acción #1 en el Árbol)
@@ -2483,28 +3098,44 @@ export const JudicaturasView: React.FC = () => {
               )}
 
               {/* Botones del Formulario */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsFormModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs cursor-pointer shadow-2xs"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Guardando...</span>
-                    </>
-                  ) : (
-                    <span>{editingJudicatura ? 'Actualizar Ficha' : 'Guardar Judicatura'}</span>
-                  )}
-                </button>
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-between gap-2.5">
+                {editingJudicatura ? (
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateFicha(editingJudicatura)}
+                    className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                    title="Generar Ficha Técnica Oficial de la Judicatura (PDF)"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-blue-900" />
+                    <span>Generar Ficha</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsFormModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs cursor-pointer shadow-2xs"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Guardando...</span>
+                      </>
+                    ) : (
+                      <span>{editingJudicatura ? 'Actualizar Ficha' : 'Guardar Judicatura'}</span>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -2563,14 +3194,25 @@ export const JudicaturasView: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        handleOpenEdit(activeDetailJudicatura);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-bold text-slate-700 text-[11px] flex items-center gap-1 cursor-pointer"
+                      onClick={() => handleGenerateFicha(activeDetailJudicatura)}
+                      className="px-2.5 py-1 rounded-lg bg-blue-900 hover:bg-blue-800 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      title="Generar y descargar la Ficha Técnica Oficial en PDF"
                     >
-                      <Edit3 className="w-3.5 h-3.5 text-blue-800" />
-                      <span>Editar</span>
+                      <FileText className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Generar Ficha PDF</span>
                     </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleOpenEdit(activeDetailJudicatura);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-bold text-slate-700 text-[11px] flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-blue-800" />
+                        <span>Editar</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 

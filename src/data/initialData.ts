@@ -100,6 +100,20 @@ export const INITIAL_USERS: User[] = [
 
 export const INITIAL_CATALOGS: Catalog[] = [
   {
+    id: 'cat-estatus-judicaturas',
+    codigo: 'ESTATUS_JUDICATURA',
+    nombre: 'Estatus de Judicaturas',
+    descripcion: 'Estados oficiales para el control de judicaturas en trámite de apertura y adecuación',
+    esSistema: true,
+    items: [
+      { id: 'est-jud-inaugurado', codigo: 'INAUGURADO', valor: 'Inaugurado', descripcion: 'Sede judicial inaugurada formalmente y en operación', activo: true, color: 'emerald' },
+      { id: 'est-jud-pendiente', codigo: 'PENDIENTE_FECHA', valor: 'Pendiente Fecha', descripcion: 'Adecuaciones en curso o concluidas, pendiente de fecha oficial de apertura', activo: true, color: 'amber' },
+      { id: 'est-jud-reprogramado', codigo: 'REPROGRAMADO', valor: 'Reprogramado', descripcion: 'Apertura calendarizada o fecha reprogramada', activo: true, color: 'rose' },
+      { id: 'est-jud-finalizado', codigo: 'FINALIZADO', valor: 'Finalizado', descripcion: 'Proceso de adecuación física e infraestructura 100% concluido', activo: true, color: 'blue' },
+      { id: 'est-jud-traslado', codigo: 'TRASLADO', valor: 'Traslado', descripcion: 'Sede judicial en proceso de traslado o reubicación', activo: true, color: 'purple' },
+    ]
+  },
+  {
     id: 'cat-estatus',
     codigo: 'ESTATUS_EVENTO',
     nombre: 'Estatus del Evento',

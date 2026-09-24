@@ -49,6 +49,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
   const [includeTable, setIncludeTable] = useState(true);
   const [includeGantt, setIncludeGantt] = useState(true);
   const [includeStatusMatrix, setIncludeStatusMatrix] = useState(true);
+  const [groupByRamo, setGroupByRamo] = useState(true);
 
   const [documentTitle, setDocumentTitle] = useState(
     'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR'
@@ -96,6 +97,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
         includeTable,
         includeGantt,
         includeStatusMatrix,
+        groupByRamo,
         filterInfo: scope === 'filtered' ? filterInfo : undefined,
         currentUser,
         filenamePrefix: 'Reporte_Consolidado_Judicaturas_OJ',
@@ -330,6 +332,38 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                   </div>
                   <p className="text-[10.5px] text-slate-500 mt-0.5">
                     Matriz técnica: Cómputo, Audio, Red y Enlace de Telecomunicaciones
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Opción de Separar y Agrupar por Ramo */}
+            <div className="pt-1">
+              <label
+                className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                  groupByRamo
+                    ? 'border-indigo-300 bg-gradient-to-r from-purple-50/50 via-blue-50/50 to-indigo-50/50 ring-1 ring-indigo-400'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={groupByRamo}
+                  onChange={(e) => setGroupByRamo(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-blue-900 border-slate-300 focus:ring-blue-800"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Scale className="w-3.5 h-3.5 text-indigo-700" />
+                      Separar y Agrupar Reporte por Ramo (Penal y Civil)
+                    </span>
+                    <span className="px-2 py-0.2 rounded-full text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 uppercase">
+                      Recomendado para análisis
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                    Genera cuadro comparativo ejecutivo y secciones divididas para <strong>Cámara Penal ({penalCount})</strong> y <strong>Cámara Paz Civil ({civilCount})</strong> con subtotales específicos y análisis por cada ramo.
                   </p>
                 </div>
               </label>

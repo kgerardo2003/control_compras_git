@@ -33,6 +33,7 @@ export interface User {
   dobleFactorHabilitado?: boolean; // Segundo factor de autenticación 2FA requerido
   totpSecret?: string; // Clave secreta Base32 para Google Authenticator
   metodoPreferido2FA?: 'email' | 'totp' | 'sms' | 'ambos'; // Método preferido para 2FA
+  permisoJudicaturas?: 'total' | 'lectura' | 'denegado' | 'perfil'; // Parametrización específica de acceso y permisos al Módulo de Judicaturas
 }
 
 export type TwoFactorMethod = 'email' | 'totp' | 'sms';
@@ -284,7 +285,7 @@ export type ActiveTab = 'dashboard' | 'compras' | 'judicaturas' | 'presupuesto' 
 
 export type TipoRamoJudicatura = 'Penal' | 'Civil';
 export type OpcionSiNo = 'Si' | 'No';
-export type EstadoInauguracionJudicatura = 'Pendiente Fecha' | 'Reprogramado' | 'Inaugurado';
+export type EstadoInauguracionJudicatura = 'Pendiente Fecha' | 'Reprogramado' | 'Inaugurado' | 'Finalizado' | 'Traslado' | string;
 
 export interface JudicaturaObservacion {
   id: string;

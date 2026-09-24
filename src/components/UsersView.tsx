@@ -16,7 +16,8 @@ import {
   Eye,
   Phone,
   MessageSquare,
-  Smartphone
+  Smartphone,
+  Scale
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
@@ -56,6 +57,7 @@ export const UsersView: React.FC = () => {
   const [area, setArea] = useState<string>(TECHNICAL_AREAS_LIST[1]);
   const [isCustomArea, setIsCustomArea] = useState(false);
   const [customAreaText, setCustomAreaText] = useState('');
+  const [permisoJudicaturas, setPermisoJudicaturas] = useState<'perfil' | 'total' | 'lectura' | 'denegado'>('perfil');
   const [notifyByEmail, setNotifyByEmail] = useState(true);
   const [dobleFactorHabilitado, setDobleFactorHabilitado] = useState(false);
   const [metodoPreferido2FA, setMetodoPreferido2FA] = useState<'totp' | 'sms' | 'email'>('totp');
@@ -79,6 +81,7 @@ export const UsersView: React.FC = () => {
     setArea(TECHNICAL_AREAS_LIST[1]);
     setIsCustomArea(false);
     setCustomAreaText('');
+    setPermisoJudicaturas('perfil');
     setNotifyByEmail(true);
     setDobleFactorHabilitado(true);
     setMetodoPreferido2FA('totp');
@@ -99,6 +102,7 @@ export const UsersView: React.FC = () => {
     setCargo(user.cargo);
     setDepartamento(user.departamento);
     setMetodoPreferido2FA(user.metodoPreferido2FA === 'sms' ? 'sms' : (user.metodoPreferido2FA === 'email' ? 'email' : 'totp'));
+    setPermisoJudicaturas(user.permisoJudicaturas || 'perfil');
     
     const assigned = user.area || user.departamento || '';
     setDobleFactorHabilitado(Boolean(user.dobleFactorHabilitado));
@@ -190,6 +194,7 @@ export const UsersView: React.FC = () => {
         cargo: cargo.trim(),
         departamento: departamento.trim() || resolvedArea,
         area: resolvedArea,
+        permisoJudicaturas,
         dobleFactorHabilitado,
         metodoPreferido2FA,
         password: password.trim() ? password.trim() : editingUser.password,
@@ -220,6 +225,7 @@ export const UsersView: React.FC = () => {
         cargo: cargo.trim() || 'Funcionario OJ',
         departamento: departamento.trim() || resolvedArea,
         area: resolvedArea,
+        permisoJudicaturas,
         dobleFactorHabilitado,
         metodoPreferido2FA,
         activo: true,
@@ -405,9 +411,22 @@ export const UsersView: React.FC = () => {
                     {u.nombreCompleto}
                   </td>
 
-                  {/* Rol */}
+                  {/* Rol y Permiso Judicaturas */}
                   <td className="px-3 py-3 text-center whitespace-nowrap">
-                    {getRoleBadge(u)}
+                    <div className="flex flex-col items-center gap-1">
+                      {getRoleBadge(u)}
+                      {u.permisoJudicaturas && u.permisoJudicaturas !== 'perfil' && (
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${
+                          u.permisoJudicaturas === 'total' 
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                            : u.permisoJudicaturas === 'lectura'
+                            ? 'bg-blue-50 text-blue-800 border-blue-200'
+                            : 'bg-rose-50 text-rose-800 border-rose-200'
+                        }`}>
+                          Judicaturas: {u.permisoJudicaturas === 'total' ? 'Total' : u.permisoJudicaturas === 'lectura' ? 'Lectura' : 'Denegado'}
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Área Asignada (Control de Visibilidad) */}
@@ -648,6 +667,34 @@ export const UsersView: React.FC = () => {
                     required={!editingUser}
                   />
                 </div>
+              </div>
+
+              {/* Parametrización Específica del Módulo de Judicaturas (Requisito Solicitado) */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <Scale className="w-3.5 h-3.5 text-blue-900" />
+                    <span>Parametrización: Módulo de Judicaturas</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-blue-800 bg-white px-2 py-0.5 rounded border border-blue-200">
+                    Roles y Perfiles
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-tight">
+                  Define el nivel de acceso para este usuario al Módulo de Control de Judicaturas y Adecuaciones TIC:
+                </p>
+                <select
+                  value={permisoJudicaturas}
+                  onChange={(e) => setPermisoJudicaturas(e.target.value as any)}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-semibold text-xs text-slate-800 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="perfil">
+                    Heredar del Perfil asignado ({userProfiles.find(p => p.id === perfilId || p.codigo === rol)?.modulosPermitidos.includes('judicaturas') ? 'Tiene Acceso' : 'Sin Acceso'})
+                  </option>
+                  <option value="total">Acceso Total (Crear, Editar, Acciones y Ficha Técnica)</option>
+                  <option value="lectura">Solo Lectura (Visualizar sedes, árbol y Descargar Ficha)</option>
+                  <option value="denegado">Acceso Restringido (Ocultar Módulo de Judicaturas)</option>
+                </select>
               </div>
 
               {/* Asignación de Área o Departamento para control de visibilidad RBAC */}

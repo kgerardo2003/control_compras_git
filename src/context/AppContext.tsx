@@ -461,12 +461,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = safeGetLocalStorage(STORAGE_KEYS.CATALOGS);
     if (saved) {
       try {
-        const parsed: Catalog[] = JSON.parse(saved);
+        let parsed: Catalog[] = JSON.parse(saved);
         const hasAreaCat = parsed.some(c => c.codigo === 'AREA_SOLICITANTE');
         if (!hasAreaCat) {
           const areaCat = INITIAL_CATALOGS.find(c => c.codigo === 'AREA_SOLICITANTE');
           if (areaCat) {
-            return [...parsed, areaCat];
+            parsed = [...parsed, areaCat];
+          }
+        }
+        const hasJudEstatusCat = parsed.some(c => c.codigo === 'ESTATUS_JUDICATURA');
+        if (!hasJudEstatusCat) {
+          const judCat = INITIAL_CATALOGS.find(c => c.codigo === 'ESTATUS_JUDICATURA');
+          if (judCat) {
+            parsed = [judCat, ...parsed];
           }
         }
         return parsed;
@@ -1090,7 +1097,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snapshot.forEach((doc) => {
             remoteCatalogs.push(doc.data() as Catalog);
           });
-          setCatalogs(remoteCatalogs);
+          let mergedCatalogs = [...remoteCatalogs];
+          if (!mergedCatalogs.some(c => c.codigo === 'ESTATUS_JUDICATURA')) {
+            const judCat = INITIAL_CATALOGS.find(c => c.codigo === 'ESTATUS_JUDICATURA');
+            if (judCat) {
+              mergedCatalogs = [judCat, ...mergedCatalogs];
+              saveCatalogToFirestore(judCat).catch(() => {});
+            }
+          }
+          setCatalogs(mergedCatalogs);
         }
         handleSnapshotMetadata(snapshot);
       }, (error) => {
@@ -3240,6 +3255,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!currentUser) return false;
     // Administrador general siempre tiene acceso total
     if (currentUser.rol === 'administrador') return true;
+
+    // Parametrización específica a nivel de usuario para el Módulo de Judicaturas
+    if (tab === 'judicaturas' && currentUser.permisoJudicaturas) {
+      if (currentUser.permisoJudicaturas === 'denegado') return false;
+      if (currentUser.permisoJudicaturas === 'total' || currentUser.permisoJudicaturas === 'lectura') return true;
+    }
 
     // Buscar perfil asignado (por perfilId o por código de rol)
     const profile = userProfiles.find(p => 

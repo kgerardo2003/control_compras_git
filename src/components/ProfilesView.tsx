@@ -23,7 +23,8 @@ import {
   Mail,
   AlertCircle,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  Scale
 } from 'lucide-react';
 import { UserProfile, ActiveTab } from '../types';
 
@@ -39,6 +40,12 @@ export const SYSTEM_MODULES: { id: ActiveTab; label: string; desc: string; icon:
     label: 'Compras y Eventos', 
     desc: 'Gestión y seguimiento de expedientes F56-e, eventos NOG y actas GIT', 
     icon: ShoppingBag 
+  },
+  { 
+    id: 'judicaturas', 
+    label: 'Control de Judicaturas', 
+    desc: 'Monitoreo de adecuaciones físicas, infraestructura TIC y cronograma de apertura', 
+    icon: Scale 
   },
   { 
     id: 'presupuesto', 
