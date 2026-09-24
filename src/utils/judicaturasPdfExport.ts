@@ -171,7 +171,7 @@ function drawPageHeader(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(255, 255, 255);
-  doc.text('GERENCIA DE INFORMÁTICA', marginX + 27, bannerY + 11.5);
+  doc.text('GERENCIA DE INFORMÁTICA • DIRECCIÓN DE INFRAESTRUCTURA Y SISTEMAS', marginX + 27, bannerY + 11.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
@@ -1252,7 +1252,7 @@ export function generateIndividualJudicaturaPDF(
 
     doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
-    doc.text('GERENCIA DE INFORMÁTICA', marginX + 26, 19.5);
+    doc.text('GERENCIA DE INFORMÁTICA • DIRECCIÓN DE INFRAESTRUCTURA Y SISTEMAS', marginX + 26, 19.5);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);

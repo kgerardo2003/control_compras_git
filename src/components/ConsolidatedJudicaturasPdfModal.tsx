@@ -16,9 +16,8 @@ import {
   Sparkles,
   Info,
   Check,
-  Building2,
-  FolderTree,
 } from 'lucide-react';
+import { useApp } from '../context/AppContext';
 
 interface ConsolidatedJudicaturasPdfModalProps {
   isOpen: boolean;
@@ -46,8 +45,6 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
 }) => {
   const { showToast } = useApp();
 
-  // Tipo de reporte: Consolidado con cámaras separadas o específico por cámara
-  const [reportType, setReportType] = useState<'consolidado' | 'penal' | 'civil'>('consolidado');
   const [scope, setScope] = useState<'filtered' | 'all'>('filtered');
   const [includeTable, setIncludeTable] = useState(true);
   const [includeGantt, setIncludeGantt] = useState(true);
@@ -58,7 +55,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
     'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR'
   );
   const [documentSubtitle, setDocumentSubtitle] = useState(
-    'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional'
+    'Gerencia de Informática • Seguimiento Integral de Adecuaciones, Infraestructura TIC y Cronograma de Apertura'
   );
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -66,17 +63,10 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
 
   if (!isOpen) return null;
 
-  const baseJudicaturas = scope === 'filtered' ? filteredJudicaturas : allJudicaturas;
-  const penalCount = baseJudicaturas.filter((j) => j.tipoRamo === 'Penal').length;
-  const civilCount = baseJudicaturas.filter((j) => j.tipoRamo === 'Civil').length;
+  const targetJudicaturas = scope === 'filtered' ? filteredJudicaturas : allJudicaturas;
 
-  const targetJudicaturas =
-    reportType === 'penal'
-      ? baseJudicaturas.filter((j) => j.tipoRamo === 'Penal')
-      : reportType === 'civil'
-      ? baseJudicaturas.filter((j) => j.tipoRamo === 'Civil')
-      : baseJudicaturas;
-
+  const penalCount = targetJudicaturas.filter((j) => j.tipoRamo === 'Penal').length;
+  const civilCount = targetJudicaturas.filter((j) => j.tipoRamo === 'Civil').length;
   const equip100Count = targetJudicaturas.filter(
     (j) =>
       j.equipoComputo === 'Si' &&
@@ -86,39 +76,11 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
   ).length;
   const inauguradasCount = targetJudicaturas.filter((j) => j.estadoInauguracion === 'Inaugurado').length;
 
-  const handleGenerate = (targetTypeOverride?: 'consolidado' | 'penal' | 'civil') => {
-    const selectedType = targetTypeOverride || reportType;
-    let listToExport = baseJudicaturas;
-    let titleToUse = 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR';
-    let subtitleToUse = 'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional';
-    let effectiveGroupByRamo = groupByRamo;
-    let prefix = 'Reporte_Consolidado_Judicaturas_Penal_y_Civil';
-
-    if (selectedType === 'penal') {
-      listToExport = baseJudicaturas.filter((j) => j.tipoRamo === 'Penal');
-      titleToUse = 'REPORTE OFICIAL DE JUDICATURAS: CÁMARA PENAL';
-      subtitleToUse = 'Gerencia de Informática • Órganos Jurisdiccionales del Ramo Penal en Adecuación y Apertura';
-      effectiveGroupByRamo = false;
-      prefix = 'Reporte_Judicaturas_Camara_Penal';
-    } else if (selectedType === 'civil') {
-      listToExport = baseJudicaturas.filter((j) => j.tipoRamo === 'Civil');
-      titleToUse = 'REPORTE OFICIAL DE JUDICATURAS: CÁMARA PAZ CIVIL';
-      subtitleToUse = 'Gerencia de Informática • Órganos Jurisdiccionales del Ramo Paz y Civil en Adecuación y Apertura';
-      effectiveGroupByRamo = false;
-      prefix = 'Reporte_Judicaturas_Camara_Paz_Civil';
-    } else {
-      effectiveGroupByRamo = true;
-      titleToUse = documentTitle.trim() || 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR';
-      subtitleToUse = documentSubtitle.trim() || 'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional';
-      prefix = 'Reporte_Consolidado_Judicaturas_Penal_y_Civil';
-    }
-
-    if (listToExport.length === 0) {
+  const handleGenerate = () => {
+    if (targetJudicaturas.length === 0) {
       showToast({
         title: 'Sin Registros',
-        message: `No hay judicaturas disponibles para exportar en ${
-          selectedType === 'penal' ? 'Cámara Penal' : selectedType === 'civil' ? 'Cámara Paz Civil' : 'el consolidado'
-        }.`,
+        message: 'No hay judicaturas disponibles para exportar con el alcance seleccionado.',
         type: 'warning',
       });
       return;
@@ -129,29 +91,23 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
 
     try {
       const filename = generateConsolidatedJudicaturasPDF({
-        judicaturas: listToExport,
-        title: titleToUse,
-        subtitle: subtitleToUse,
+        judicaturas: targetJudicaturas,
+        title: documentTitle.trim() || undefined,
+        subtitle: documentSubtitle.trim() || undefined,
         includeTable,
         includeGantt,
         includeStatusMatrix,
-        groupByRamo: effectiveGroupByRamo,
-        filterInfo:
-          scope === 'filtered'
-            ? {
-                ...filterInfo,
-                ramo: selectedType === 'penal' ? 'Penal' : selectedType === 'civil' ? 'Civil' : filterInfo?.ramo,
-              }
-            : undefined,
+        groupByRamo,
+        filterInfo: scope === 'filtered' ? filterInfo : undefined,
         currentUser,
-        filenamePrefix: prefix,
+        filenamePrefix: 'Reporte_Consolidado_Judicaturas_OJ',
       });
 
       setDownloadSuccess(filename);
 
       showToast({
-        title: selectedType === 'consolidado' ? 'Reporte Consolidado Descargado' : 'Reporte de Cámara Descargado',
-        message: `Se descargó "${filename}" con la cabecera y membrete oficial del Organismo Judicial.`,
+        title: 'Reporte Consolidado Generado con Éxito',
+        message: `Se ha descargado "${filename}" con la cabecera y logotipo del OJ en todas las páginas.`,
         type: 'success',
       });
 
@@ -159,7 +115,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
         onSuccess(filename);
       }
     } catch (err) {
-      console.error('Error al generar PDF:', err);
+      console.error('Error al generar el PDF consolidado:', err);
       showToast({
         title: 'Error al Generar Reporte',
         message: 'Ocurrió un inconveniente durante la compilación del PDF.',
@@ -237,133 +193,10 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
             </div>
           </div>
 
-          {/* 1. Modalidad del Reporte Oficial */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-slate-900 text-xs uppercase tracking-wider block">
-                1. Modalidad del Reporte a Descargar
-              </label>
-              <span className="text-[10px] text-slate-500 font-mono">
-                {targetJudicaturas.length} judicaturas seleccionadas
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {/* Opción 1: Reporte Consolidado con Cámaras Separadas */}
-              <button
-                type="button"
-                onClick={() => setReportType('consolidado')}
-                className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
-                  reportType === 'consolidado'
-                    ? 'border-indigo-600 bg-indigo-50/80 ring-2 ring-indigo-500/25 shadow-xs'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1.5">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
-                      <FolderTree className="w-4 h-4 text-indigo-700 shrink-0" />
-                      <span>Consolidado General</span>
-                    </div>
-                    {reportType === 'consolidado' ? (
-                      <div className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                    ) : (
-                      <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-black uppercase bg-indigo-100 text-indigo-800">
-                        Recomendado
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10.5px] text-slate-600 leading-snug">
-                    Reporte integral con <strong>Cámaras Penal y Civil separadas</strong> en secciones independientes, cuadro comparativo y Gantt agrupado.
-                  </p>
-                </div>
-                <div className="mt-2 pt-2 border-t border-indigo-100 flex items-center justify-between text-[10px] font-mono font-bold text-indigo-900">
-                  <span>Penal ({penalCount})</span>
-                  <span>•</span>
-                  <span>Civil ({civilCount})</span>
-                </div>
-              </button>
-
-              {/* Opción 2: Solo Cámara Penal */}
-              <button
-                type="button"
-                onClick={() => setReportType('penal')}
-                className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
-                  reportType === 'penal'
-                    ? 'border-purple-600 bg-purple-50/80 ring-2 ring-purple-500/25 shadow-xs'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1.5">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
-                      <Scale className="w-4 h-4 text-purple-700 shrink-0" />
-                      <span>Solo Cámara Penal</span>
-                    </div>
-                    {reportType === 'penal' ? (
-                      <div className="w-4 h-4 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                    ) : (
-                      <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-black uppercase bg-purple-100 text-purple-800 font-mono">
-                        {penalCount} sedes
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10.5px] text-slate-600 leading-snug">
-                    Informe oficial especializado exclusivo de órganos jurisdiccionales del Ramo Penal.
-                  </p>
-                </div>
-                <div className="mt-2 pt-2 border-t border-purple-100 flex items-center justify-between text-[10px] font-mono font-bold text-purple-900">
-                  <span>Cámara Penal</span>
-                  <span>{penalCount} Judicaturas</span>
-                </div>
-              </button>
-
-              {/* Opción 3: Solo Cámara Paz Civil */}
-              <button
-                type="button"
-                onClick={() => setReportType('civil')}
-                className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
-                  reportType === 'civil'
-                    ? 'border-blue-600 bg-blue-50/80 ring-2 ring-blue-500/25 shadow-xs'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1.5">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
-                      <Building2 className="w-4 h-4 text-blue-700 shrink-0" />
-                      <span>Solo Cámara Paz Civil</span>
-                    </div>
-                    {reportType === 'civil' ? (
-                      <div className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                    ) : (
-                      <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-black uppercase bg-blue-100 text-blue-800 font-mono">
-                        {civilCount} sedes
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10.5px] text-slate-600 leading-snug">
-                    Informe oficial especializado exclusivo de órganos jurisdiccionales del Ramo Paz y Civil.
-                  </p>
-                </div>
-                <div className="mt-2 pt-2 border-t border-blue-100 flex items-center justify-between text-[10px] font-mono font-bold text-blue-900">
-                  <span>Cámara Paz Civil</span>
-                  <span>{civilCount} Judicaturas</span>
-                </div>
-              </button>
-            </div>
-          </div>
-
           {/* Configuración de Alcance */}
           <div className="space-y-2">
             <label className="font-bold text-slate-900 text-xs uppercase tracking-wider block">
-              2. Alcance de Judicaturas a Exportar
+              1. Alcance de Judicaturas a Exportar
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
@@ -588,49 +421,23 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
             <span>Formato: PDF A4 Horizontal (Landscape) de alta definición</span>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-300 transition-colors cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-white hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-300 transition-colors cursor-pointer"
             >
               Cerrar
             </button>
 
-            {/* Descarga Rápida Solo Penal */}
             <button
               type="button"
-              onClick={() => handleGenerate('penal')}
-              disabled={isGenerating || penalCount === 0}
-              className="px-3 py-2 rounded-xl bg-purple-900 hover:bg-purple-800 text-purple-100 font-bold text-xs border border-purple-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Descargar reporte oficial exclusivo de Cámara Penal"
+              onClick={handleGenerate}
+              disabled={isGenerating || targetJudicaturas.length === 0 || (!includeTable && !includeGantt && !includeStatusMatrix)}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-800 hover:from-blue-800 hover:to-indigo-800 text-white font-bold text-xs shadow-md border border-blue-700 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Scale className="w-3.5 h-3.5 text-amber-300" />
-              <span>Solo Penal</span>
-            </button>
-
-            {/* Descarga Rápida Solo Civil */}
-            <button
-              type="button"
-              onClick={() => handleGenerate('civil')}
-              disabled={isGenerating || civilCount === 0}
-              className="px-3 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-blue-100 font-bold text-xs border border-blue-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Descargar reporte oficial exclusivo de Cámara Paz Civil"
-            >
-              <Building2 className="w-3.5 h-3.5 text-amber-300" />
-              <span>Solo Civil</span>
-            </button>
-
-            {/* Descarga Principal Consolidada (Penal y Civil Separadas) */}
-            <button
-              type="button"
-              onClick={() => handleGenerate('consolidado')}
-              disabled={isGenerating || baseJudicaturas.length === 0 || (!includeTable && !includeGantt && !includeStatusMatrix)}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs shadow-md border border-amber-300 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Descargar Reporte Consolidado completo con Cámaras Penal y Civil separadas"
-            >
-              <Download className="w-4 h-4 text-slate-950" />
-              <span>{isGenerating ? 'Generando...' : 'Descargar Consolidado (Penal + Civil)'}</span>
+              <Download className="w-4 h-4 text-amber-400" />
+              <span>{isGenerating ? 'Generando PDF...' : 'Descargar Reporte Consolidado (PDF)'}</span>
             </button>
           </div>
         </div>
