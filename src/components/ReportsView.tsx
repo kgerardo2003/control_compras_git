@@ -691,28 +691,31 @@ export const ReportsView: React.FC = () => {
       {/* 4. Documento Oficial Imprimible y Detallado */}
       <div className="bg-white p-6 sm:p-8 rounded-xl shadow-xs border border-slate-200 text-slate-900">
         
-        {/* Membrete Oficial del Organismo Judicial */}
-        <div className="border-b border-slate-200 pb-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center text-amber-400 font-bold text-sm shadow-xs">
+        {/* Membrete Oficial del Organismo Judicial con Franja Institucional #0A0A69 */}
+        <div 
+          className="rounded-xl p-4 sm:p-5 mb-6 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs"
+          style={{ backgroundColor: '#0A0A69' }}
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 bg-white/10 rounded-xl border border-white/20 flex items-center justify-center text-white font-black text-sm shadow-inner">
               OJ
             </div>
             <div>
-              <h2 className="text-base font-bold uppercase tracking-wider text-slate-900">
+              <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-white">
                 Organismo Judicial de Guatemala
               </h2>
-              <p className="text-xs font-semibold text-slate-600">
+              <p className="text-xs font-medium text-blue-100 mt-0.5">
                 Gerencia de Informática • Dirección de Auditoría y Fiscalización
               </p>
             </div>
           </div>
 
-          <div className="text-left sm:text-right text-xs text-slate-600 border-l sm:border-l-0 pl-3 sm:pl-0 border-slate-200">
-            <p><strong>Fecha de Emisión:</strong> {formatDate(new Date().toISOString().slice(0, 10))}</p>
-            <p><strong>Período Fiscal:</strong> 2026</p>
+          <div className="text-left sm:text-right text-xs text-blue-100 border-t sm:border-t-0 sm:border-l border-white/15 pt-2 sm:pt-0 sm:pl-4">
+            <p><strong className="text-white">Fecha de Emisión:</strong> {formatDate(new Date().toISOString().slice(0, 10))}</p>
+            <p><strong className="text-white">Período Fiscal:</strong> 2026</p>
             <p>
-              <strong>Alcance: </strong>
-              <span className="font-semibold text-slate-800">
+              <strong className="text-white">Alcance: </strong>
+              <span className="font-bold text-white bg-white/10 px-2 py-0.5 rounded ml-1 inline-block">
                 {isAdmin ? (adminAreaFilter === 'todas' ? 'Institucional (Todas las Áreas)' : adminAreaFilter) : (userAssignedArea || 'Área Asignada')}
               </span>
             </p>
@@ -776,19 +779,19 @@ export const ReportsView: React.FC = () => {
             {/* Tabla Detallada */}
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full text-left text-xs text-slate-800 border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
+                <thead style={{ backgroundColor: '#0A0A69' }} className="text-white font-bold uppercase text-[10px]">
                   <tr>
-                    <th className="border-b border-slate-200 p-2.5 text-center w-8">#</th>
-                    <th className="border-b border-slate-200 p-2.5">NOG Guatecompras</th>
-                    <th className="border-b border-slate-200 p-2.5">F56-e / F56</th>
-                    <th className="border-b border-slate-200 p-2.5">Área Solicitante</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Renglón</th>
-                    <th className="border-b border-slate-200 p-2.5">Descripción del Requerimiento</th>
-                    <th className="border-b border-slate-200 p-2.5">Fecha Sol.</th>
-                    <th className="border-b border-slate-200 p-2.5">Modalidad</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Estatus</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Dictamen GIT</th>
-                    <th className="border-b border-slate-200 p-2.5 text-right font-mono">Monto (GTQ)</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center w-8 text-white">#</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">NOG Guatecompras</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">F56-e / F56</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Área Solicitante</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Renglón</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Descripción del Requerimiento</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Fecha Sol.</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Modalidad</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Estatus</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Dictamen GIT</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-right font-mono text-white">Monto (GTQ)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -921,18 +924,18 @@ export const ReportsView: React.FC = () => {
             {/* Tabla Detallada de Adjudicaciones */}
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full text-left text-xs text-slate-800 border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
+                <thead style={{ backgroundColor: '#0A0A69' }} className="text-white font-bold uppercase text-[10px]">
                   <tr>
-                    <th className="border-b border-slate-200 p-2.5 text-center w-8">#</th>
-                    <th className="border-b border-slate-200 p-2.5">NOG</th>
-                    <th className="border-b border-slate-200 p-2.5">F56-e</th>
-                    <th className="border-b border-slate-200 p-2.5">Área Solicitante</th>
-                    <th className="border-b border-slate-200 p-2.5">Descripción del Bien o Servicio</th>
-                    <th className="border-b border-slate-200 p-2.5">Proveedor Adjudicado</th>
-                    <th className="border-b border-slate-200 p-2.5">Fecha Adjudicación</th>
-                    <th className="border-b border-slate-200 p-2.5">Modalidad</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Renglón</th>
-                    <th className="border-b border-slate-200 p-2.5 text-right font-mono">Monto Adjudicado (GTQ)</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center w-8 text-white">#</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">NOG</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">F56-e</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Área Solicitante</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Descripción del Bien o Servicio</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Proveedor Adjudicado</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Fecha Adjudicación</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Modalidad</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Renglón</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-right font-mono text-white">Monto Adjudicado (GTQ)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1040,19 +1043,19 @@ export const ReportsView: React.FC = () => {
             {/* Tabla Detallada de Dictámenes Técnicos */}
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full text-left text-xs text-slate-800 border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
+                <thead style={{ backgroundColor: '#0A0A69' }} className="text-white font-bold uppercase text-[10px]">
                   <tr>
-                    <th className="border-b border-slate-200 p-2.5 text-center w-8">#</th>
-                    <th className="border-b border-slate-200 p-2.5">NOG</th>
-                    <th className="border-b border-slate-200 p-2.5">F56-e / F56</th>
-                    <th className="border-b border-slate-200 p-2.5">Área Solicitante</th>
-                    <th className="border-b border-slate-200 p-2.5">Descripción Técnica</th>
-                    <th className="border-b border-slate-200 p-2.5">Fecha Dictamen</th>
-                    <th className="border-b border-slate-200 p-2.5">Fecha Oficio GIT</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Ofertas</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Estatus</th>
-                    <th className="border-b border-slate-200 p-2.5 text-right font-mono">Monto (GTQ)</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center print:hidden">Acción</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center w-8 text-white">#</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">NOG</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">F56-e / F56</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Área Solicitante</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Descripción Técnica</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Fecha Dictamen</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Fecha Oficio GIT</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Ofertas</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Estatus</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-right font-mono text-white">Monto (GTQ)</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center print:hidden text-white">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1176,17 +1179,17 @@ export const ReportsView: React.FC = () => {
             {/* Matriz Financiera por Renglón Presupuestario */}
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full text-left text-xs text-slate-800 border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
+                <thead style={{ backgroundColor: '#0A0A69' }} className="text-white font-bold uppercase text-[10px]">
                   <tr>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Renglón</th>
-                    <th className="border-b border-slate-200 p-2.5">Nombre del Renglón Presupuestario</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Grupo</th>
-                    <th className="border-b border-slate-200 p-2.5 text-right font-mono">Presupuesto Vigente</th>
-                    <th className="border-b border-slate-200 p-2.5 text-right font-mono">Comprometido</th>
-                    <th className="border-b border-slate-200 p-2.5 text-right font-mono">Pagado (Devengado)</th>
-                    <th className="border-b border-slate-200 p-2.5 text-right font-mono">Saldo Disponible</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">% Ejecución</th>
-                    <th className="border-b border-slate-200 p-2.5 text-center">Eventos</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Renglón</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-white">Nombre del Renglón Presupuestario</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Grupo</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-right font-mono text-white">Presupuesto Vigente</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-right font-mono text-white">Comprometido</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-right font-mono text-white">Pagado (Devengado)</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-right font-mono text-white">Saldo Disponible</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">% Ejecución</th>
+                    <th className="border-b border-indigo-900/60 p-2.5 text-center text-white">Eventos</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1318,16 +1321,19 @@ export const ReportsView: React.FC = () => {
                 <div key={grp.grupo} className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                   
                   {/* Encabezado de Grupo Presupuestario */}
-                  <div className="bg-slate-900 text-white p-3.5 flex items-center justify-between">
+                  <div 
+                    className="text-white p-3.5 flex items-center justify-between"
+                    style={{ backgroundColor: '#0A0A69' }}
+                  >
                     <div className="flex items-center gap-2">
-                      <FolderTree className="w-4 h-4 text-amber-400" />
-                      <span className="font-bold text-sm uppercase tracking-wide">
+                      <FolderTree className="w-4 h-4 text-blue-200" />
+                      <span className="font-bold text-sm uppercase tracking-wide text-white">
                         {grp.nombreGrupo}
                       </span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block">Subtotal Grupo</span>
-                      <span className="font-mono font-bold text-amber-400 text-sm">
+                      <span className="text-[10px] text-blue-200 block">Subtotal Grupo</span>
+                      <span className="font-mono font-bold text-white text-sm">
                         {formatQuetzales(grp.totalGrupo)}
                       </span>
                     </div>
@@ -1378,15 +1384,15 @@ export const ReportsView: React.FC = () => {
                         {/* Tabla de Eventos del Renglón */}
                         <div className="overflow-x-auto">
                           <table className="w-full text-left text-xs text-slate-800 border-collapse">
-                            <thead className="bg-slate-100/70 text-slate-600 font-bold uppercase text-[9.5px]">
+                            <thead style={{ backgroundColor: '#0A0A69' }} className="text-white font-bold uppercase text-[9.5px]">
                               <tr>
-                                <th className="p-2 border-b border-slate-200">NOG</th>
-                                <th className="p-2 border-b border-slate-200">F56-e</th>
-                                {isAdmin && <th className="p-2 border-b border-slate-200">Área Solicitante</th>}
-                                <th className="p-2 border-b border-slate-200">Descripción</th>
-                                <th className="p-2 border-b border-slate-200">Modalidad</th>
-                                <th className="p-2 border-b border-slate-200 text-center">Estatus</th>
-                                <th className="p-2 border-b border-slate-200 text-right font-mono">Monto (GTQ)</th>
+                                <th className="p-2 border-b border-indigo-900/60 text-white">NOG</th>
+                                <th className="p-2 border-b border-indigo-900/60 text-white">F56-e</th>
+                                {isAdmin && <th className="p-2 border-b border-indigo-900/60 text-white">Área Solicitante</th>}
+                                <th className="p-2 border-b border-indigo-900/60 text-white">Descripción</th>
+                                <th className="p-2 border-b border-indigo-900/60 text-white">Modalidad</th>
+                                <th className="p-2 border-b border-indigo-900/60 text-center text-white">Estatus</th>
+                                <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Monto (GTQ)</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-[11.5px]">

@@ -407,6 +407,14 @@ export const DashboardView: React.FC = () => {
   const [recentPage, setRecentPage] = useState<number>(1);
   const RECENT_ITEMS_PER_PAGE = 8;
 
+  // Estados para Modal Interactivo de Indicadores (NOG Adjudicados / NOG en Evaluación)
+  const [nogModalOpen, setNogModalOpen] = useState<boolean>(false);
+  const [nogModalType, setNogModalType] = useState<'adjudicados' | 'evaluacion'>('adjudicados');
+  const [nogModalFilter, setNogModalFilter] = useState<string>('todos');
+  const [nogModalSearch, setNogModalSearch] = useState<string>('');
+  const [nogModalPage, setNogModalPage] = useState<number>(1);
+  const NOG_MODAL_ITEMS_PER_PAGE = 8;
+
   // Baseline institucional de techos presupuestarios vigentes para centros de costo / departamentos de la GIT
   const DEPARTMENT_BASE_BUDGETS: Record<string, number> = {
     'Departamento de Servicios Informáticos': 2400000,
@@ -1106,6 +1114,95 @@ export const DashboardView: React.FC = () => {
     logAudit('EXPORTAR_DATOS', 'Auditoría', 'Exportación de bitácora de auditoría desde el Panel Principal.');
   };
 
+  // Filtrado de adquisiciones para el Modal Interactivo de NOGs Adjudicados / En Evaluación
+  const modalPurchases = useMemo(() => {
+    if (!nogModalOpen) return [];
+
+    let list = filteredPurchases.filter(p => {
+      if (nogModalType === 'adjudicados') {
+        return p.estatusEvento === 'Adjudicación';
+      } else {
+        return p.estatusEvento === 'Evaluación';
+      }
+    });
+
+    if (nogModalType === 'adjudicados') {
+      if (nogModalFilter !== 'todos') {
+        list = list.filter(p => (p.areaSolicitante || p.dependenciaSolicitante || 'Soporte técnico') === nogModalFilter);
+      }
+    } else {
+      if (nogModalFilter === 'verde') {
+        list = list.filter(p => getEventDelayDays(p) <= 10);
+      } else if (nogModalFilter === 'naranja') {
+        list = list.filter(p => {
+          const d = getEventDelayDays(p);
+          return d > 10 && d <= 30;
+        });
+      } else if (nogModalFilter === 'rojo') {
+        list = list.filter(p => getEventDelayDays(p) > 30);
+      }
+    }
+
+    if (nogModalSearch.trim()) {
+      const q = nogModalSearch.toLowerCase().trim();
+      list = list.filter(p =>
+        (p.nog || '').toLowerCase().includes(q) ||
+        (p.f56e || '').toLowerCase().includes(q) ||
+        (p.f56 || '').toLowerCase().includes(q) ||
+        (p.descripcion || '').toLowerCase().includes(q) ||
+        (p.areaSolicitante || '').toLowerCase().includes(q) ||
+        (p.dependenciaSolicitante || '').toLowerCase().includes(q) ||
+        (p.proveedorAdjudicado || '').toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [nogModalOpen, nogModalType, nogModalFilter, nogModalSearch, filteredPurchases]);
+
+  const totalModalPages = Math.max(1, Math.ceil(modalPurchases.length / NOG_MODAL_ITEMS_PER_PAGE));
+  const currentModalPage = Math.min(nogModalPage, totalModalPages);
+  const displayedModalPurchases = useMemo(() => {
+    const startIdx = (currentModalPage - 1) * NOG_MODAL_ITEMS_PER_PAGE;
+    return modalPurchases.slice(startIdx, startIdx + NOG_MODAL_ITEMS_PER_PAGE);
+  }, [modalPurchases, currentModalPage]);
+
+  const totalMontoModal = useMemo(() => {
+    return modalPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
+  }, [modalPurchases]);
+
+  const handleOpenAdjudicadosModal = (areaFilter: string = 'todos') => {
+    setNogModalType('adjudicados');
+    setNogModalFilter(areaFilter);
+    setNogModalSearch('');
+    setNogModalPage(1);
+    setNogModalOpen(true);
+  };
+
+  const handleOpenEvaluacionModal = (delayFilter: string = 'todos') => {
+    setNogModalType('evaluacion');
+    setNogModalFilter(delayFilter);
+    setNogModalSearch('');
+    setNogModalPage(1);
+    setNogModalOpen(true);
+  };
+
+  const handleExportModalCSV = () => {
+    const rows = modalPurchases.map(p => ({
+      NOG: p.nog || '',
+      'F56-e': p.f56e || '',
+      F56: p.f56 || '',
+      'Descripción': p.descripcion || '',
+      'Área Solicitante': p.areaSolicitante || p.dependenciaSolicitante || '',
+      'Monto (GTQ)': p.monto || 0,
+      'Estatus': p.estatusEvento || '',
+      'Días en Proceso': getEventDelayDays(p),
+      'Proveedor Adjudicado': p.proveedorAdjudicado || 'N/A',
+      'Fecha Solicitud': p.fechaSolicitud || '',
+    }));
+    const prefix = nogModalType === 'adjudicados' ? 'NOG_Adjudicados' : 'NOG_En_Evaluacion';
+    exportToCSV(`${prefix}_${nogModalFilter}_${new Date().toISOString().slice(0, 10)}`, rows);
+  };
+
   // Renderizador con realce y sombra suave para el sector activo de la gráfica circular
   const renderActivePieShape = (props: any) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
@@ -1235,28 +1332,39 @@ export const DashboardView: React.FC = () => {
                   </span>
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-700 text-white shadow-xs">
-                {metrics.adjudicadosPorcentaje}% {isAdmin ? 'del Total' : 'del Área'}
-              </span>
+              <button
+                type="button"
+                onClick={() => handleOpenAdjudicadosModal('todos')}
+                className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+                title="Haga clic para ver el listado de todos los NOGs adjudicados"
+              >
+                <span>{metrics.adjudicadosPorcentaje}% {isAdmin ? 'del Total' : 'del Área'}</span>
+                <Eye className="w-3 h-3" />
+              </button>
             </div>
 
-            <div className="mt-5 flex items-center justify-between gap-4">
+            <div
+              onClick={() => handleOpenAdjudicadosModal('todos')}
+              className="mt-5 flex items-center justify-between gap-4 cursor-pointer p-2 -mx-2 rounded-xl hover:bg-emerald-50/60 transition-all group"
+              title="Haga clic para ver el listado de NOGs adjudicados"
+            >
               <div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-5xl sm:text-6xl font-black text-slate-950 tracking-tight font-mono">
+                  <span className="text-5xl sm:text-6xl font-black text-slate-950 tracking-tight font-mono group-hover:text-emerald-950 transition-colors">
                     {metrics.adjudicadosCount}
                   </span>
                   <span className="text-base font-bold text-slate-500">
                     / {metrics.totalEventos}
                   </span>
                 </div>
-                <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug">
-                  Eventos finalizados y adjudicados
+                <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug group-hover:text-emerald-900 transition-colors flex items-center gap-1">
+                  <span>Eventos finalizados y adjudicados</span>
+                  <span className="text-[10px] text-emerald-700 font-extrabold uppercase">(Ver NOGs)</span>
                 </p>
               </div>
 
               {/* Medidor Circular de Alto Contraste */}
-              <div className="relative w-22 h-22 sm:w-24 sm:h-24 flex-shrink-0">
+              <div className="relative w-22 h-22 sm:w-24 sm:h-24 flex-shrink-0 group-hover:scale-105 transition-transform">
                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                   <path
                     className="stroke-slate-200 fill-none"
@@ -1283,8 +1391,15 @@ export const DashboardView: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Monto Adjudicado</span>
+          <div
+            onClick={() => handleOpenAdjudicadosModal('todos')}
+            className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 hover:bg-slate-800 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs cursor-pointer transition-all"
+            title="Haga clic para ver los NOGs adjudicados y sus montos"
+          >
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Monto Adjudicado</span>
+              <span className="text-[10px] text-emerald-400 font-normal underline">(Ver listado)</span>
+            </span>
             <span className="text-sm sm:text-base font-black font-mono text-emerald-400">
               {formatQuetzales(metrics.adjudicadosMonto)}
             </span>
@@ -1297,14 +1412,18 @@ export const DashboardView: React.FC = () => {
                 <PieChartIcon className="w-3.5 h-3.5 text-emerald-600" />
                 Áreas de NOGs Adjudicados
               </span>
-              <span className="text-[10px] text-slate-500 font-semibold">
-                {metrics.adjudicadosPorArea.length} área{metrics.adjudicadosPorArea.length === 1 ? '' : 's'}
+              <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300">
+                Clic en gráfica o área para filtrar
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-              {/* Gráfica de Círculo (Donut) */}
-              <div className="sm:col-span-5 h-28 relative flex items-center justify-center">
+              {/* Gráfica de Círculo (Donut) interactiva */}
+              <div
+                className="sm:col-span-5 h-28 relative flex items-center justify-center cursor-pointer group"
+                onClick={() => handleOpenAdjudicadosModal('todos')}
+                title="Haga clic en la gráfica para ver los NOGs adjudicados"
+              >
                 {metrics.adjudicadosCount > 0 && metrics.adjudicadosPorArea.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -1316,13 +1435,27 @@ export const DashboardView: React.FC = () => {
                         outerRadius={42}
                         paddingAngle={3}
                         dataKey="value"
+                        onClick={(entry: any) => {
+                          const areaName = entry?.area || entry?.name || 'todos';
+                          handleOpenAdjudicadosModal(areaName);
+                        }}
                       >
                         {metrics.adjudicadosPorArea.map((entry, index) => (
-                          <Cell key={`adj-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={1.5} />
+                          <Cell
+                            key={`adj-cell-${index}`}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAdjudicadosModal(entry.area);
+                            }}
+                          />
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(val: any, name: any) => [`${val} NOGs`, name]}
+                        formatter={(val: any, name: any) => [`${val} NOGs (clic para ver)`, name]}
                         contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       />
                     </PieChart>
@@ -1334,7 +1467,7 @@ export const DashboardView: React.FC = () => {
                 )}
                 {metrics.adjudicadosCount > 0 && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-xs font-black font-mono text-slate-800">
+                    <span className="text-xs font-black font-mono text-slate-800 group-hover:text-emerald-700 transition-colors">
                       {metrics.adjudicadosCount}
                     </span>
                     <span className="text-[8px] font-bold uppercase text-slate-500">
@@ -1344,21 +1477,23 @@ export const DashboardView: React.FC = () => {
                 )}
               </div>
 
-              {/* Lista Detallada de Áreas con Contador y Porcentaje */}
+              {/* Lista Detallada de Áreas con Contador y Porcentaje - Interactivo */}
               <div className="sm:col-span-7 flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
                 {metrics.adjudicadosPorArea.length > 0 ? (
                   metrics.adjudicadosPorArea.map((item, idx) => (
-                    <div
+                    <button
                       key={`adj-area-item-${idx}`}
-                      className="p-1.5 px-2 rounded-lg bg-white border border-slate-200/90 flex items-center justify-between shadow-2xs text-[11px]"
-                      title={`${item.area}: ${item.count} NOGs adjudicados (${item.porcentaje}%) • Total: ${formatQuetzales(item.monto)}`}
+                      type="button"
+                      onClick={() => handleOpenAdjudicadosModal(item.area)}
+                      className="p-1.5 px-2 rounded-lg bg-white hover:bg-emerald-50/90 border border-slate-200/90 hover:border-emerald-300 flex items-center justify-between shadow-2xs text-[11px] cursor-pointer transition-all text-left group"
+                      title={`Haga clic para ver los ${item.count} NOGs adjudicados de ${item.area}`}
                     >
                       <div className="flex items-center gap-1.5 min-w-0 pr-1">
                         <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          className="w-2.5 h-2.5 rounded-full shrink-0 group-hover:scale-125 transition-transform"
                           style={{ backgroundColor: item.color }}
                         />
-                        <span className="text-[10px] font-bold text-slate-800 truncate" title={item.area}>
+                        <span className="text-[10px] font-bold text-slate-800 group-hover:text-emerald-950 truncate" title={item.area}>
                           {item.area}
                         </span>
                       </div>
@@ -1366,11 +1501,11 @@ export const DashboardView: React.FC = () => {
                         <span className="text-[10px] font-mono font-bold text-slate-500">
                           {item.porcentaje}%
                         </span>
-                        <span className="text-xs font-black text-emerald-900 font-mono bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                        <span className="text-xs font-black text-emerald-900 font-mono bg-emerald-50 group-hover:bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-200">
                           {item.count}
                         </span>
                       </div>
-                    </div>
+                    </button>
                   ))
                 ) : (
                   <div className="text-center text-slate-400 text-[11px] italic py-2">
@@ -1378,6 +1513,9 @@ export const DashboardView: React.FC = () => {
                   </div>
                 )}
               </div>
+            </div>
+            <div className="mt-2 text-center text-[10px] text-emerald-800 font-semibold bg-emerald-50/60 py-1 px-2 rounded-md border border-emerald-200/60 flex items-center justify-center gap-1">
+              <span>👆 Haz clic en la gráfica o en cualquier área para ver sus NOGs adjudicados</span>
             </div>
           </div>
         </div>
@@ -1399,28 +1537,39 @@ export const DashboardView: React.FC = () => {
                   </span>
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-600 text-white shadow-xs">
-                {metrics.enEvaluacionPorcentaje}% {isAdmin ? 'en Trámite' : 'del Área'}
-              </span>
+              <button
+                type="button"
+                onClick={() => handleOpenEvaluacionModal('todos')}
+                className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-600 hover:bg-amber-700 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+                title="Haga clic para ver el listado de todas las adquisiciones en evaluación"
+              >
+                <span>{metrics.enEvaluacionPorcentaje}% {isAdmin ? 'en Trámite' : 'del Área'}</span>
+                <Eye className="w-3 h-3" />
+              </button>
             </div>
 
-            <div className="mt-5 flex items-center justify-between gap-4">
+            <div
+              onClick={() => handleOpenEvaluacionModal('todos')}
+              className="mt-5 flex items-center justify-between gap-4 cursor-pointer p-2 -mx-2 rounded-xl hover:bg-amber-50/60 transition-all group"
+              title="Haga clic para ver las adquisiciones en evaluación"
+            >
               <div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-5xl sm:text-6xl font-black text-slate-950 tracking-tight font-mono">
+                  <span className="text-5xl sm:text-6xl font-black text-slate-950 tracking-tight font-mono group-hover:text-amber-950 transition-colors">
                     {metrics.enEvaluacionCount}
                   </span>
                   <span className="text-base font-bold text-slate-500">
                     / {metrics.totalEventos}
                   </span>
                 </div>
-                <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug">
-                  {isAdmin ? 'Plicas y ofertas en etapa de análisis técnico' : `Plicas y ofertas en etapa de evaluación para ${userAssignedArea || 'su área'}`}
+                <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug group-hover:text-amber-900 transition-colors flex items-center gap-1">
+                  <span>{isAdmin ? 'Plicas y ofertas en etapa de análisis técnico' : `Plicas y ofertas en etapa de evaluación para ${userAssignedArea || 'su área'}`}</span>
+                  <span className="text-[10px] text-amber-700 font-extrabold uppercase">(Ver NOGs)</span>
                 </p>
               </div>
 
               {/* Medidor Circular de Alto Contraste */}
-              <div className="relative w-22 h-22 sm:w-24 sm:h-24 flex-shrink-0">
+              <div className="relative w-22 h-22 sm:w-24 sm:h-24 flex-shrink-0 group-hover:scale-105 transition-transform">
                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                   <path
                     className="stroke-slate-200 fill-none"
@@ -1447,8 +1596,15 @@ export const DashboardView: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Monto en Trámite</span>
+          <div
+            onClick={() => handleOpenEvaluacionModal('todos')}
+            className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 hover:bg-slate-800 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs cursor-pointer transition-all"
+            title="Haga clic para ver los NOGs en evaluación y montos"
+          >
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Monto en Trámite</span>
+              <span className="text-[10px] text-amber-400 font-normal underline">(Ver listado)</span>
+            </span>
             <span className="text-sm sm:text-base font-black font-mono text-amber-400">
               {formatQuetzales(metrics.enEvaluacionMonto)}
             </span>
@@ -1461,20 +1617,26 @@ export const DashboardView: React.FC = () => {
                 <PieChartIcon className="w-3.5 h-3.5 text-amber-600" />
                 Distribución de Plazos (En Evaluación)
               </span>
-              <span className="text-[10px] text-slate-500 font-semibold">Gráfica Circular</span>
+              <span className="text-[10px] text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300">
+                Clic en gráfica o plazo para filtrar
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
               {/* Gráfica de Círculo Donut interactiva */}
-              <div className="sm:col-span-5 h-28 relative flex items-center justify-center">
+              <div
+                className="sm:col-span-5 h-28 relative flex items-center justify-center cursor-pointer group"
+                onClick={() => handleOpenEvaluacionModal('todos')}
+                title="Haga clic en la gráfica para ver las adquisiciones en evaluación"
+              >
                 {metrics.enEvaluacionCount > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={[
-                          { name: '≤ 10 días (Verde)', value: metrics.semaforoEvaluacion.verde.length, color: '#16a34a' },
-                          { name: '11 a 30 días (Naranja)', value: metrics.semaforoEvaluacion.naranja.length, color: '#f59e0b' },
-                          { name: '> 30 días (Rojo)', value: metrics.semaforoEvaluacion.rojo.length, color: '#e11d48' },
+                          { name: '≤ 10 días (Verde)', value: metrics.semaforoEvaluacion.verde.length, color: '#16a34a', key: 'verde' },
+                          { name: '11 a 30 días (Naranja)', value: metrics.semaforoEvaluacion.naranja.length, color: '#f59e0b', key: 'naranja' },
+                          { name: '> 30 días (Rojo)', value: metrics.semaforoEvaluacion.rojo.length, color: '#e11d48', key: 'rojo' },
                         ].filter(item => item.value > 0)}
                         cx="50%"
                         cy="50%"
@@ -1482,17 +1644,31 @@ export const DashboardView: React.FC = () => {
                         outerRadius={42}
                         paddingAngle={3}
                         dataKey="value"
+                        onClick={(entry: any) => {
+                          const k = entry?.key || (entry?.name?.includes('10') ? 'verde' : entry?.name?.includes('30') && !entry?.name?.includes('>') ? 'naranja' : 'rojo');
+                          handleOpenEvaluacionModal(k);
+                        }}
                       >
                         {[
-                          { name: '≤ 10 días (Verde)', value: metrics.semaforoEvaluacion.verde.length, color: '#16a34a' },
-                          { name: '11 a 30 días (Naranja)', value: metrics.semaforoEvaluacion.naranja.length, color: '#f59e0b' },
-                          { name: '> 30 días (Rojo)', value: metrics.semaforoEvaluacion.rojo.length, color: '#e11d48' },
+                          { name: '≤ 10 días (Verde)', value: metrics.semaforoEvaluacion.verde.length, color: '#16a34a', key: 'verde' },
+                          { name: '11 a 30 días (Naranja)', value: metrics.semaforoEvaluacion.naranja.length, color: '#f59e0b', key: 'naranja' },
+                          { name: '> 30 días (Rojo)', value: metrics.semaforoEvaluacion.rojo.length, color: '#e11d48', key: 'rojo' },
                         ].filter(item => item.value > 0).map((entry, index) => (
-                          <Cell key={`eval-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={1.5} />
+                          <Cell
+                            key={`eval-cell-${index}`}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEvaluacionModal(entry.key);
+                            }}
+                          />
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(val: any, name: any) => [`${val} NOGs`, name]}
+                        formatter={(val: any, name: any) => [`${val} NOGs (clic para ver)`, name]}
                         contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       />
                     </PieChart>
@@ -1504,7 +1680,7 @@ export const DashboardView: React.FC = () => {
                 )}
                 {metrics.enEvaluacionCount > 0 && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-xs font-black font-mono text-slate-800">
+                    <span className="text-xs font-black font-mono text-slate-800 group-hover:text-amber-700 transition-colors">
                       {metrics.enEvaluacionCount}
                     </span>
                     <span className="text-[8px] font-bold uppercase text-slate-500">
@@ -1514,41 +1690,59 @@ export const DashboardView: React.FC = () => {
                 )}
               </div>
 
-              {/* Leyenda y Semáforo Detallado al Lado */}
+              {/* Leyenda y Semáforo Detallado al Lado - Interactivo */}
               <div className="sm:col-span-7 grid grid-cols-3 sm:grid-cols-1 gap-1.5 text-[11px]">
                 {/* Verde: <= 10 días */}
-                <div className="p-1.5 px-2 rounded-lg bg-emerald-50 border border-emerald-300/80 flex items-center justify-between shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEvaluacionModal('verde')}
+                  className="p-1.5 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-300/80 hover:border-emerald-400 flex items-center justify-between shadow-2xs cursor-pointer transition-all text-left group"
+                  title="Haga clic para ver los NOGs en evaluación con plazo normal (≤ 10 días)"
+                >
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0 group-hover:scale-125 transition-transform"></span>
                     <span className="text-[10px] font-bold text-emerald-900 truncate">≤ 10 d (Normal)</span>
                   </div>
-                  <span className="text-xs font-black text-emerald-950 font-mono ml-1">
+                  <span className="text-xs font-black text-emerald-950 font-mono ml-1 bg-emerald-100 px-1 rounded">
                     {metrics.semaforoEvaluacion.verde.length}
                   </span>
-                </div>
+                </button>
 
                 {/* Naranja: > 10 e <= 30 días */}
-                <div className="p-1.5 px-2 rounded-lg bg-amber-50 border border-amber-300/80 flex items-center justify-between shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEvaluacionModal('naranja')}
+                  className="p-1.5 px-2 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300/80 hover:border-amber-400 flex items-center justify-between shadow-2xs cursor-pointer transition-all text-left group"
+                  title="Haga clic para ver los NOGs en evaluación con plazo preventivo (11 a 30 días)"
+                >
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 group-hover:scale-125 transition-transform"></span>
                     <span className="text-[10px] font-bold text-amber-900 truncate">&gt; 10 a 30 d</span>
                   </div>
-                  <span className="text-xs font-black text-amber-950 font-mono ml-1">
+                  <span className="text-xs font-black text-amber-950 font-mono ml-1 bg-amber-100 px-1 rounded">
                     {metrics.semaforoEvaluacion.naranja.length}
                   </span>
-                </div>
+                </button>
 
                 {/* Rojo: > 30 días */}
-                <div className="p-1.5 px-2 rounded-lg bg-rose-50 border border-rose-300/80 flex items-center justify-between shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEvaluacionModal('rojo')}
+                  className="p-1.5 px-2 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-300/80 hover:border-rose-400 flex items-center justify-between shadow-2xs cursor-pointer transition-all text-left group"
+                  title="Haga clic para ver los NOGs en evaluación con plazo crítico (> 30 días)"
+                >
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600 shrink-0"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600 shrink-0 group-hover:scale-125 transition-transform"></span>
                     <span className="text-[10px] font-bold text-rose-900 truncate">&gt; 30 d (Crítico)</span>
                   </div>
-                  <span className="text-xs font-black text-rose-950 font-mono ml-1">
+                  <span className="text-xs font-black text-rose-950 font-mono ml-1 bg-rose-100 px-1 rounded">
                     {metrics.semaforoEvaluacion.rojo.length}
                   </span>
-                </div>
+                </button>
               </div>
+            </div>
+            <div className="mt-2 text-center text-[10px] text-amber-800 font-semibold bg-amber-50/60 py-1 px-2 rounded-md border border-amber-200/60 flex items-center justify-center gap-1">
+              <span>👆 Haz clic en la gráfica o en cualquier plazo para ver las adquisiciones en evaluación</span>
             </div>
           </div>
         </div>
@@ -3406,6 +3600,420 @@ export const DashboardView: React.FC = () => {
         </div>
 
       </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL INTERACTIVO: DETALLE DE NOGs ADJUDICADOS Y EN EVALUACIÓN           */}
+      {/* ========================================================================= */}
+      {nogModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden my-6 max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            {/* Cabecera del Modal */}
+            <div
+              className={`p-5 text-white flex items-center justify-between shrink-0 ${
+                nogModalType === 'adjudicados'
+                  ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 border-b border-emerald-800/50'
+                  : 'bg-gradient-to-r from-amber-950 via-amber-900 to-slate-900 border-b border-amber-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2.5 rounded-xl border ${
+                    nogModalType === 'adjudicados'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-400/30'
+                  }`}
+                >
+                  {nogModalType === 'adjudicados' ? (
+                    <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                  ) : (
+                    <Clock className="w-6 h-6 text-amber-400" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-black uppercase px-2 py-0.5 rounded tracking-wider ${
+                        nogModalType === 'adjudicados'
+                          ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
+                          : 'bg-amber-500/30 text-amber-200 border border-amber-400/40'
+                      }`}
+                    >
+                      {nogModalType === 'adjudicados' ? 'Contrataciones Adjudicadas' : 'Procesos en Evaluación'}
+                    </span>
+                    <span className="text-xs text-slate-300 font-mono">
+                      {modalPurchases.length} {modalPurchases.length === 1 ? 'evento' : 'eventos'}
+                    </span>
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-black tracking-tight mt-0.5">
+                    {nogModalType === 'adjudicados'
+                      ? 'NOGs Adjudicados del Sistema'
+                      : 'NOGs en Evaluación Técnica'}
+                  </h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNogModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+                title="Cerrar ventana"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Franja de Estadísticas del Modal */}
+            <div className="bg-slate-50 border-b border-slate-200 p-4 sm:px-6 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                  Total en Vista
+                </span>
+                <span className="text-lg sm:text-xl font-black font-mono text-slate-900">
+                  {modalPurchases.length} <span className="text-xs font-normal text-slate-500">NOGs</span>
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                  Monto Acumulado
+                </span>
+                <span className="text-lg sm:text-xl font-black font-mono text-emerald-700">
+                  {formatQuetzales(totalMontoModal)}
+                </span>
+              </div>
+              <div className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                  Filtro Aplicado
+                </span>
+                <span className="text-xs font-bold text-slate-800 truncate block">
+                  {nogModalType === 'adjudicados'
+                    ? (nogModalFilter === 'todos' ? 'Todas las Áreas' : nogModalFilter)
+                    : (nogModalFilter === 'todos'
+                        ? 'Todos los Plazos'
+                        : nogModalFilter === 'verde'
+                        ? '≤ 10 días (Normal)'
+                        : nogModalFilter === 'naranja'
+                        ? '11 a 30 días (Preventivo)'
+                        : '> 30 días (Crítico)')}
+                </span>
+              </div>
+            </div>
+
+            {/* Barra de Filtros por Categoría/Plazo y Búsqueda */}
+            <div className="p-4 sm:px-6 border-b border-slate-200 space-y-3">
+              {/* Botones de Filtro Rápido (Pills) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                <span className="text-[11px] font-bold text-slate-500 shrink-0 mr-1">Filtrar por:</span>
+                {nogModalType === 'adjudicados' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setNogModalFilter('todos'); setNogModalPage(1); }}
+                      className={`px-3 py-1 rounded-lg font-bold text-xs shrink-0 transition-all cursor-pointer ${
+                        nogModalFilter === 'todos'
+                          ? 'bg-emerald-700 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Todas ({metrics.adjudicadosCount})
+                    </button>
+                    {metrics.adjudicadosPorArea.map((item, idx) => (
+                      <button
+                        key={`modal-pill-${idx}`}
+                        type="button"
+                        onClick={() => { setNogModalFilter(item.area); setNogModalPage(1); }}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                          nogModalFilter === item.area
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span>{item.area}</span>
+                        <span className="text-[10px] opacity-80 font-mono">({item.count})</span>
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setNogModalFilter('todos'); setNogModalPage(1); }}
+                      className={`px-3 py-1 rounded-lg font-bold text-xs shrink-0 transition-all cursor-pointer ${
+                        nogModalFilter === 'todos'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Todos ({metrics.enEvaluacionCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setNogModalFilter('verde'); setNogModalPage(1); }}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                        nogModalFilter === 'verde'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span>≤ 10 días (Normal)</span>
+                      <span className="text-[10px] font-mono">({metrics.semaforoEvaluacion.verde.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setNogModalFilter('naranja'); setNogModalPage(1); }}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                        nogModalFilter === 'naranja'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-amber-500" />
+                      <span>11 a 30 días</span>
+                      <span className="text-[10px] font-mono">({metrics.semaforoEvaluacion.naranja.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setNogModalFilter('rojo'); setNogModalPage(1); }}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                        nogModalFilter === 'rojo'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                      <span>&gt; 30 días (Crítico)</span>
+                      <span className="text-[10px] font-mono">({metrics.semaforoEvaluacion.rojo.length})</span>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Búsqueda y Acción de Exportar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={nogModalSearch}
+                    onChange={(e) => { setNogModalSearch(e.target.value); setNogModalPage(1); }}
+                    placeholder="Buscar por NOG, F56-e, F56, descripción, unidad o proveedor..."
+                    className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {nogModalSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setNogModalSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportModalCSV}
+                  disabled={modalPurchases.length === 0}
+                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors shrink-0"
+                  title="Exportar listado a archivo Excel CSV"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Exportar CSV</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tabla de NOGs con Scroll */}
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-600 text-[11px] font-bold uppercase sticky top-0 border-b border-slate-200 tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3">NOG</th>
+                    <th className="px-4 py-3">Expediente</th>
+                    <th className="px-4 py-3 min-w-[200px]">Descripción / Objeto</th>
+                    <th className="px-4 py-3">Área Solicitante</th>
+                    <th className="px-4 py-3 text-right">Monto (GTQ)</th>
+                    <th className="px-4 py-3 text-center">
+                      {nogModalType === 'adjudicados' ? 'Proveedor Adjudicado' : 'Días de Trámite'}
+                    </th>
+                    <th className="px-4 py-3 text-center">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {displayedModalPurchases.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Search className="w-8 h-8 text-slate-300" />
+                          <p className="font-semibold text-slate-600 text-sm">
+                            No se encontraron adquisiciones que coincidan con los criterios.
+                          </p>
+                          {(nogModalSearch || nogModalFilter !== 'todos') && (
+                            <button
+                              type="button"
+                              onClick={() => { setNogModalSearch(''); setNogModalFilter('todos'); }}
+                              className="mt-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
+                            >
+                              Restablecer filtros
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedModalPurchases.map((p) => {
+                      const delayDays = getEventDelayDays(p);
+                      const isAdjudicado = p.estatusEvento === 'Adjudicación';
+
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                          {/* NOG */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="font-mono font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200/80 inline-flex items-center gap-1">
+                              {p.nog || 'S/NOG'}
+                            </span>
+                          </td>
+
+                          {/* Expediente F56-e / F56 */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="font-mono text-[11px] text-slate-700">
+                              <span className="font-bold text-slate-900">{p.f56e || p.f56 || 'S/F56'}</span>
+                              {p.f56 && p.f56e && (
+                                <span className="block text-[10px] text-slate-400">Ref: {p.f56}</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Descripción */}
+                          <td className="px-4 py-3 max-w-xs">
+                            <p className="line-clamp-2 text-slate-800 font-medium leading-snug" title={p.descripcion}>
+                              {p.descripcion}
+                            </p>
+                            {p.categoriaTecnologica && (
+                              <span className="text-[10px] text-slate-400 block mt-0.5">
+                                Cat: {p.categoriaTecnologica}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Área Solicitante */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-[11px] font-semibold text-slate-700 block truncate max-w-[170px]" title={p.areaSolicitante || p.dependenciaSolicitante || ''}>
+                              {p.areaSolicitante || p.dependenciaSolicitante || 'Otras Dependencias'}
+                            </span>
+                          </td>
+
+                          {/* Monto */}
+                          <td className="px-4 py-3 whitespace-nowrap text-right font-mono font-bold text-slate-900">
+                            {formatQuetzales(p.monto || 0)}
+                          </td>
+
+                          {/* Estatus / Proveedor o Semáforo de Días */}
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            {isAdjudicado ? (
+                              <div className="flex flex-col items-center">
+                                <span className="text-[11px] font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 truncate max-w-[150px]" title={p.proveedorAdjudicado || 'Adjudicado'}>
+                                  {p.proveedorAdjudicado || 'Proveedor Asignado'}
+                                </span>
+                                {p.fechaAdjudicacion && (
+                                  <span className="text-[9px] text-slate-400 mt-0.5">
+                                    {formatDate(p.fechaAdjudicacion)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="inline-flex flex-col items-center">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black border font-mono ${
+                                    delayDays <= 10
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                      : delayDays <= 30
+                                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                      : 'bg-rose-50 text-rose-800 border-rose-300'
+                                  }`}
+                                >
+                                  {delayDays} días transcurridos
+                                </span>
+                                <span className="text-[9px] text-slate-400 mt-0.5">
+                                  {delayDays <= 10 ? 'Normal' : delayDays <= 30 ? 'Preventivo' : 'Crítico'}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Acciones */}
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedPurchase(p);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Ver ficha completa de este evento"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Ver Ficha</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginación y Pie del Modal */}
+            <div className="p-3.5 sm:px-6 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 shrink-0">
+              <div>
+                Mostrando{' '}
+                <strong>
+                  {modalPurchases.length === 0 ? 0 : (currentModalPage - 1) * NOG_MODAL_ITEMS_PER_PAGE + 1}
+                </strong>{' '}
+                a{' '}
+                <strong>
+                  {Math.min(currentModalPage * NOG_MODAL_ITEMS_PER_PAGE, modalPurchases.length)}
+                </strong>{' '}
+                de <strong>{modalPurchases.length}</strong> eventos registrados
+              </div>
+
+              {totalModalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setNogModalPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentModalPage === 1}
+                    className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                    title="Página anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-slate-600" />
+                  </button>
+                  <span className="px-2 font-mono font-bold text-slate-700">
+                    {currentModalPage} / {totalModalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setNogModalPage(prev => Math.min(prev + 1, totalModalPages))}
+                    disabled={currentModalPage === totalModalPages}
+                    className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                    title="Página siguiente"
+                  >
+                    <ChevronRight className="w-4 h-4 text-slate-600" />
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setNogModalOpen(false)}
+                className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 font-bold text-slate-800 cursor-pointer transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

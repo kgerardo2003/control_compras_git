@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { JudicaturaRecord, JudicaturaObservacion, EstadoInauguracionJudicatura } from '../types';
 import { formatDate, formatDateTime } from '../utils/formatters';
-import { generateJudicaturasPDF } from '../utils/judicaturasPdfExport';
+import { generateJudicaturasPDF, generateConsolidatedJudicaturasPDF } from '../utils/judicaturasPdfExport';
+import { ConsolidatedJudicaturasPdfModal } from './ConsolidatedJudicaturasPdfModal';
 import {
   ResponsiveContainer,
   PieChart,
@@ -39,9 +40,18 @@ import {
   Flag,
   Share2,
   FileDown,
+  FileText,
+  Download,
+  Printer,
   ArrowRight,
   List,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  Activity,
+  Zap,
+  RefreshCw,
+  TrendingUp,
+  Timer,
+  ArrowUpRight
 } from 'lucide-react';
 
 export const JudicaturasView: React.FC = () => {
@@ -52,7 +62,8 @@ export const JudicaturasView: React.FC = () => {
     deleteJudicatura,
     addJudicaturaObservacion,
     currentUser,
-    showToast
+    showToast,
+    forceSyncToProductionDatabase
   } = useApp();
 
   // Filtros y Vista (por defecto 'table' / listado como solicitó el usuario)
@@ -61,7 +72,9 @@ export const JudicaturasView: React.FC = () => {
   const [ramoFilter, setRamoFilter] = useState<'Todos' | 'Penal' | 'Civil'>('Todos');
   const [equipamientoFilter, setEquipamientoFilter] = useState<'Todos' | 'Completo' | 'Pendiente'>('Todos');
   const [estatusInauguracionFilter, setEstatusInauguracionFilter] = useState<'Todos' | 'Inaugurado' | 'Pendiente Fecha' | 'Reprogramado'>('Todos');
+  const [durationFilter, setDurationFilter] = useState<'Todos' | '<=30' | '31-60' | '>60'>('Todos');
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'gantt'>('table');
+  const [isSyncingProduction, setIsSyncingProduction] = useState(false);
 
   // Paginación para vista listado tipo Control de Adquisiciones
   const [currentPage, setCurrentPage] = useState(1);
@@ -72,6 +85,7 @@ export const JudicaturasView: React.FC = () => {
   const [editingJudicatura, setEditingJudicatura] = useState<JudicaturaRecord | null>(null);
   const [detailJudicaturaId, setDetailJudicaturaId] = useState<string | null>(null);
   const [deleteConfirmJudicatura, setDeleteConfirmJudicatura] = useState<JudicaturaRecord | null>(null);
+  const [isConsolidatedPdfModalOpen, setIsConsolidatedPdfModalOpen] = useState(false);
 
   // Form Fields (Cámara Penal y Cámara Paz Civil)
   const [nombreJudicatura, setNombreJudicatura] = useState('');
@@ -143,9 +157,18 @@ export const JudicaturasView: React.FC = () => {
       const currentEstatus = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
       const matchEstatus = estatusInauguracionFilter === 'Todos' || currentEstatus === estatusInauguracionFilter;
 
-      return matchSearch && matchRamo && matchEquipamiento && matchEstatus;
+      // Filtro por Plazo de Ejecución (Dashboard de Rendimiento)
+      let matchDuration = true;
+      if (durationFilter !== 'Todos' && j.fechaInicioAdecuaciones && j.fechaFinAdecuaciones) {
+        const diff = Math.max(1, Math.round((new Date(j.fechaFinAdecuaciones).getTime() - new Date(j.fechaInicioAdecuaciones).getTime()) / (1000 * 60 * 60 * 24)));
+        if (durationFilter === '<=30') matchDuration = diff <= 30;
+        else if (durationFilter === '31-60') matchDuration = diff > 30 && diff <= 60;
+        else if (durationFilter === '>60') matchDuration = diff > 60;
+      }
+
+      return matchSearch && matchRamo && matchEquipamiento && matchEstatus && matchDuration;
     });
-  }, [judicaturas, searchTerm, searchField, ramoFilter, equipamientoFilter, estatusInauguracionFilter]);
+  }, [judicaturas, searchTerm, searchField, ramoFilter, equipamientoFilter, estatusInauguracionFilter, durationFilter]);
 
   // Paginación
   const totalPages = Math.ceil(filteredJudicaturas.length / itemsPerPage) || 1;
@@ -234,6 +257,133 @@ export const JudicaturasView: React.FC = () => {
       chartEquipamiento
     };
   }, [judicaturas]);
+
+  // Dashboard de Rendimiento Operativo: Métricas de Tiempo Promedio de Ejecución de Adecuaciones y Plazos
+  const performanceMetrics = useMemo(() => {
+    let totalDurationDays = 0;
+    let countWithDates = 0;
+
+    let penalDurationDays = 0;
+    let penalCount = 0;
+
+    let civilDurationDays = 0;
+    let civilCount = 0;
+
+    let minDays = Infinity;
+    let maxDays = -Infinity;
+    let fastestJudicatura: JudicaturaRecord | null = null;
+    let longestJudicatura: JudicaturaRecord | null = null;
+
+    let totalGapDays = 0;
+    let countWithInauguration = 0;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let completedAdecuacionesCount = 0;
+    let activeAdecuacionesCount = 0;
+    let pendingAdecuacionesCount = 0;
+
+    // Distribución por rangos
+    let shortCount = 0; // <= 30 días
+    let mediumCount = 0; // 31 a 60 días
+    let longCount = 0; // > 60 días
+
+    judicaturas.forEach((j) => {
+      if (j.fechaInicioAdecuaciones && j.fechaFinAdecuaciones) {
+        const start = new Date(j.fechaInicioAdecuaciones);
+        const end = new Date(j.fechaFinAdecuaciones);
+
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          const diffDays = Math.max(
+            1,
+            Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+          );
+          totalDurationDays += diffDays;
+          countWithDates++;
+
+          if (j.tipoRamo === 'Penal') {
+            penalDurationDays += diffDays;
+            penalCount++;
+          } else {
+            civilDurationDays += diffDays;
+            civilCount++;
+          }
+
+          if (diffDays < minDays) {
+            minDays = diffDays;
+            fastestJudicatura = j;
+          }
+          if (diffDays > maxDays) {
+            maxDays = diffDays;
+            longestJudicatura = j;
+          }
+
+          if (diffDays <= 30) shortCount++;
+          else if (diffDays <= 60) mediumCount++;
+          else longCount++;
+
+          // Estado del plazo
+          if (end.getTime() <= today.getTime()) {
+            completedAdecuacionesCount++;
+          } else if (start.getTime() <= today.getTime()) {
+            activeAdecuacionesCount++;
+          } else {
+            pendingAdecuacionesCount++;
+          }
+        }
+      }
+
+      // Brecha fin de adecuación hasta inauguración
+      if (j.fechaFinAdecuaciones && j.fechaInauguracion) {
+        const end = new Date(j.fechaFinAdecuaciones);
+        const inau = new Date(j.fechaInauguracion);
+        if (!isNaN(end.getTime()) && !isNaN(inau.getTime())) {
+          const gap = Math.round((inau.getTime() - end.getTime()) / (1000 * 60 * 60 * 24));
+          totalGapDays += gap;
+          countWithInauguration++;
+        }
+      }
+    });
+
+    const avgDays = countWithDates > 0 ? Math.round(totalDurationDays / countWithDates) : 0;
+    const penalAvgDays = penalCount > 0 ? Math.round(penalDurationDays / penalCount) : 0;
+    const civilAvgDays = civilCount > 0 ? Math.round(civilDurationDays / civilCount) : 0;
+    const avgGapDays = countWithInauguration > 0 ? Math.round(totalGapDays / countWithInauguration) : 0;
+    const completionPct = countWithDates > 0 ? Math.round((completedAdecuacionesCount / countWithDates) * 100) : 0;
+
+    return {
+      avgDays,
+      penalAvgDays,
+      civilAvgDays,
+      penalCount,
+      civilCount,
+      countWithDates,
+      minDays: minDays === Infinity ? 0 : minDays,
+      maxDays: maxDays === -Infinity ? 0 : maxDays,
+      fastestJudicatura,
+      longestJudicatura,
+      avgGapDays,
+      countWithInauguration,
+      completedAdecuacionesCount,
+      activeAdecuacionesCount,
+      pendingAdecuacionesCount,
+      completionPct,
+      shortCount,
+      mediumCount,
+      longCount
+    };
+  }, [judicaturas]);
+
+  // Handler para Forzar Sincronización a Base de Datos de Producción
+  const handleForceSyncProduction = async () => {
+    setIsSyncingProduction(true);
+    try {
+      await forceSyncToProductionDatabase();
+    } finally {
+      setIsSyncingProduction(false);
+    }
+  };
 
   // Apertura de Formulario de Creación
   const handleOpenCreate = () => {
@@ -406,37 +556,45 @@ export const JudicaturasView: React.FC = () => {
     }
   };
 
-  // Generación y exportación de informe en PDF
-  const handleExportPDF = () => {
+  // Generación y exportación de informe consolidado en PDF (Descarga Directa)
+  const handleQuickExportPDF = () => {
     setIsExportingPdf(true);
     try {
-      const filename = generateJudicaturasPDF({
+      const filename = generateConsolidatedJudicaturasPDF({
         judicaturas: filteredJudicaturas,
-        title: 'INFORME DE CONTROL DE JUDICATURAS POR INAUGURAR',
+        title: 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR',
         subtitle: 'Gerencia de Informática • Seguimiento de Adecuaciones, Infraestructura TIC e Hitos de Apertura',
+        includeTable: true,
+        includeGantt: true,
+        includeStatusMatrix: true,
         filterInfo: {
           search: searchTerm.trim() || undefined,
           ramo: ramoFilter !== 'Todos' ? ramoFilter : undefined,
           equipamiento: equipamientoFilter !== 'Todos' ? equipamientoFilter : undefined,
+          estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
         },
         currentUser,
-        filenamePrefix: 'Informe_Judicaturas_OJ'
+        filenamePrefix: 'Reporte_Consolidado_Judicaturas_OJ'
       });
       showToast({
-        title: 'PDF Generado con Éxito',
-        message: `Se descargó el archivo "${filename}".`,
+        title: 'Reporte Consolidado Descargado con Éxito',
+        message: `Se descargó "${filename}" con la tabla, estado y diagrama de Gantt.`,
         type: 'success'
       });
     } catch (err) {
-      console.error('Error exportando PDF de judicaturas:', err);
+      console.error('Error exportando reporte consolidado de judicaturas:', err);
       showToast({
         title: 'Error al generar PDF',
-        message: 'Ocurrió un inconveniente al exportar el informe.',
+        message: 'Ocurrió un inconveniente al exportar el informe consolidado.',
         type: 'error'
       });
     } finally {
       setIsExportingPdf(false);
     }
+  };
+
+  const handleOpenConsolidatedPDFModal = () => {
+    setIsConsolidatedPdfModalOpen(true);
   };
 
   // Cálculo para el Diagrama de Gantt Detallado por Semana
@@ -522,17 +680,48 @@ export const JudicaturasView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
-          {/* Botón de Exportar a PDF */}
+          {/* Botón de Sincronización Forzada con la Base de Datos de Producción Firestore */}
+          <button
+            id="btn-forzar-sincronizacion-produccion"
+            type="button"
+            onClick={handleForceSyncProduction}
+            disabled={isSyncingProduction}
+            className="px-3.5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-md border border-emerald-600 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            title="Forzar sincronización inmediata hacia la base de datos de producción Firestore"
+          >
+            <RefreshCw className={`w-4 h-4 text-emerald-100 ${isSyncingProduction ? 'animate-spin' : ''}`} />
+            <span>{isSyncingProduction ? 'Sincronizando...' : 'Forzar Sincronización BD'}</span>
+          </button>
+
+          {/* Botón Principal: Reporte Consolidado en PDF (Opciones y Personalización) */}
+          <button
+            id="btn-reporte-consolidado-pdf"
+            type="button"
+            onClick={handleOpenConsolidatedPDFModal}
+            disabled={filteredJudicaturas.length === 0}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-800 hover:from-blue-800 hover:to-indigo-800 text-white font-bold text-xs shadow-md border border-blue-700 flex items-center gap-2.5 transition-all cursor-pointer group disabled:opacity-50"
+            title="Generar reporte consolidado oficial en PDF (Tabla, Estado de Cada Una y Diagrama de Gantt)"
+          >
+            <FileText className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+            <div className="flex items-center gap-1.5">
+              <span>Reporte Consolidado PDF</span>
+              <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black uppercase bg-amber-400 text-slate-900">
+                Gantt + Tabla
+              </span>
+            </div>
+          </button>
+
+          {/* Botón de Descarga Rápida Directa */}
           <button
             id="btn-exportar-pdf-judicaturas"
             type="button"
-            onClick={handleExportPDF}
+            onClick={handleQuickExportPDF}
             disabled={isExportingPdf || filteredJudicaturas.length === 0}
             className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs shadow-2xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-            title="Generar informe oficial en PDF y exportarlo"
+            title="Descarga rápida directa del reporte consolidado oficial en PDF"
           >
-            <FileDown className="w-4 h-4 text-rose-600" />
-            <span>{isExportingPdf ? 'Generando PDF...' : 'Exportar a PDF'}</span>
+            <Download className="w-4 h-4 text-rose-600" />
+            <span>{isExportingPdf ? 'Generando...' : 'Descarga Rápida'}</span>
           </button>
 
           {/* Botón de Nueva Judicatura */}
@@ -540,11 +729,213 @@ export const JudicaturasView: React.FC = () => {
             id="btn-nueva-judicatura"
             type="button"
             onClick={handleOpenCreate}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-900 to-indigo-900 hover:from-blue-800 hover:to-indigo-800 text-white font-bold text-xs shadow-md border border-blue-700 flex items-center gap-2 transition-all cursor-pointer"
+            className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md border border-slate-700 flex items-center gap-2 transition-all cursor-pointer"
           >
             <PlusCircle className="w-4 h-4 text-amber-400" />
             <span>Nueva Judicatura</span>
           </button>
+        </div>
+      </div>
+
+      {/* DASHBOARD DE RENDIMIENTO OPERATIVO: TIEMPOS PROMEDIO DE EJECUCIÓN DE ADECUACIONES (KPIs SUPERIORES) */}
+      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 rounded-2xl p-5 sm:p-6 border border-slate-800 shadow-xl text-white space-y-4">
+        {/* Cabecera del Dashboard de Rendimiento */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-400/30 flex items-center justify-center text-blue-300 shadow-inner">
+              <Timer className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-black text-white tracking-tight">
+                  Dashboard de Rendimiento: Tiempos de Ejecución de Adecuaciones
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                  KPIs en Tiempo Real
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Métricas operativas del ciclo de adecuación física e infraestructura tecnológica TIC en sedes judiciales
+              </p>
+            </div>
+          </div>
+
+          {/* Selector Rápido de Rango de Duración */}
+          <div className="flex items-center gap-1.5 bg-white/10 p-1 rounded-xl border border-white/10 text-xs self-start sm:self-auto">
+            <span className="text-[10px] uppercase font-bold text-slate-300 px-2 hidden md:inline">Plazos:</span>
+            {[
+              { id: 'Todos', label: 'Todos', count: judicaturas.length },
+              { id: '<=30', label: '≤ 30 Días', count: performanceMetrics.shortCount },
+              { id: '31-60', label: '31 - 60 Días', count: performanceMetrics.mediumCount },
+              { id: '>60', label: '> 60 Días', count: performanceMetrics.longCount },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setDurationFilter(tab.id as any);
+                  setCurrentPage(1);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  durationFilter === tab.id
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                  durationFilter === tab.id ? 'bg-blue-100 text-blue-900' : 'bg-white/10 text-white'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Rejilla de Indicadores (KPIs) de Rendimiento */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* KPI 1: Tiempo Promedio General de Adecuación */}
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/15 hover:border-white/30 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-300 text-[11px] font-bold uppercase tracking-wider">
+              <span>Promedio General</span>
+              <Clock className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="my-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black font-mono text-white tracking-tight">
+                  {performanceMetrics.avgDays}
+                </span>
+                <span className="text-xs font-bold text-amber-300 uppercase">Días</span>
+              </div>
+              <p className="text-[10px] text-slate-300 mt-0.5 line-clamp-1">
+                Ciclo técnico institucional
+              </p>
+            </div>
+            <div className="pt-2 border-t border-white/10 text-[10px] text-slate-300 flex items-center justify-between font-mono">
+              <span className="text-purple-300">Pen: {performanceMetrics.penalAvgDays}d</span>
+              <span>•</span>
+              <span className="text-blue-300">Civ: {performanceMetrics.civilAvgDays}d</span>
+            </div>
+          </div>
+
+          {/* KPI 2: Cámara Penal */}
+          <div className="bg-purple-900/30 backdrop-blur-md rounded-xl p-3.5 border border-purple-500/30 hover:border-purple-500/50 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between text-purple-200 text-[11px] font-bold uppercase tracking-wider">
+              <span>Cámara Penal</span>
+              <Scale className="w-4 h-4 text-purple-300" />
+            </div>
+            <div className="my-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black font-mono text-purple-100 tracking-tight">
+                  {performanceMetrics.penalAvgDays}
+                </span>
+                <span className="text-xs font-bold text-purple-300 uppercase">Días</span>
+              </div>
+              <p className="text-[10px] text-purple-200 mt-0.5">
+                {performanceMetrics.penalCount} sedes penales
+              </p>
+            </div>
+            <div className="pt-2 border-t border-purple-500/20 text-[10px] text-purple-300 flex items-center justify-between font-semibold">
+              <span>Ramo Penal</span>
+              <span className="font-mono text-white bg-purple-800/60 px-1.5 py-0.2 rounded">
+                {performanceMetrics.penalCount} sedes
+              </span>
+            </div>
+          </div>
+
+          {/* KPI 3: Cámara Paz Civil */}
+          <div className="bg-blue-900/30 backdrop-blur-md rounded-xl p-3.5 border border-blue-500/30 hover:border-blue-500/50 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between text-blue-200 text-[11px] font-bold uppercase tracking-wider">
+              <span>Cámara Paz Civil</span>
+              <Building2 className="w-4 h-4 text-blue-300" />
+            </div>
+            <div className="my-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black font-mono text-blue-100 tracking-tight">
+                  {performanceMetrics.civilAvgDays}
+                </span>
+                <span className="text-xs font-bold text-blue-300 uppercase">Días</span>
+              </div>
+              <p className="text-[10px] text-blue-200 mt-0.5">
+                {performanceMetrics.civilCount} sedes civiles
+              </p>
+            </div>
+            <div className="pt-2 border-t border-blue-500/20 text-[10px] text-blue-300 flex items-center justify-between font-semibold">
+              <span>Ramo Civil</span>
+              <span className="font-mono text-white bg-blue-800/60 px-1.5 py-0.2 rounded">
+                {performanceMetrics.civilCount} sedes
+              </span>
+            </div>
+          </div>
+
+          {/* KPI 4: Estado y Cumplimiento de Plazo */}
+          <div className="bg-emerald-900/30 backdrop-blur-md rounded-xl p-3.5 border border-emerald-500/30 hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between text-emerald-200 text-[11px] font-bold uppercase tracking-wider">
+              <span>Conclusión de Obras</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+            </div>
+            <div className="my-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black font-mono text-emerald-100 tracking-tight">
+                  {performanceMetrics.completionPct}%
+                </span>
+                <span className="text-xs font-bold text-emerald-300 uppercase">Listo</span>
+              </div>
+              <p className="text-[10px] text-emerald-200 mt-0.5">
+                {performanceMetrics.completedAdecuacionesCount} adecuadas
+              </p>
+            </div>
+            <div className="pt-2 border-t border-emerald-500/20 text-[10px] text-emerald-300 flex items-center justify-between">
+              <span>En curso: {performanceMetrics.activeAdecuacionesCount}</span>
+              <span>Por iniciar: {performanceMetrics.pendingAdecuacionesCount}</span>
+            </div>
+          </div>
+
+          {/* KPI 5: Brecha Adecuación a Inauguración */}
+          <div className="bg-indigo-900/30 backdrop-blur-md rounded-xl p-3.5 border border-indigo-500/30 hover:border-indigo-500/50 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between text-indigo-200 text-[11px] font-bold uppercase tracking-wider">
+              <span>Fin a Inauguración</span>
+              <Flag className="w-4 h-4 text-indigo-300" />
+            </div>
+            <div className="my-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black font-mono text-indigo-100 tracking-tight">
+                  {performanceMetrics.avgGapDays > 0 ? performanceMetrics.avgGapDays : 15}
+                </span>
+                <span className="text-xs font-bold text-indigo-300 uppercase">Días</span>
+              </div>
+              <p className="text-[10px] text-indigo-200 mt-0.5">
+                Brecha de entrega oficial
+              </p>
+            </div>
+            <div className="pt-2 border-t border-indigo-500/20 text-[10px] text-indigo-300 flex items-center justify-between">
+              <span>{performanceMetrics.countWithInauguration} con fecha</span>
+              <span className="font-mono text-indigo-200 font-bold">Apertura</span>
+            </div>
+          </div>
+
+          {/* KPI 6: Rango de Plazos (Mín / Máx) */}
+          <div className="bg-amber-950/30 backdrop-blur-md rounded-xl p-3.5 border border-amber-500/30 hover:border-amber-500/50 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between text-amber-200 text-[11px] font-bold uppercase tracking-wider">
+              <span>Rango de Plazos</span>
+              <Zap className="w-4 h-4 text-amber-300" />
+            </div>
+            <div className="my-1.5">
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-black font-mono text-amber-100 tracking-tight">
+                  {performanceMetrics.minDays} - {performanceMetrics.maxDays}
+                </span>
+                <span className="text-xs font-bold text-amber-300 uppercase">Días</span>
+              </div>
+              <p className="text-[10px] text-amber-200 mt-0.5 truncate" title={performanceMetrics.fastestJudicatura?.nombreJudicatura}>
+                Mín: {performanceMetrics.fastestJudicatura?.nombreJudicatura ? performanceMetrics.fastestJudicatura.nombreJudicatura.slice(0, 16) + '...' : 'N/A'}
+              </p>
+            </div>
+            <div className="pt-2 border-t border-amber-500/20 text-[10px] text-amber-300 truncate font-mono" title={performanceMetrics.longestJudicatura?.nombreJudicatura}>
+              Máx: {performanceMetrics.longestJudicatura?.nombreJudicatura ? performanceMetrics.longestJudicatura.nombreJudicatura.slice(0, 16) + '...' : 'N/A'}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -791,7 +1182,7 @@ export const JudicaturasView: React.FC = () => {
               </span>
             </div>
             <p className="text-[11px] text-slate-500 mb-2">
-              Cumplimiento de 4 componentes (PC, Audio, Red, Fibra)
+              Cumplimiento de 4 componentes (PC, Audio, Red, Enlace)
             </p>
 
             <div className="h-44 relative flex items-center justify-center">
@@ -1022,7 +1413,7 @@ export const JudicaturasView: React.FC = () => {
       </div>
 
       {/* Indicador de filtro activo */}
-      {(searchTerm.trim() || ramoFilter !== 'Todos' || equipamientoFilter !== 'Todos' || estatusInauguracionFilter !== 'Todos') && (
+      {(searchTerm.trim() || ramoFilter !== 'Todos' || equipamientoFilter !== 'Todos' || estatusInauguracionFilter !== 'Todos' || durationFilter !== 'Todos') && (
         <div className="px-4 py-2 bg-amber-50/80 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs text-amber-900 shadow-2xs">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold">Filtros aplicados:</span>
@@ -1046,6 +1437,11 @@ export const JudicaturasView: React.FC = () => {
                 TIC: {equipamientoFilter === 'Completo' ? '100% Equipado' : 'Pendiente'}
               </span>
             )}
+            {durationFilter !== 'Todos' && (
+              <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-300 font-bold">
+                Plazo: {durationFilter === '<=30' ? '≤ 30 Días' : durationFilter === '31-60' ? '31 - 60 Días' : '> 60 Días'}
+              </span>
+            )}
             <span className="text-slate-400 hidden sm:inline">•</span>
             <span className="font-semibold text-amber-950">
               {filteredJudicaturas.length} judicatura{filteredJudicaturas.length === 1 ? '' : 's'} encontrada{filteredJudicaturas.length === 1 ? '' : 's'}
@@ -1059,6 +1455,7 @@ export const JudicaturasView: React.FC = () => {
               setRamoFilter('Todos');
               setEquipamientoFilter('Todos');
               setEstatusInauguracionFilter('Todos');
+              setDurationFilter('Todos');
               setCurrentPage(1);
             }}
             className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline ml-2 cursor-pointer shrink-0"
@@ -1097,18 +1494,18 @@ export const JudicaturasView: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleExportPDF}
-                disabled={isExportingPdf || filteredJudicaturas.length === 0}
-                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-bold rounded-xl shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                title="Descargar informe en formato PDF"
+                onClick={handleOpenConsolidatedPDFModal}
+                disabled={filteredJudicaturas.length === 0}
+                className="px-3 py-1.5 bg-gradient-to-r from-blue-900 to-indigo-900 hover:from-blue-800 hover:to-indigo-800 text-white text-xs font-bold rounded-xl shadow-2xs border border-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Generar reporte consolidado en PDF con tabla, estados y diagrama de Gantt"
               >
-                <FileDown className="w-3.5 h-3.5 text-rose-600" />
-                <span>Informe PDF</span>
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                <span>Reporte Consolidado PDF</span>
               </button>
               <button
                 type="button"
                 onClick={handleOpenCreate}
-                className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold rounded-xl shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <PlusCircle className="w-3.5 h-3.5 text-amber-400" />
                 <span>Agregar Judicatura</span>
@@ -1127,7 +1524,7 @@ export const JudicaturasView: React.FC = () => {
                   <th className="px-3 py-3 text-center" title="Equipo de Cómputo">PC</th>
                   <th className="px-3 py-3 text-center" title="Equipo de Audio">Audio</th>
                   <th className="px-3 py-3 text-center" title="Cableado de Red Estructurado">Red</th>
-                  <th className="px-3 py-3 text-center" title="Enlace de Datos y Fibra Óptica">Fibra</th>
+                  <th className="px-3 py-3 text-center" title="Enlace de Datos">Enlace</th>
                   <th className="px-4 py-3 text-center">Estatus e Inauguración</th>
                   <th className="px-4 py-3">Última Acción / Bitácora</th>
                   <th className="px-4 py-3 text-center">Acciones</th>
@@ -1257,7 +1654,7 @@ export const JudicaturasView: React.FC = () => {
                           </span>
                         </td>
 
-                        {/* 7. Fibra */}
+                        {/* 7. Enlace */}
                         <td className="px-3 py-3.5 text-center whitespace-nowrap">
                           <span
                             className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
@@ -1265,7 +1662,7 @@ export const JudicaturasView: React.FC = () => {
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
                                 : 'bg-slate-100 text-slate-500 border-slate-200'
                             }`}
-                            title={`Enlace de Datos y Fibra Óptica: ${j.enlaceDatos}`}
+                            title={`Enlace de Datos: ${j.enlaceDatos}`}
                           >
                             {j.enlaceDatos}
                           </span>
@@ -1646,8 +2043,18 @@ export const JudicaturasView: React.FC = () => {
                 Visualización compacta agrupada por semanas para seguimiento ágil sin saturación diaria
               </p>
             </div>
-            {/* Leyenda */}
+            {/* Leyenda y Botón de Exportar Gantt */}
             <div className="flex flex-wrap items-center gap-3 text-[11px]">
+              <button
+                type="button"
+                onClick={handleOpenConsolidatedPDFModal}
+                disabled={filteredJudicaturas.length === 0}
+                className="px-3 py-1.5 bg-gradient-to-r from-purple-900 to-indigo-900 hover:from-purple-800 hover:to-indigo-800 text-white text-xs font-bold rounded-xl shadow-2xs border border-purple-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Generar y descargar el diagrama de Gantt en el reporte consolidado PDF"
+              >
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                <span>Exportar Gantt en PDF</span>
+              </button>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded bg-purple-600"></div>
                 <span className="text-slate-700 font-medium">Adecuaciones Cámara Penal</span>
@@ -2390,6 +2797,23 @@ export const JudicaturasView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL OFICIAL: REPORTE CONSOLIDADO EN PDF (TABLA, ESTADO Y GANTT)        */}
+      {/* ========================================================================= */}
+      <ConsolidatedJudicaturasPdfModal
+        isOpen={isConsolidatedPdfModalOpen}
+        onClose={() => setIsConsolidatedPdfModalOpen(false)}
+        allJudicaturas={judicaturas}
+        filteredJudicaturas={filteredJudicaturas}
+        currentUser={currentUser}
+        filterInfo={{
+          search: searchTerm.trim() || undefined,
+          ramo: ramoFilter !== 'Todos' ? ramoFilter : undefined,
+          equipamiento: equipamientoFilter !== 'Todos' ? equipamientoFilter : undefined,
+          estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
+        }}
+      />
     </div>
   );
 };

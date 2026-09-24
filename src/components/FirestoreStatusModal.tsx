@@ -52,7 +52,9 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({ isOp
     purchases, 
     users, 
     catalogs,
+    judicaturas,
     syncWithCentralServer,
+    forceSyncToProductionDatabase,
     showToast 
   } = useApp();
 
@@ -90,14 +92,8 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({ isOp
   const handleForceSync = async () => {
     setSyncing(true);
     try {
-      await syncWithCentralServer(true);
+      await forceSyncToProductionDatabase();
       await fetchStatus();
-      showToast({
-        type: 'success',
-        title: 'Sincronización Completada',
-        message: 'Todos los registros han sido sincronizados entre esta estación y la base de datos central.',
-        duration: 4000
-      });
     } catch {
       showToast({
         type: 'error',

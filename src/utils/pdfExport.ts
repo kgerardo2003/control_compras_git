@@ -66,14 +66,14 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   const auditRandom = Math.random().toString(36).substring(2, 8).toUpperCase();
   const auditCode = `AUD-OJ-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${auditRandom}`;
 
-  // 1. CABECERA INSTITUCIONAL SUPERIOR (Banda Azul Marino con Acento Dorado)
+  // 1. CABECERA INSTITUCIONAL SUPERIOR (Azul Oficial #0A0A69 sin cinta amarilla)
   const headerHeight = 22;
-  doc.setFillColor(15, 39, 68); // Deep Navy (#0f2744)
+  doc.setFillColor(10, 10, 105); // #0A0A69
   doc.rect(marginX, currentY, pageWidth - (marginX * 2), headerHeight, 'F');
 
-  // Acento dorado inferior en la cabecera
-  doc.setFillColor(184, 134, 11); // Gold (#b8860b)
-  doc.rect(marginX, currentY + headerHeight - 1.5, pageWidth - (marginX * 2), 1.5, 'F');
+  // Borde sutil inferior sin cinta amarilla
+  doc.setFillColor(30, 41, 130);
+  doc.rect(marginX, currentY + headerHeight - 0.5, pageWidth - (marginX * 2), 0.5, 'F');
 
   // Logo Oficial del Organismo Judicial de Guatemala
   try {
@@ -84,7 +84,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
     console.warn('Error al incrustar el logo en el PDF', err);
   }
 
-  // Textos de la Cabecera Institucional
+  // Textos de la Cabecera Institucional (Blancos de alto contraste)
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
@@ -92,20 +92,20 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(251, 191, 36); // Amber/Gold claro
+  doc.setTextColor(255, 255, 255);
   doc.text('GERENCIA DE INFORMÁTICA', marginX + 24, currentY + 12);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(226, 232, 240); // Slate 200
+  doc.setTextColor(224, 231, 255); // Indigo 100
   doc.text('SISTEMA INTEGRAL DE CONTROL DE ADQUISICIONES Y PROCESOS DE TI', marginX + 24, currentY + 16.5);
 
   // Insignia de Control de Auditoría en la esquina superior derecha
-  doc.setFillColor(30, 58, 138); // Blue 900
+  doc.setFillColor(23, 37, 84); // Indigo 950 contrastante
   doc.roundedRect(pageWidth - marginX - 68, currentY + 3.5, 62, 13, 1.5, 1.5, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);
-  doc.setTextColor(251, 191, 36);
+  doc.setTextColor(255, 255, 255);
   doc.text('CONTROL DE AUDITORÍA INTERNA', pageWidth - marginX - 65, currentY + 7.5);
   doc.setFont('courier', 'bold');
   doc.setFontSize(7.5);
@@ -262,7 +262,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
     theme: 'grid',
     margin: { left: marginX, right: marginX, bottom: 16 },
     headStyles: {
-      fillColor: [15, 39, 68], // Deep Navy
+      fillColor: [10, 10, 105], // #0A0A69
       textColor: [255, 255, 255],
       fontSize: 7.5,
       fontStyle: 'bold',

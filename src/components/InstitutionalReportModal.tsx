@@ -23,9 +23,12 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
       <div className="relative w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-4 flex flex-col max-h-[92vh]">
         
         {/* Barra de Acciones Superior (No Imprimible) */}
-        <div className="bg-slate-900 p-3 sm:p-4 text-white flex items-center justify-between print:hidden border-b border-slate-800">
+        <div 
+          className="p-3 sm:p-4 text-white flex items-center justify-between print:hidden border-b border-indigo-950 shadow-xs"
+          style={{ backgroundColor: '#0A0A69' }}
+        >
           <div className="flex items-center gap-2">
-            <Printer className="w-5 h-5 text-amber-500" />
+            <Printer className="w-5 h-5 text-white" />
             <span className="font-bold text-xs sm:text-sm">Boleta Oficial de Control F56-e</span>
           </div>
 
@@ -33,15 +36,15 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-black border border-slate-300 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
-              <Printer className="w-3.5 h-3.5 text-black" />
+              <Printer className="w-3.5 h-3.5 text-slate-900" />
               <span>Imprimir Boleta</span>
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -57,7 +60,7 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
               <OJLogo size="md" variant="full" lightMode={true} />
             </div>
 
-            <div className="text-right border-l-2 border-amber-500 pl-4">
+            <div className="text-right border-l-2 border-indigo-900 pl-4">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Formulario Control</span>
               <span className="text-sm font-mono font-bold text-slate-900 block">{purchase.f56e}</span>
               <span className="text-[10px] font-mono text-slate-500 block">F56: {purchase.f56}</span>

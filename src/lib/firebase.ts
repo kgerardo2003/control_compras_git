@@ -742,6 +742,108 @@ export async function removeJudicaturaFromFirestore(id: string): Promise<{ succe
   }
 }
 
+// Guardar judicaturas por lotes en Firestore
+export async function saveBatchJudicaturasToFirestore(judicaturas: JudicaturaRecord[]): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    if (!judicaturas || judicaturas.length === 0) return { success: true, count: 0 };
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < judicaturas.length; i += CHUNK_SIZE) {
+      const chunk = judicaturas.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const j of chunk) {
+        if (j && j.id) {
+          const docRef = doc(db, JUDICATURAS_COLLECTION, j.id);
+          batch.set(docRef, cleanUndefined(j), { merge: true });
+        }
+      }
+      await batch.commit();
+      console.log(`Lote de ${chunk.length} judicaturas guardado en Firestore (${Math.min(i + CHUNK_SIZE, judicaturas.length)}/${judicaturas.length})`);
+    }
+    return { success: true, count: judicaturas.length };
+  } catch (err: any) {
+    console.error("Error guardando lote de judicaturas en Firestore:", err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Forzar sincronización masiva y reflejo de todos los datos en la base de datos de producción Firestore
+ */
+export async function forcePushAllLocalDataToFirestore(data: {
+  purchases: PurchaseRecord[];
+  judicaturas: JudicaturaRecord[];
+  budgetLines?: BudgetLineItem[];
+  catalogs?: Catalog[];
+  users?: User[];
+  auditLogs?: AuditLogEntry[];
+}): Promise<{ success: boolean; message: string; counts: Record<string, number> }> {
+  try {
+    console.log("[Firestore] Iniciando sincronización forzada hacia producción...");
+    const counts = {
+      purchases: 0,
+      judicaturas: 0,
+      budgetLines: 0,
+      catalogs: 0,
+      users: 0,
+    };
+
+    // 1. Judicaturas
+    if (data.judicaturas && data.judicaturas.length > 0) {
+      const res = await saveBatchJudicaturasToFirestore(data.judicaturas);
+      counts.judicaturas = res.count;
+    }
+
+    // 2. Compras
+    if (data.purchases && data.purchases.length > 0) {
+      const res = await saveBatchPurchasesToFirestore(data.purchases);
+      counts.purchases = res.count;
+    }
+
+    // 3. Renglones Presupuestarios
+    if (data.budgetLines && data.budgetLines.length > 0) {
+      const res = await saveBatchBudgetLinesToFirestore(data.budgetLines);
+      counts.budgetLines = res.count;
+    }
+
+    // 4. Catálogos
+    if (data.catalogs && data.catalogs.length > 0) {
+      const batch = writeBatch(db);
+      for (const c of data.catalogs) {
+        if (c && c.id) {
+          batch.set(doc(db, CATALOGS_COLLECTION, c.id), cleanUndefined(c), { merge: true });
+        }
+      }
+      await batch.commit();
+      counts.catalogs = data.catalogs.length;
+    }
+
+    // 5. Usuarios
+    if (data.users && data.users.length > 0) {
+      const batch = writeBatch(db);
+      for (const u of data.users) {
+        if (u && u.id) {
+          batch.set(doc(db, USERS_COLLECTION, u.id), cleanUndefined(u), { merge: true });
+        }
+      }
+      await batch.commit();
+      counts.users = data.users.length;
+    }
+
+    return {
+      success: true,
+      message: `Sincronización forzada completada: ${counts.judicaturas} judicaturas y ${counts.purchases} compras sincronizadas en la base de datos de producción.`,
+      counts
+    };
+  } catch (err: any) {
+    console.error("Error forzando sincronización local a Firestore:", err);
+    return {
+      success: false,
+      message: err?.message || String(err),
+      counts: { purchases: 0, judicaturas: 0, budgetLines: 0, catalogs: 0, users: 0 }
+    };
+  }
+}
+
 export function onJudicaturasSnapshot(
   onData: (items: JudicaturaRecord[]) => void,
   onError?: (err: Error) => void
@@ -769,6 +871,7 @@ export function onJudicaturasSnapshot(
     return () => {};
   }
 }
+
 
 
 

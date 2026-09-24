@@ -85,7 +85,9 @@ import {
   onBudgetModificationsSnapshot,
   saveJudicaturaToFirestore,
   removeJudicaturaFromFirestore,
-  onJudicaturasSnapshot
+  onJudicaturasSnapshot,
+  saveBatchJudicaturasToFirestore,
+  forcePushAllLocalDataToFirestore
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit, getDocs } from 'firebase/firestore';
 import { saveAttachmentToIndexedDB, getAttachmentFromIndexedDB, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
@@ -118,6 +120,7 @@ interface AppContextType {
   reconnectFirestore: () => Promise<void>;
   refreshPurchases: () => Promise<void>;
   syncWithCentralServer: (force?: boolean) => Promise<void>;
+  forceSyncToProductionDatabase: (opts?: { silent?: boolean }) => Promise<{ success: boolean; error?: string }>;
   selectedPurchase: PurchaseRecord | null;
   setSelectedPurchase: (purchase: PurchaseRecord | null) => void;
   isPurchaseModalOpen: boolean;
@@ -1616,6 +1619,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify(newEntry)
     }).catch(() => {});
   }, [currentUser]);
+
+  // Forzar sincronización integral y subida de todos los datos a la base de datos de producción Firestore
+  const forceSyncToProductionDatabase = useCallback(async (opts?: { silent?: boolean }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (!opts?.silent) {
+        showToast({
+          title: 'Sincronizando Base de Datos',
+          message: 'Subiendo todos los registros (judicaturas, compras, presupuesto) a la base de datos de producción Firestore...',
+          type: 'info',
+          duration: 3500
+        });
+      }
+
+      // 1. Ejecutar push en el servidor central para que replique hacia Firestore
+      let serverCounts: any = null;
+      try {
+        const res = await fetch('/api/db/force-push-firestore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success) {
+            serverCounts = json.counts;
+          }
+        }
+      } catch (srvErr) {
+        console.warn("Aviso servidor en force-push:", srvErr);
+      }
+
+      // 2. Ejecutar push directo desde cliente hacia Firestore
+      const clientRes = await forcePushAllLocalDataToFirestore({
+        purchases,
+        judicaturas,
+        budgetLines,
+        catalogs,
+        users,
+        auditLogs
+      });
+
+      // 3. Reconciliar estado multi-estación
+      await syncWithCentralServer(true);
+
+      const jCount = serverCounts?.judicaturas || clientRes.counts?.judicaturas || judicaturas.length;
+      const pCount = serverCounts?.purchases || clientRes.counts?.purchases || purchases.length;
+
+      showToast({
+        title: 'Sincronización a Producción Exitosa',
+        message: `Se han reflejado ${jCount} judicaturas y ${pCount} adquisiciones en la base de datos de producción Firestore.`,
+        type: 'exito',
+        duration: 5000
+      });
+
+      logAudit(
+        'EDITAR_COMPRA' as any,
+        'Sistema' as any,
+        `Sincronización forzada a base de datos de producción completada (${jCount} judicaturas, ${pCount} compras)`
+      );
+
+      return { success: true };
+    } catch (err: any) {
+      console.error("Error en forceSyncToProductionDatabase:", err);
+      showToast({
+        title: 'Error de Sincronización',
+        message: 'No se pudo completar la sincronización forzada a la base de datos de producción.',
+        type: 'error',
+        duration: 5000
+      });
+      return { success: false, error: err?.message || String(err) };
+    }
+  }, [purchases, judicaturas, budgetLines, catalogs, users, auditLogs, showToast, logAudit, syncWithCentralServer]);
 
   // Helper de Notificación
   const addNotification = useCallback((notif: Omit<AppNotification, 'id' | 'fecha' | 'leida'>) => {
@@ -3875,6 +3949,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reconnectFirestore,
         refreshPurchases,
         syncWithCentralServer,
+        forceSyncToProductionDatabase,
         selectedPurchase,
         setSelectedPurchase,
         isPurchaseModalOpen,

@@ -32,7 +32,7 @@ import {
   deleteJudicatura,
   addJudicaturaObservation
 } from './src/server/dataStore';
-import { syncFirestoreData } from './src/server/firestoreSync';
+import { syncFirestoreData, forcePushToFirestore } from './src/server/firestoreSync';
 
 dotenv.config();
 
@@ -291,13 +291,24 @@ app.get('/api/db/firestore-status', async (req, res) => {
   });
 });
 
-// Reconciliar y forzar sincronización con Firestore bajo demanda
+// Reconciliar y forzar sincronización con Firestore bajo demanda (lectura y combinación)
 app.post('/api/db/sync-firestore', async (req, res) => {
   try {
     const result = await syncFirestoreData();
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error sincronizando con Firestore' });
+  }
+});
+
+// Forzar subida de todos los datos locales/servidor hacia la base de datos de producción de Firestore
+app.post('/api/db/force-push-firestore', async (req, res) => {
+  try {
+    const result = await forcePushToFirestore();
+    notifyChange('firestore_force_pushed', result.counts);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error forzando sincronización hacia Firestore' });
   }
 });
 

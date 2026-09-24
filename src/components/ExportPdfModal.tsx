@@ -92,21 +92,24 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
       <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-6">
         
         {/* Encabezado del Modal */}
-        <div className="bg-slate-900 p-4 text-white flex items-center justify-between border-b border-slate-800">
+        <div 
+          className="p-4 text-white flex items-center justify-between border-b border-indigo-900 shadow-xs"
+          style={{ backgroundColor: '#0A0A69' }}
+        >
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30">
+            <div className="p-2 rounded-lg bg-white/15 text-white border border-white/20">
               <FileText className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">Exportación Oficial a Formato PDF</h3>
-              <p className="text-[11px] text-slate-400">Generador de tablas institucionales con cabecera y trazabilidad de auditoría</p>
+              <p className="text-[11px] text-indigo-100">Generador de tablas institucionales con cabecera y trazabilidad de auditoría</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -117,20 +120,27 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
           
           {/* Vista previa de Cabecera Institucional */}
           <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-            <div className="bg-slate-900 p-3.5 text-white flex items-center justify-between border-b-2 border-amber-500">
+            <div 
+              className="p-3.5 text-white flex items-center justify-between border-b border-indigo-900"
+              style={{ backgroundColor: '#0A0A69' }}
+            >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-white/10 p-1 flex items-center justify-center border border-white/20">
-                  <Building2 className="w-6 h-6 text-amber-400" />
+                <div className="w-11 h-11 rounded-lg bg-white p-1 flex items-center justify-center border border-white/20 shrink-0 shadow-2xs">
+                  <img
+                    src="/organismo_judicial_logo.png"
+                    alt="Logo Organismo Judicial"
+                    className="w-full h-full object-contain"
+                  />
                 </div>
                 <div>
                   <h4 className="text-xs font-black tracking-wide text-white uppercase">Organismo Judicial de Guatemala</h4>
-                  <p className="text-[10px] font-bold text-amber-400">Gerencia de Informática</p>
-                  <p className="text-[9px] text-slate-300">Sistema Integral de Control de Adquisiciones de TI</p>
+                  <p className="text-[10px] font-bold text-white">Gerencia de Informática</p>
+                  <p className="text-[9px] text-indigo-100">Sistema Integral de Control de Adquisiciones de TI</p>
                 </div>
               </div>
 
               <div className="text-right hidden sm:block">
-                <span className="text-[9px] uppercase font-bold text-amber-400 block">Control de Auditoría</span>
+                <span className="text-[9px] uppercase font-bold text-white block">Control de Auditoría</span>
                 <span className="text-xs font-mono font-bold text-white block">AUD-OJ-2026-OFICIAL</span>
               </div>
             </div>
