@@ -35,10 +35,14 @@ import { downloadDocumentFile } from '../utils/documentUtils';
 import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, canUserEditPurchase } from '../utils/rbacUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
-  'Adjudicación': 'bg-blue-100 text-blue-700',
-  'Evaluación': 'bg-amber-100 text-amber-700',
-  'Prescindido': 'bg-red-100 text-red-700',
-  'Desierto': 'bg-slate-100 text-slate-700',
+  'Vigente': 'bg-sky-100 text-sky-800 border-sky-300',
+  'Adjudicación': 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  'Adjudicada': 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  'Evaluación': 'bg-amber-100 text-amber-800 border-amber-300',
+  'En proceso': 'bg-blue-100 text-blue-800 border-blue-300',
+  'Registrada': 'bg-indigo-100 text-indigo-800 border-indigo-300',
+  'Prescindido': 'bg-red-100 text-red-700 border-red-300',
+  'Desierto': 'bg-slate-100 text-slate-700 border-slate-300',
 };
 
 export const PurchasesView: React.FC = () => {

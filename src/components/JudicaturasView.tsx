@@ -62,7 +62,11 @@ import {
   FolderTree,
   Landmark,
   FileCheck,
+  Upload,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { exportJudicaturasToExcel, exportJudicaturasToCSV } from '../utils/judicaturasExport';
+import { ImportJudicaturasModal } from './ImportJudicaturasModal';
 
 export const JudicaturasView: React.FC = () => {
   const {
@@ -115,6 +119,7 @@ export const JudicaturasView: React.FC = () => {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Nueva Observación para Ficha Detalle
   const [nuevaObservacionTexto, setNuevaObservacionTexto] = useState('');
@@ -901,6 +906,25 @@ export const JudicaturasView: React.FC = () => {
     setIsConsolidatedPdfModalOpen(true);
   };
 
+  const handleExportExcel = () => {
+    try {
+      const recordsToExport = filteredJudicaturas.length > 0 ? filteredJudicaturas : judicaturas;
+      exportJudicaturasToExcel(recordsToExport);
+      showToast({
+        title: 'Registros Exportados',
+        message: `Se descargó el archivo Excel con ${recordsToExport.length} judicaturas.`,
+        type: 'exito'
+      });
+    } catch (err) {
+      console.error('Error exportando judicaturas a Excel:', err);
+      showToast({
+        title: 'Error al Exportar',
+        message: 'No se pudo generar el archivo Excel de judicaturas.',
+        type: 'error'
+      });
+    }
+  };
+
   // Cálculo para el Diagrama de Gantt Detallado por Semana
   const ganttWeeks = useMemo(() => {
     if (judicaturas.length === 0) return [];
@@ -1539,6 +1563,31 @@ export const JudicaturasView: React.FC = () => {
           >
             <Download className="w-4 h-4 text-rose-600" />
             <span>{isExportingPdf ? 'Generando...' : 'Descarga Rápida'}</span>
+          </button>
+
+          {/* Botón Exportar Registros a Excel compatible para re-importación */}
+          <button
+            id="btn-exportar-judicaturas-excel"
+            type="button"
+            onClick={handleExportExcel}
+            disabled={filteredJudicaturas.length === 0}
+            className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs shadow-2xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            title="Exportar los registros de judicaturas a formato Excel (.xlsx) compatible para re-importación"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Exportar Excel</span>
+          </button>
+
+          {/* Botón Importar Registros de Judicaturas */}
+          <button
+            id="btn-importar-judicaturas"
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-3.5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs shadow-md border border-blue-600 flex items-center gap-2 transition-all cursor-pointer"
+            title="Importar registros de judicaturas desde un archivo Excel o CSV"
+          >
+            <Upload className="w-4 h-4 text-sky-200" />
+            <span>Importar</span>
           </button>
 
           {/* Botón Boleta Oficial de Control Judicaturas */}
@@ -3798,6 +3847,14 @@ export const JudicaturasView: React.FC = () => {
           onClose={() => setSelectedBoletaJudicatura(null)}
         />
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL OFICIAL: IMPORTACIÓN DE JUDICATURAS DESDE EXCEL / CSV              */}
+      {/* ========================================================================= */}
+      <ImportJudicaturasModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
     </div>
   );
 };

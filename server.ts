@@ -29,6 +29,7 @@ import {
   addBudgetModification,
   addAuditLog,
   saveJudicatura,
+  saveBulkJudicaturas,
   deleteJudicatura,
   addJudicaturaObservation
 } from './src/server/dataStore';
@@ -513,6 +514,22 @@ app.post('/api/db/judicaturas', (req, res) => {
     res.json({ success: true, judicatura: saved });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error guardando judicatura.' });
+  }
+});
+
+// Importar o guardar lote de judicaturas
+app.post('/api/db/judicaturas/bulk', (req, res) => {
+  try {
+    const { judicaturas: items, replaceAll } = req.body;
+    if (Array.isArray(items)) {
+      const saved = saveBulkJudicaturas(items, Boolean(replaceAll));
+      notifyChange('judicaturas_bulk_saved', { count: items.length });
+      res.json({ success: true, count: items.length, total: saved.length });
+    } else {
+      res.status(400).json({ success: false, message: 'Se esperaba un arreglo de judicaturas.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error importando judicaturas.' });
   }
 });
 

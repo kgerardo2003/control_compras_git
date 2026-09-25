@@ -260,6 +260,10 @@ interface AppContextType {
   updateJudicatura: (id: string, data: Partial<JudicaturaRecord>) => Promise<JudicaturaRecord>;
   deleteJudicatura: (id: string) => Promise<boolean>;
   addJudicaturaObservacion: (judicaturaId: string, texto: string) => Promise<JudicaturaRecord | null>;
+  importJudicaturas: (
+    records: Array<Omit<JudicaturaRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string }>,
+    replaceAll?: boolean
+  ) => Promise<{ count: number }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -3932,6 +3936,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return updatedRecord;
   };
 
+  const importJudicaturas = async (
+    records: Array<Omit<JudicaturaRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string }>,
+    replaceAll: boolean = false
+  ): Promise<{ count: number }> => {
+    if (!records || records.length === 0) {
+      return { count: 0 };
+    }
+
+    const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
+    const nowIso = new Date().toISOString();
+
+    const baseList = replaceAll ? [] : [...judicaturas];
+    const existingMap = new Map(baseList.map(j => [j.id, j]));
+    const nameMap = new Map(baseList.map(j => [j.nombreJudicatura.toLowerCase().trim(), j]));
+
+    const processedRecords: JudicaturaRecord[] = [];
+    let importedCount = 0;
+
+    records.forEach((rec, idx) => {
+      const cleanName = (rec.nombreJudicatura || '').trim();
+      if (!cleanName) return;
+
+      let existing: JudicaturaRecord | undefined = undefined;
+      if (rec.id && existingMap.has(rec.id)) {
+        existing = existingMap.get(rec.id);
+      } else if (nameMap.has(cleanName.toLowerCase())) {
+        existing = nameMap.get(cleanName.toLowerCase());
+      }
+
+      const recId = existing?.id || rec.id || `jud-import-${Date.now()}-${idx + 1}-${Math.random().toString(36).substring(2, 6)}`;
+
+      let obsList: JudicaturaObservacion[] = existing?.observaciones ? [...existing.observaciones] : [];
+      if (Array.isArray(rec.observaciones) && rec.observaciones.length > 0) {
+        obsList = rec.observaciones;
+      } else if (typeof (rec as any).observaciones === 'string' && (rec as any).observaciones.trim()) {
+        obsList = [
+          {
+            id: `obs-${Date.now()}-${idx}`,
+            numeroAccion: obsList.length + 1,
+            fecha: nowIso,
+            autor: creator,
+            texto: (rec as any).observaciones.trim()
+          },
+          ...obsList
+        ];
+      }
+
+      const completeRecord: JudicaturaRecord = {
+        id: recId,
+        nombreJudicatura: cleanName,
+        tipoRamo: (rec.tipoRamo === 'Civil' || rec.tipoRamo === 'Amparos') ? rec.tipoRamo : 'Penal',
+        fechaInicioAdecuaciones: rec.fechaInicioAdecuaciones || nowIso.slice(0, 10),
+        fechaFinAdecuaciones: rec.fechaFinAdecuaciones || nowIso.slice(0, 10),
+        equipoComputo: rec.equipoComputo === 'Si' ? 'Si' : 'No',
+        equipoAudio: rec.equipoAudio === 'Si' ? 'Si' : 'No',
+        cableadoEstructurado: rec.cableadoEstructurado === 'Si' ? 'Si' : 'No',
+        enlaceDatos: rec.enlaceDatos === 'Si' ? 'Si' : 'No',
+        fechaInauguracion: rec.fechaInauguracion || undefined,
+        estadoInauguracion: rec.estadoInauguracion || 'Pendiente Fecha',
+        observaciones: obsList,
+        creadoPor: existing?.creadoPor || creator,
+        fechaCreacion: existing?.fechaCreacion || nowIso,
+        modificadoPor: creator,
+        fechaModificacion: nowIso
+      };
+
+      processedRecords.push(completeRecord);
+      importedCount++;
+    });
+
+    let finalList: JudicaturaRecord[];
+    if (replaceAll) {
+      finalList = processedRecords;
+    } else {
+      const updatedMap = new Map(baseList.map(j => [j.id, j]));
+      processedRecords.forEach(r => updatedMap.set(r.id, r));
+      finalList = Array.from(updatedMap.values());
+    }
+
+    setJudicaturas(finalList);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(finalList));
+
+    // Guardar en Firestore
+    processedRecords.forEach(j => {
+      saveJudicaturaToFirestore(j).catch(err => console.warn("Aviso Firestore al importar judicatura:", err));
+    });
+
+    // Guardar en servidor
+    fetch('/api/db/judicaturas/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ judicaturas: processedRecords, replaceAll })
+    }).catch(() => {
+      processedRecords.forEach(j => {
+        fetch('/api/db/judicaturas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(j)
+        }).catch(err => console.warn("Aviso servidor central:", err));
+      });
+    });
+
+    logAudit(
+      'IMPORTAR_DATOS' as any,
+      'Judicaturas' as any,
+      `Importación masiva de ${importedCount} registros de judicaturas (${replaceAll ? 'Reemplazo total' : 'Actualización/Inserción'}).`
+    );
+
+    showToast({
+      title: 'Judicaturas Importadas',
+      message: `Se importaron satisfactoriamente ${importedCount} registros al módulo de judicaturas.`,
+      type: 'exito'
+    });
+
+    return { count: importedCount };
+  };
+
   const resetToDemoData = () => {
     setUsers(INITIAL_USERS);
     setPurchases(INITIAL_PURCHASES);
@@ -4059,6 +4180,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateJudicatura,
         deleteJudicatura,
         addJudicaturaObservacion,
+        importJudicaturas,
       }}
     >
       {children}

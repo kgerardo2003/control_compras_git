@@ -120,6 +120,7 @@ export const INITIAL_CATALOGS: Catalog[] = [
     descripcion: 'Estados oficiales de los eventos de adquisiciones según matriz de la Gerencia de Informática',
     esSistema: true,
     items: [
+      { id: 'est-vig', codigo: 'VIGENTE', valor: 'Vigente', descripcion: 'Convocatoria vigente en Guatecompras para recepción de ofertas (Afecta: Sí)', activo: true, color: 'blue' },
       { id: 'est-reg', codigo: 'REGISTRADA', valor: 'Registrada', descripcion: 'Evento registrado en sistema, compromete preventivamente saldo (Afecta: Sí)', activo: true, color: 'blue' },
       { id: 'est-proc', codigo: 'EN_PROCESO', valor: 'En proceso', descripcion: 'Expediente en gestión técnica o recepción de plicas (Afecta: Sí)', activo: true, color: 'amber' },
       { id: 'est-comp', codigo: 'COMPROMETIDA', valor: 'Comprometida', descripcion: 'Evento con reserva de saldo y compromiso formal (Afecta: Sí)', activo: true, color: 'indigo' },
@@ -338,7 +339,7 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     monto: 240000.00,
     evaluadoGIT: 'Sí',
     fechaDictamenGIT: '2026-02-22',
-    estatusEvento: 'Evaluación',
+    estatusEvento: 'Vigente',
     diasAtraso: 36,
     areaSolicitante: 'Redes y Telecomunicaciones',
     categoriaTecnologica: 'Redes y Telecomunicaciones',

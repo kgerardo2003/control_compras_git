@@ -443,6 +443,23 @@ export function addAuditLog(entry: AuditLogEntry): AuditLogEntry {
 }
 
 // Judicaturas por Inaugurar
+export function saveBulkJudicaturas(records: JudicaturaRecord[], replaceAll: boolean = false): JudicaturaRecord[] {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  if (replaceAll) {
+    store.judicaturas = [...records];
+  } else {
+    const map = new Map(store.judicaturas.map(j => [j.id, j]));
+    records.forEach(r => map.set(r.id, r));
+    store.judicaturas = Array.from(map.values());
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return store.judicaturas;
+}
+
 export function saveJudicatura(judicatura: JudicaturaRecord): JudicaturaRecord {
   const store = initDataStore();
   if (!Array.isArray(store.judicaturas)) {

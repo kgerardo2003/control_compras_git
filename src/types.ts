@@ -59,7 +59,7 @@ export interface TwoFactorState {
 
 export type EvaluacionGIT = 'Sí' | 'No';
 
-export type EstatusEventoDefault = 'Evaluación' | 'Adjudicación' | 'Prescindido' | 'Desierto';
+export type EstatusEventoDefault = 'Vigente' | 'Evaluación' | 'Adjudicación' | 'Prescindido' | 'Desierto';
 
 export interface AttachedDocument {
   nombre: string;

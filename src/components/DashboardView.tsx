@@ -30,7 +30,8 @@ import {
   Table as TableIcon,
   Percent,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Radio
 } from 'lucide-react';
 import { getEventDelayDays } from '../utils/delayUtils';
 import {
@@ -50,6 +51,14 @@ import {
 import { formatQuetzales, formatDate, exportToCSV, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, ALL_AREAS_LABEL } from '../utils/rbacUtils';
+
+// Helper para determinar si un evento NOG está vigente (en convocatoria pública o recepción de plicas)
+export const isPurchaseVigente = (p: { estatusEvento?: string }): boolean => {
+  const st = (p.estatusEvento || '').trim().toLowerCase();
+  if (st === 'vigente' || st === 'vigentes') return true;
+  if (st === 'en proceso' || st === 'publicado' || st === 'registrada' || st === 'convocatoria') return true;
+  return false;
+};
 
 // Formateador institucional para el eje Y de valores monetarios
 const formatYAxisCurrency = (val: number): string => {
@@ -407,9 +416,9 @@ export const DashboardView: React.FC = () => {
   const [recentPage, setRecentPage] = useState<number>(1);
   const RECENT_ITEMS_PER_PAGE = 8;
 
-  // Estados para Modal Interactivo de Indicadores (NOG Adjudicados / NOG en Evaluación)
+  // Estados para Modal Interactivo de Indicadores (NOG Adjudicados / NOG en Evaluación / NOG Vigentes)
   const [nogModalOpen, setNogModalOpen] = useState<boolean>(false);
-  const [nogModalType, setNogModalType] = useState<'adjudicados' | 'evaluacion'>('adjudicados');
+  const [nogModalType, setNogModalType] = useState<'adjudicados' | 'evaluacion' | 'vigentes'>('adjudicados');
   const [nogModalFilter, setNogModalFilter] = useState<string>('todos');
   const [nogModalSearch, setNogModalSearch] = useState<string>('');
   const [nogModalPage, setNogModalPage] = useState<number>(1);
@@ -857,6 +866,35 @@ export const DashboardView: React.FC = () => {
     const enEvaluacionMonto = enEvaluacion.reduce((acc, p) => acc + (p.monto || 0), 0);
     const enEvaluacionPorcentaje = totalEventos > 0 ? Math.round((enEvaluacionCount / totalEventos) * 100) : 0;
 
+    // 4. Indicador de NOG vigentes (Convocatorias y concursos activos en Guatecompras)
+    const vigentes = filteredPurchases.filter(p => isPurchaseVigente(p));
+    const vigentesCount = vigentes.length;
+    const vigentesMonto = vigentes.reduce((acc, p) => acc + (p.monto || 0), 0);
+    const vigentesPorcentaje = totalEventos > 0 ? Math.round((vigentesCount / totalEventos) * 100) : 0;
+
+    // Desglose de NOG Vigentes por Área Solicitante
+    const areasVigentesMap: Record<string, { count: number; monto: number }> = {};
+    vigentes.forEach(p => {
+      const area = p.areaSolicitante || p.dependenciaSolicitante || 'Soporte técnico';
+      if (!areasVigentesMap[area]) {
+        areasVigentesMap[area] = { count: 0, monto: 0 };
+      }
+      areasVigentesMap[area].count += 1;
+      areasVigentesMap[area].monto += (p.monto || 0);
+    });
+
+    const vigentesPorArea = Object.entries(areasVigentesMap)
+      .map(([area, data], idx) => ({
+        area,
+        name: area,
+        count: data.count,
+        value: data.count,
+        monto: data.monto,
+        porcentaje: vigentesCount > 0 ? Math.round((data.count / vigentesCount) * 100) : 0,
+        color: AREA_PALETTE[idx % AREA_PALETTE.length],
+      }))
+      .sort((a, b) => b.count - a.count);
+
     // Indicadores tipo semáforo de atraso para NOG Adjudicados (≤10 verde, 11-30 naranja, >30 rojo)
     const semaforoAdjudicados = {
       verde: adjudicados.filter(p => getEventDelayDays(p) <= 10),
@@ -889,6 +927,10 @@ export const DashboardView: React.FC = () => {
       enEvaluacionCount,
       enEvaluacionMonto,
       enEvaluacionPorcentaje,
+      vigentesCount,
+      vigentesMonto,
+      vigentesPorcentaje,
+      vigentesPorArea,
       semaforoAdjudicados,
       semaforoEvaluacion,
       adjudicadosPorArea,
@@ -1120,13 +1162,15 @@ export const DashboardView: React.FC = () => {
 
     let list = filteredPurchases.filter(p => {
       if (nogModalType === 'adjudicados') {
-        return p.estatusEvento === 'Adjudicación';
+        return p.estatusEvento === 'Adjudicación' || p.estatusEvento === 'Adjudicada';
+      } else if (nogModalType === 'vigentes') {
+        return isPurchaseVigente(p);
       } else {
         return p.estatusEvento === 'Evaluación';
       }
     });
 
-    if (nogModalType === 'adjudicados') {
+    if (nogModalType === 'adjudicados' || nogModalType === 'vigentes') {
       if (nogModalFilter !== 'todos') {
         list = list.filter(p => (p.areaSolicitante || p.dependenciaSolicitante || 'Soporte técnico') === nogModalFilter);
       }
@@ -1186,6 +1230,14 @@ export const DashboardView: React.FC = () => {
     setNogModalOpen(true);
   };
 
+  const handleOpenVigentesModal = (areaFilter: string = 'todos') => {
+    setNogModalType('vigentes');
+    setNogModalFilter(areaFilter);
+    setNogModalSearch('');
+    setNogModalPage(1);
+    setNogModalOpen(true);
+  };
+
   const handleExportModalCSV = () => {
     const rows = modalPurchases.map(p => ({
       NOG: p.nog || '',
@@ -1199,7 +1251,11 @@ export const DashboardView: React.FC = () => {
       'Proveedor Adjudicado': p.proveedorAdjudicado || 'N/A',
       'Fecha Solicitud': p.fechaSolicitud || '',
     }));
-    const prefix = nogModalType === 'adjudicados' ? 'NOG_Adjudicados' : 'NOG_En_Evaluacion';
+    const prefix = nogModalType === 'adjudicados'
+      ? 'NOG_Adjudicados'
+      : nogModalType === 'vigentes'
+      ? 'NOG_Vigentes'
+      : 'NOG_En_Evaluacion';
     exportToCSV(`${prefix}_${nogModalFilter}_${new Date().toISOString().slice(0, 10)}`, rows);
   };
 
@@ -1313,7 +1369,7 @@ export const DashboardView: React.FC = () => {
       )}
 
       {/* Paneles e Indicadores de Avance de Gran Visibilidad y Alto Contraste Profesional */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
         {/* PANEL 1: Indicador de NOG Adjudicados */}
         <div className="bg-white p-6 sm:p-7 rounded-2xl border-2 border-emerald-500 shadow-md hover:shadow-xl transition-all flex flex-col justify-between">
@@ -1743,6 +1799,211 @@ export const DashboardView: React.FC = () => {
             </div>
             <div className="mt-2 text-center text-[10px] text-amber-800 font-semibold bg-amber-50/60 py-1 px-2 rounded-md border border-amber-200/60 flex items-center justify-center gap-1">
               <span>👆 Haz clic en la gráfica o en cualquier plazo para ver las adquisiciones en evaluación</span>
+            </div>
+          </div>
+        </div>
+
+        {/* PANEL 3: Indicador de NOG Vigentes (Convocatorias Públicas Activas en Guatecompras) */}
+        <div className="bg-white p-6 sm:p-7 rounded-2xl border-2 border-blue-600 shadow-md hover:shadow-xl transition-all flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-100 text-blue-800 border border-blue-300">
+                  <Radio className="w-5 h-5 text-blue-700 animate-pulse" />
+                </div>
+                <div>
+                  <span className="text-xs font-black uppercase tracking-wider text-blue-950 block">
+                    NOG Vigentes
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    Convocatorias Activas Guatecompras
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenVigentesModal('todos')}
+                className="px-2.5 py-1 rounded-full text-xs font-black bg-blue-700 hover:bg-blue-800 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+                title="Haga clic para ver el listado de todos los NOGs vigentes"
+              >
+                <span>{metrics.vigentesPorcentaje}% {isAdmin ? 'del Total' : 'del Área'}</span>
+                <Eye className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div
+              onClick={() => handleOpenVigentesModal('todos')}
+              className="mt-5 flex items-center justify-between gap-4 cursor-pointer p-2 -mx-2 rounded-xl hover:bg-blue-50/60 transition-all group"
+              title="Haga clic para ver el listado de NOGs vigentes"
+            >
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-5xl sm:text-6xl font-black text-slate-950 tracking-tight font-mono group-hover:text-blue-950 transition-colors">
+                    {metrics.vigentesCount}
+                  </span>
+                  <span className="text-base font-bold text-slate-500">
+                    / {metrics.totalEventos}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug group-hover:text-blue-900 transition-colors flex items-center gap-1">
+                  <span>Convocatorias vigentes para recepción de plicas</span>
+                  <span className="text-[10px] text-blue-700 font-extrabold uppercase">(Ver NOGs)</span>
+                </p>
+              </div>
+
+              {/* Medidor Circular de Alto Contraste */}
+              <div className="relative w-22 h-22 sm:w-24 sm:h-24 flex-shrink-0 group-hover:scale-105 transition-transform">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    className="stroke-slate-200 fill-none"
+                    strokeWidth="3.8"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                  <path
+                    className="stroke-blue-600 fill-none transition-all duration-700"
+                    strokeDasharray={`${metrics.vigentesPorcentaje}, 100`}
+                    strokeWidth="3.8"
+                    strokeLinecap="round"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-xl sm:text-2xl font-black text-blue-950 font-mono">
+                    {metrics.vigentesPorcentaje}%
+                  </span>
+                  <span className="text-[9px] font-black text-blue-800 uppercase tracking-tighter">
+                    Vigentes
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            onClick={() => handleOpenVigentesModal('todos')}
+            className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 hover:bg-slate-800 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs cursor-pointer transition-all"
+            title="Haga clic para ver los NOGs vigentes y sus montos"
+          >
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Monto Vigente</span>
+              <span className="text-[10px] text-blue-400 font-normal underline">(Ver listado)</span>
+            </span>
+            <span className="text-sm sm:text-base font-black font-mono text-blue-400">
+              {formatQuetzales(metrics.vigentesMonto)}
+            </span>
+          </div>
+
+          {/* Gráfica Circular y Desglose de Áreas para NOG Vigentes */}
+          <div className="mt-4 pt-3 border-t border-slate-200/80 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                Áreas de NOGs Vigentes
+              </span>
+              <span className="text-[10px] text-blue-800 font-bold bg-blue-100/90 px-2 py-0.5 rounded-full border border-blue-300">
+                Clic en gráfica o área para filtrar
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+              {/* Gráfica de Círculo (Donut) interactiva */}
+              <div
+                className="sm:col-span-5 h-28 relative flex items-center justify-center cursor-pointer group"
+                onClick={() => handleOpenVigentesModal('todos')}
+                title="Haga clic en la gráfica para ver los NOGs vigentes"
+              >
+                {metrics.vigentesCount > 0 && metrics.vigentesPorArea.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={metrics.vigentesPorArea}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={24}
+                        outerRadius={42}
+                        paddingAngle={3}
+                        dataKey="value"
+                        onClick={(entry: any) => {
+                          const areaName = entry?.area || entry?.name || 'todos';
+                          handleOpenVigentesModal(areaName);
+                        }}
+                      >
+                        {metrics.vigentesPorArea.map((entry, index) => (
+                          <Cell
+                            key={`vig-cell-${index}`}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenVigentesModal(entry.area);
+                            }}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: any, name: any) => [`${val} NOGs (clic para ver)`, name]}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px] italic">
+                    Sin eventos vigentes
+                  </div>
+                )}
+                {metrics.vigentesCount > 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-xs font-black font-mono text-slate-800 group-hover:text-blue-700 transition-colors">
+                      {metrics.vigentesCount}
+                    </span>
+                    <span className="text-[8px] font-bold uppercase text-slate-500">
+                      NOGs
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Lista Detallada de Áreas con Contador y Porcentaje - Interactivo */}
+              <div className="sm:col-span-7 flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
+                {metrics.vigentesPorArea.length > 0 ? (
+                  metrics.vigentesPorArea.map((item, idx) => (
+                    <button
+                      key={`vig-area-item-${idx}`}
+                      type="button"
+                      onClick={() => handleOpenVigentesModal(item.area)}
+                      className="p-1.5 px-2 rounded-lg bg-white hover:bg-blue-50/90 border border-slate-200/90 hover:border-blue-300 flex items-center justify-between shadow-2xs text-[11px] cursor-pointer transition-all text-left group"
+                      title={`Haga clic para ver los ${item.count} NOGs vigentes de ${item.area}`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0 group-hover:scale-125 transition-transform"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-[10px] font-bold text-slate-800 group-hover:text-blue-950 truncate" title={item.area}>
+                          {item.area}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-mono font-bold text-slate-500">
+                          {item.porcentaje}%
+                        </span>
+                        <span className="text-xs font-black text-blue-900 font-mono bg-blue-50 group-hover:bg-blue-100 px-1.5 py-0.2 rounded border border-blue-200">
+                          {item.count}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px] italic py-2">
+                    No hay convocatorias vigentes
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 text-center text-[10px] text-blue-800 font-semibold bg-blue-50/60 py-1 px-2 rounded-md border border-blue-200/60 flex items-center justify-center gap-1">
+              <span>👆 Haz clic en la gráfica o en cualquier área para ver sus NOGs vigentes</span>
             </div>
           </div>
         </div>
@@ -3613,6 +3874,8 @@ export const DashboardView: React.FC = () => {
               className={`p-5 text-white flex items-center justify-between shrink-0 ${
                 nogModalType === 'adjudicados'
                   ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 border-b border-emerald-800/50'
+                  : nogModalType === 'vigentes'
+                  ? 'bg-gradient-to-r from-blue-950 via-sky-900 to-slate-900 border-b border-blue-800/50'
                   : 'bg-gradient-to-r from-amber-950 via-amber-900 to-slate-900 border-b border-amber-800/50'
               }`}
             >
@@ -3621,11 +3884,15 @@ export const DashboardView: React.FC = () => {
                   className={`p-2.5 rounded-xl border ${
                     nogModalType === 'adjudicados'
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                      : nogModalType === 'vigentes'
+                      ? 'bg-blue-500/20 text-blue-300 border-blue-400/30'
                       : 'bg-amber-500/20 text-amber-300 border-amber-400/30'
                   }`}
                 >
                   {nogModalType === 'adjudicados' ? (
                     <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                  ) : nogModalType === 'vigentes' ? (
+                    <Radio className="w-6 h-6 text-blue-400 animate-pulse" />
                   ) : (
                     <Clock className="w-6 h-6 text-amber-400" />
                   )}
@@ -3636,10 +3903,16 @@ export const DashboardView: React.FC = () => {
                       className={`text-[10px] font-black uppercase px-2 py-0.5 rounded tracking-wider ${
                         nogModalType === 'adjudicados'
                           ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
+                          : nogModalType === 'vigentes'
+                          ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40'
                           : 'bg-amber-500/30 text-amber-200 border border-amber-400/40'
                       }`}
                     >
-                      {nogModalType === 'adjudicados' ? 'Contrataciones Adjudicadas' : 'Procesos en Evaluación'}
+                      {nogModalType === 'adjudicados'
+                        ? 'Contrataciones Adjudicadas'
+                        : nogModalType === 'vigentes'
+                        ? 'Convocatorias Vigentes'
+                        : 'Procesos en Evaluación'}
                     </span>
                     <span className="text-xs text-slate-300 font-mono">
                       {modalPurchases.length} {modalPurchases.length === 1 ? 'evento' : 'eventos'}
@@ -3648,6 +3921,8 @@ export const DashboardView: React.FC = () => {
                   <h2 className="text-lg sm:text-xl font-black tracking-tight mt-0.5">
                     {nogModalType === 'adjudicados'
                       ? 'NOGs Adjudicados del Sistema'
+                      : nogModalType === 'vigentes'
+                      ? 'NOGs Vigentes en Guatecompras'
                       : 'NOGs en Evaluación Técnica'}
                   </h2>
                 </div>
@@ -3676,7 +3951,9 @@ export const DashboardView: React.FC = () => {
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">
                   Monto Acumulado
                 </span>
-                <span className="text-lg sm:text-xl font-black font-mono text-emerald-700">
+                <span className={`text-lg sm:text-xl font-black font-mono ${
+                  nogModalType === 'vigentes' ? 'text-blue-700' : nogModalType === 'adjudicados' ? 'text-emerald-700' : 'text-amber-700'
+                }`}>
                   {formatQuetzales(totalMontoModal)}
                 </span>
               </div>
@@ -3685,7 +3962,7 @@ export const DashboardView: React.FC = () => {
                   Filtro Aplicado
                 </span>
                 <span className="text-xs font-bold text-slate-800 truncate block">
-                  {nogModalType === 'adjudicados'
+                  {nogModalType === 'adjudicados' || nogModalType === 'vigentes'
                     ? (nogModalFilter === 'todos' ? 'Todas las Áreas' : nogModalFilter)
                     : (nogModalFilter === 'todos'
                         ? 'Todos los Plazos'
@@ -3724,6 +4001,36 @@ export const DashboardView: React.FC = () => {
                         className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
                           nogModalFilter === item.area
                             ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span>{item.area}</span>
+                        <span className="text-[10px] opacity-80 font-mono">({item.count})</span>
+                      </button>
+                    ))}
+                  </>
+                ) : nogModalType === 'vigentes' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setNogModalFilter('todos'); setNogModalPage(1); }}
+                      className={`px-3 py-1 rounded-lg font-bold text-xs shrink-0 transition-all cursor-pointer ${
+                        nogModalFilter === 'todos'
+                          ? 'bg-blue-700 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Todas ({metrics.vigentesCount})
+                    </button>
+                    {metrics.vigentesPorArea.map((item, idx) => (
+                      <button
+                        key={`modal-pill-vig-${idx}`}
+                        type="button"
+                        onClick={() => { setNogModalFilter(item.area); setNogModalPage(1); }}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                          nogModalFilter === item.area
+                            ? 'bg-blue-900 text-white shadow-xs'
                             : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                         }`}
                       >
@@ -3835,7 +4142,11 @@ export const DashboardView: React.FC = () => {
                     <th className="px-4 py-3">Área Solicitante</th>
                     <th className="px-4 py-3 text-right">Monto (GTQ)</th>
                     <th className="px-4 py-3 text-center">
-                      {nogModalType === 'adjudicados' ? 'Proveedor Adjudicado' : 'Días de Trámite'}
+                      {nogModalType === 'adjudicados'
+                        ? 'Proveedor Adjudicado'
+                        : nogModalType === 'vigentes'
+                        ? 'Plazo / Recepción de Ofertas'
+                        : 'Días de Trámite'}
                     </th>
                     <th className="px-4 py-3 text-center">Acción</th>
                   </tr>
@@ -3864,7 +4175,7 @@ export const DashboardView: React.FC = () => {
                   ) : (
                     displayedModalPurchases.map((p) => {
                       const delayDays = getEventDelayDays(p);
-                      const isAdjudicado = p.estatusEvento === 'Adjudicación';
+                      const isAdjudicado = p.estatusEvento === 'Adjudicación' || p.estatusEvento === 'Adjudicada';
 
                       return (
                         <tr key={p.id} className="hover:bg-slate-50 transition-colors">
@@ -3909,7 +4220,7 @@ export const DashboardView: React.FC = () => {
                             {formatQuetzales(p.monto || 0)}
                           </td>
 
-                          {/* Estatus / Proveedor o Semáforo de Días */}
+                          {/* Estatus / Proveedor o Semáforo de Días o Convocatoria Vigente */}
                           <td className="px-4 py-3 whitespace-nowrap text-center">
                             {isAdjudicado ? (
                               <div className="flex flex-col items-center">
@@ -3919,6 +4230,17 @@ export const DashboardView: React.FC = () => {
                                 {p.fechaAdjudicacion && (
                                   <span className="text-[9px] text-slate-400 mt-0.5">
                                     {formatDate(p.fechaAdjudicacion)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : nogModalType === 'vigentes' ? (
+                              <div className="inline-flex flex-col items-center">
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black border font-mono bg-blue-50 text-blue-900 border-blue-300">
+                                  {p.fechaOfertas ? `Cierre: ${formatDate(p.fechaOfertas)}` : 'Convocatoria Abierta'}
+                                </span>
+                                {p.fechaPublicacion && (
+                                  <span className="text-[9px] text-slate-400 mt-0.5 font-mono">
+                                    Publicado: {formatDate(p.fechaPublicacion)}
                                   </span>
                                 )}
                               </div>
