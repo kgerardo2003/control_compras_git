@@ -65,7 +65,7 @@ import {
   Upload,
   FileSpreadsheet,
 } from 'lucide-react';
-import { exportJudicaturasToExcel, exportJudicaturasToCSV } from '../utils/judicaturasExport';
+import { exportJudicaturasToExcel, exportJudicaturasToCSV, downloadJudicaturasImportTemplate } from '../utils/judicaturasExport';
 import { ImportJudicaturasModal } from './ImportJudicaturasModal';
 
 export const JudicaturasView: React.FC = () => {
@@ -1499,126 +1499,190 @@ export const JudicaturasView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* ENCABEZADO INSTITUCIONAL */}
-      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-start sm:items-center gap-3">
-          <div className="p-3 rounded-xl bg-blue-900 text-white shadow-md">
-            <Scale className="w-6 h-6 text-amber-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                Control de Judicaturas por Inaugurar
-              </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
-                GIT - OJ
-              </span>
+      {/* ENCABEZADO INSTITUCIONAL Y MENÚ DE CONTROL DE JUDICATURAS */}
+      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-xs space-y-4">
+        {/* FILA SUPERIOR: Identidad Institucional + Resumen */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-blue-900 text-white shadow-md shrink-0">
+              <Scale className="w-6 h-6 text-amber-400" />
             </div>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              Monitoreo integral de adecuaciones tecnológicas, infraestructura de red, audio y cronograma de apertura
-            </p>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  Control de Judicaturas por Inaugurar
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
+                  GIT - OJ
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                  {judicaturas.length} Judicaturas Registradas
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                Monitoreo integral de adecuaciones tecnológicas, infraestructura de red, audio y cronograma de apertura
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
-          {/* Botón de Sincronización Forzada con la Base de Datos de Producción Firestore */}
-          <button
-            id="btn-forzar-sincronizacion-produccion"
-            type="button"
-            onClick={handleForceSyncProduction}
-            disabled={isSyncingProduction}
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-md border border-emerald-600 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-            title="Forzar sincronización inmediata hacia la base de datos de producción Firestore"
-          >
-            <RefreshCw className={`w-4 h-4 text-emerald-100 ${isSyncingProduction ? 'animate-spin' : ''}`} />
-            <span>{isSyncingProduction ? 'Sincronizando...' : 'Forzar Sincronización BD'}</span>
-          </button>
-
-          {/* Botón Principal: Reporte Consolidado en PDF (Opciones y Personalización) */}
-          <button
-            id="btn-reporte-consolidado-pdf"
-            type="button"
-            onClick={handleOpenConsolidatedPDFModal}
-            disabled={filteredJudicaturas.length === 0}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-800 hover:from-blue-800 hover:to-indigo-800 text-white font-bold text-xs shadow-md border border-blue-700 flex items-center gap-2.5 transition-all cursor-pointer group disabled:opacity-50"
-            title="Generar reporte consolidado oficial en PDF (Tabla, Estado de Cada Una y Diagrama de Gantt)"
-          >
-            <FileText className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-            <div className="flex items-center gap-1.5">
-              <span>Reporte Consolidado PDF</span>
-              <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black uppercase bg-amber-400 text-slate-900">
-                Gantt + Tabla
+        {/* MENÚ DE CONTROL DE JUDICATURAS: DISTRIBUCIÓN EN 2 FILAS HOMOGÉNEAS */}
+        <div className="space-y-2.5">
+          {/* Fila 1: Gestión de Judicaturas, Supervisión y Reportes Oficiales (4 Opciones Homogéneas) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {/* Opción 1: Nueva Judicatura */}
+            <button
+              id="btn-nueva-judicatura"
+              type="button"
+              onClick={handleOpenCreate}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs border border-slate-700 flex items-center justify-between gap-2 transition-all cursor-pointer group"
+              title="Registrar una nueva judicatura por inaugurar"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <PlusCircle className="w-4 h-4 text-amber-400 shrink-0 group-hover:rotate-90 transition-transform duration-300" />
+                <span className="truncate">Nueva Judicatura</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-400 text-slate-950 shrink-0">
+                + Crear
               </span>
-            </div>
-          </button>
+            </button>
 
-          {/* Botón de Descarga Rápida Directa */}
-          <button
-            id="btn-exportar-pdf-judicaturas"
-            type="button"
-            onClick={handleQuickExportPDF}
-            disabled={isExportingPdf || filteredJudicaturas.length === 0}
-            className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs shadow-2xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-            title="Descarga rápida directa del reporte consolidado oficial en PDF"
-          >
-            <Download className="w-4 h-4 text-rose-600" />
-            <span>{isExportingPdf ? 'Generando...' : 'Descarga Rápida'}</span>
-          </button>
+            {/* Opción 2: Boleta Oficial de Control Judicaturas */}
+            <button
+              id="btn-boleta-control-judicaturas"
+              type="button"
+              onClick={() => {
+                if (filteredJudicaturas.length > 0) {
+                  setSelectedBoletaJudicatura(filteredJudicaturas[0]);
+                } else if (judicaturas.length > 0) {
+                  setSelectedBoletaJudicatura(judicaturas[0]);
+                }
+              }}
+              disabled={judicaturas.length === 0}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs border border-emerald-600 flex items-center justify-between gap-2 transition-all cursor-pointer disabled:opacity-50 group"
+              title="Abrir Boleta Oficial de Control y Supervisión de Judicaturas"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <FileCheck className="w-4 h-4 text-amber-300 shrink-0 group-hover:scale-110 transition-transform" />
+                <span className="truncate">Boleta de Control</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-950 text-emerald-200 border border-emerald-500/40 shrink-0">
+                Ficha Oficial
+              </span>
+            </button>
 
-          {/* Botón Exportar Registros a Excel compatible para re-importación */}
-          <button
-            id="btn-exportar-judicaturas-excel"
-            type="button"
-            onClick={handleExportExcel}
-            disabled={filteredJudicaturas.length === 0}
-            className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs shadow-2xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-            title="Exportar los registros de judicaturas a formato Excel (.xlsx) compatible para re-importación"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Exportar Excel</span>
-          </button>
+            {/* Opción 3: Reporte Consolidado en PDF */}
+            <button
+              id="btn-reporte-consolidado-pdf"
+              type="button"
+              onClick={handleOpenConsolidatedPDFModal}
+              disabled={filteredJudicaturas.length === 0}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-800 hover:from-blue-800 hover:to-indigo-800 text-white font-bold text-xs shadow-xs border border-blue-700 flex items-center justify-between gap-2 transition-all cursor-pointer group disabled:opacity-50"
+              title="Generar reporte consolidado oficial en PDF (Tabla, Estado de Cada Una y Diagrama de Gantt)"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="truncate">Reporte Consolidado</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase bg-amber-400 text-slate-900 shrink-0">
+                Gantt + PDF
+              </span>
+            </button>
 
-          {/* Botón Importar Registros de Judicaturas */}
-          <button
-            id="btn-importar-judicaturas"
-            type="button"
-            onClick={() => setIsImportModalOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs shadow-md border border-blue-600 flex items-center gap-2 transition-all cursor-pointer"
-            title="Importar registros de judicaturas desde un archivo Excel o CSV"
-          >
-            <Upload className="w-4 h-4 text-sky-200" />
-            <span>Importar</span>
-          </button>
+            {/* Opción 4: Descarga Rápida Directa en PDF */}
+            <button
+              id="btn-exportar-pdf-judicaturas"
+              type="button"
+              onClick={handleQuickExportPDF}
+              disabled={isExportingPdf || filteredJudicaturas.length === 0}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs shadow-2xs flex items-center justify-between gap-2 transition-all cursor-pointer disabled:opacity-50 group"
+              title="Descarga rápida directa del reporte consolidado oficial en PDF"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Download className="w-4 h-4 text-rose-600 shrink-0 group-hover:translate-y-0.5 transition-transform" />
+                <span className="truncate">{isExportingPdf ? 'Generando...' : 'Descarga Rápida'}</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
+                PDF
+              </span>
+            </button>
+          </div>
 
-          {/* Botón Boleta Oficial de Control Judicaturas */}
-          <button
-            id="btn-boleta-control-judicaturas"
-            type="button"
-            onClick={() => {
-              if (filteredJudicaturas.length > 0) {
-                setSelectedBoletaJudicatura(filteredJudicaturas[0]);
-              } else if (judicaturas.length > 0) {
-                setSelectedBoletaJudicatura(judicaturas[0]);
-              }
-            }}
-            disabled={judicaturas.length === 0}
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs shadow-md border border-emerald-600 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-            title="Abrir Boleta Oficial de Control Judicaturas"
-          >
-            <FileCheck className="w-4 h-4 text-amber-300" />
-            <span>Boleta de Control</span>
-          </button>
+          {/* Fila 2: Gestión de Datos, Sincronización en Tiempo Real y Formatos (4 Opciones Homogéneas) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {/* Opción 5: Sincronización Forzada con la Base de Datos Firestore */}
+            <button
+              id="btn-forzar-sincronizacion-produccion"
+              type="button"
+              onClick={handleForceSyncProduction}
+              disabled={isSyncingProduction}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs border border-emerald-600 flex items-center justify-between gap-2 transition-all cursor-pointer disabled:opacity-50 group"
+              title="Forzar sincronización inmediata hacia la base de datos de producción Firestore"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <RefreshCw className={`w-4 h-4 text-emerald-100 shrink-0 ${isSyncingProduction ? 'animate-spin' : ''}`} />
+                <span className="truncate">{isSyncingProduction ? 'Sincronizando...' : 'Sincronizar BD'}</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-950 text-emerald-200 border border-emerald-500/40 shrink-0">
+                Firestore
+              </span>
+            </button>
 
-          {/* Botón de Nueva Judicatura */}
-          <button
-            id="btn-nueva-judicatura"
-            type="button"
-            onClick={handleOpenCreate}
-            className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md border border-slate-700 flex items-center gap-2 transition-all cursor-pointer"
-          >
-            <PlusCircle className="w-4 h-4 text-amber-400" />
-            <span>Nueva Judicatura</span>
-          </button>
+            {/* Opción 6: Exportar Registros a Excel compatible */}
+            <button
+              id="btn-exportar-judicaturas-excel"
+              type="button"
+              onClick={handleExportExcel}
+              disabled={filteredJudicaturas.length === 0}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs shadow-2xs flex items-center justify-between gap-2 transition-all cursor-pointer disabled:opacity-50 group"
+              title="Exportar los registros de judicaturas a formato Excel (.xlsx) compatible para re-importación"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0 group-hover:scale-110 transition-transform" />
+                <span className="truncate">Exportar Excel</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                .xlsx
+              </span>
+            </button>
+
+            {/* Opción 7: Importar Registros de Judicaturas */}
+            <button
+              id="btn-importar-judicaturas"
+              type="button"
+              onClick={() => setIsImportModalOpen(true)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs shadow-xs border border-blue-600 flex items-center justify-between gap-2 transition-all cursor-pointer group"
+              title="Importar registros de judicaturas desde un archivo Excel o CSV"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Upload className="w-4 h-4 text-sky-200 shrink-0 group-hover:-translate-y-0.5 transition-transform" />
+                <span className="truncate">Importar Registros</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-blue-900 text-sky-200 border border-blue-400/40 shrink-0">
+                Excel / CSV
+              </span>
+            </button>
+
+            {/* Opción 8: Descargar Formato Oficial / Plantilla Excel */}
+            <button
+              id="btn-plantilla-excel-judicaturas"
+              type="button"
+              onClick={() => {
+                downloadJudicaturasImportTemplate();
+                showToast('Plantilla oficial de importación descargada con éxito', 'success');
+              }}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white hover:bg-sky-50 text-sky-900 border border-sky-300 font-bold text-xs shadow-2xs flex items-center justify-between gap-2 transition-all cursor-pointer group"
+              title="Descargar plantilla oficial de Excel con ejemplos para llenado e importación"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Download className="w-4 h-4 text-sky-600 shrink-0 group-hover:translate-y-0.5 transition-transform" />
+                <span className="truncate">Plantilla Excel</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-sky-100 text-sky-800 border border-sky-200 shrink-0">
+                Formato
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
