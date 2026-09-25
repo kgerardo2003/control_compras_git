@@ -8,7 +8,8 @@ import {
   Check, 
   X, 
   Lock, 
-  PlusCircle
+  PlusCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 export const CatalogsView: React.FC = () => {
@@ -18,6 +19,7 @@ export const CatalogsView: React.FC = () => {
     addCatalogItem, 
     updateCatalogItem, 
     deleteCatalogItem,
+    deleteCatalog,
     currentUser 
   } = useApp();
 
@@ -38,6 +40,9 @@ export const CatalogsView: React.FC = () => {
   // Edición rápida de ítem
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemValor, setEditItemValor] = useState('');
+
+  // Estado para confirmación de eliminación de ítem
+  const [itemToDelete, setItemToDelete] = useState<{ catalogId: string; item: { id: string; valor: string; codigo: string } } | null>(null);
 
   const canManage = currentUser?.rol === 'administrador';
   const selectedCatalog = catalogs.find(c => c.id === selectedCatalogId) || catalogs[0];
@@ -296,16 +301,14 @@ export const CatalogsView: React.FC = () => {
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                                {!selectedCatalog.esSistema && (
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteCatalogItem(selectedCatalog.id, it.id)}
-                                    className="p-1 text-rose-600 hover:bg-rose-50 rounded"
-                                    title="Eliminar"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setItemToDelete({ catalogId: selectedCatalog.id, item: it })}
+                                  className="p-1 text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                  title={`Eliminar "${it.valor}"`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </td>
                           )}
@@ -478,6 +481,47 @@ export const CatalogsView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación de Eliminación de Ítem */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-2 bg-rose-100 rounded-full">
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Eliminar Elemento</h3>
+                <p className="text-[11px] text-slate-500">Confirmación de catálogo</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              ¿Está seguro de que desea eliminar la opción <strong className="text-slate-900 font-semibold">"{itemToDelete.item.valor}"</strong> ({itemToDelete.item.codigo}) del catálogo <strong className="text-slate-900">{selectedCatalog?.nombre}</strong>?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold rounded-lg text-xs cursor-pointer shadow-2xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteCatalogItem(itemToDelete.catalogId, itemToDelete.item.id);
+                  setItemToDelete(null);
+                }}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-xs cursor-pointer"
+              >
+                Sí, Eliminar
+              </button>
+            </div>
           </div>
         </div>
       )}

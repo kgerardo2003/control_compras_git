@@ -4,6 +4,7 @@ import { JudicaturaRecord, JudicaturaObservacion, EstadoInauguracionJudicatura }
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { generateJudicaturasPDF, generateConsolidatedJudicaturasPDF, generateIndividualJudicaturaPDF } from '../utils/judicaturasPdfExport';
 import { ConsolidatedJudicaturasPdfModal } from './ConsolidatedJudicaturasPdfModal';
+import { BoletaJudicaturasModal } from './BoletaJudicaturasModal';
 import {
   ResponsiveContainer,
   PieChart,
@@ -59,6 +60,8 @@ import {
   Timer,
   ArrowUpRight,
   FolderTree,
+  Landmark,
+  FileCheck,
 } from 'lucide-react';
 
 export const JudicaturasView: React.FC = () => {
@@ -77,7 +80,7 @@ export const JudicaturasView: React.FC = () => {
   // Filtros y Vista (por defecto 'table' / listado como solicitó el usuario)
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState<'todos' | 'nombre' | 'ramo' | 'observaciones'>('todos');
-  const [ramoFilter, setRamoFilter] = useState<'Todos' | 'Penal' | 'Civil'>('Todos');
+  const [ramoFilter, setRamoFilter] = useState<'Todos' | 'Penal' | 'Civil' | 'Amparos'>('Todos');
   const [equipamientoFilter, setEquipamientoFilter] = useState<'Todos' | 'Completo' | 'Pendiente'>('Todos');
   const [estatusInauguracionFilter, setEstatusInauguracionFilter] = useState<string>('Todos');
   const [durationFilter, setDurationFilter] = useState<'Todos' | '<=30' | '31-60' | '>60'>('Todos');
@@ -95,10 +98,11 @@ export const JudicaturasView: React.FC = () => {
   const [detailJudicaturaId, setDetailJudicaturaId] = useState<string | null>(null);
   const [deleteConfirmJudicatura, setDeleteConfirmJudicatura] = useState<JudicaturaRecord | null>(null);
   const [isConsolidatedPdfModalOpen, setIsConsolidatedPdfModalOpen] = useState(false);
+  const [selectedBoletaJudicatura, setSelectedBoletaJudicatura] = useState<JudicaturaRecord | null>(null);
 
-  // Form Fields (Cámara Penal y Cámara Paz Civil)
+  // Form Fields (Cámara Penal, Cámara Civil y Cámara Amparos)
   const [nombreJudicatura, setNombreJudicatura] = useState('');
-  const [tipoRamo, setTipoRamo] = useState<'Penal' | 'Civil'>('Penal');
+  const [tipoRamo, setTipoRamo] = useState<'Penal' | 'Civil' | 'Amparos'>('Penal');
   const [fechaInicioAdecuaciones, setFechaInicioAdecuaciones] = useState('');
   const [fechaFinAdecuaciones, setFechaFinAdecuaciones] = useState('');
   const [equipoComputo, setEquipoComputo] = useState<'Si' | 'No'>('No');
@@ -160,13 +164,13 @@ export const JudicaturasView: React.FC = () => {
         if (searchField === 'nombre') {
           matchSearch = j.nombreJudicatura.toLowerCase().includes(searchLower);
         } else if (searchField === 'ramo') {
-          const camaraName = j.tipoRamo === 'Penal' ? 'cámara penal penal' : 'cámara paz civil civil';
+          const camaraName = j.tipoRamo === 'Penal' ? 'cámara penal penal' : j.tipoRamo === 'Civil' ? 'cámara civil civil' : 'cámara amparos amparos';
           matchSearch = camaraName.includes(searchLower);
         } else if (searchField === 'observaciones') {
           matchSearch = Boolean(j.observaciones && j.observaciones.some(o => o.texto.toLowerCase().includes(searchLower)));
         } else {
           // Todos los campos
-          const camaraName = j.tipoRamo === 'Penal' ? 'cámara penal penal' : 'cámara paz civil civil';
+          const camaraName = j.tipoRamo === 'Penal' ? 'cámara penal penal' : j.tipoRamo === 'Civil' ? 'cámara civil civil' : 'cámara amparos amparos';
           matchSearch =
             j.nombreJudicatura.toLowerCase().includes(searchLower) ||
             camaraName.includes(searchLower) ||
@@ -218,6 +222,7 @@ export const JudicaturasView: React.FC = () => {
     const total = judicaturas.length;
     const penal = judicaturas.filter(j => j.tipoRamo === 'Penal').length;
     const civil = judicaturas.filter(j => j.tipoRamo === 'Civil').length;
+    const amparos = judicaturas.filter(j => j.tipoRamo === 'Amparos').length;
 
     let inauguradosCount = 0;
     let pendienteFechaCount = 0;
@@ -273,7 +278,8 @@ export const JudicaturasView: React.FC = () => {
     // 2. Gráfica Circular de Cámaras
     const chartCamaras = [
       { name: 'Cámara Penal', value: penal, color: '#7c3aed', porcentaje: total > 0 ? Math.round((penal / total) * 100) : 0 },
-      { name: 'Cámara Paz Civil', value: civil, color: '#2563eb', porcentaje: total > 0 ? Math.round((civil / total) * 100) : 0 },
+      { name: 'Cámara Civil', value: civil, color: '#2563eb', porcentaje: total > 0 ? Math.round((civil / total) * 100) : 0 },
+      { name: 'Cámara Amparos', value: amparos, color: '#059669', porcentaje: total > 0 ? Math.round((amparos / total) * 100) : 0 },
     ].filter(item => item.value > 0);
 
     // 3. Gráfica Circular de Cobertura Tecnológica TIC
@@ -287,6 +293,7 @@ export const JudicaturasView: React.FC = () => {
       total,
       penal,
       civil,
+      amparos,
       inauguradosCount,
       pendienteFechaCount,
       reprogramadosCount,
@@ -351,6 +358,7 @@ export const JudicaturasView: React.FC = () => {
       const count = matching.length;
       const penalCount = matching.filter(j => j.tipoRamo === 'Penal').length;
       const civilCount = matching.filter(j => j.tipoRamo === 'Civil').length;
+      const amparosCount = matching.filter(j => j.tipoRamo === 'Amparos').length;
       const pct = total > 0 ? Math.round((count / total) * 100) : 0;
       const style = statusStyleMap[st] || {
         color: '#4f46e5',
@@ -364,6 +372,7 @@ export const JudicaturasView: React.FC = () => {
         count,
         penalCount,
         civilCount,
+        amparosCount,
         pct,
         ...style
       };
@@ -374,11 +383,13 @@ export const JudicaturasView: React.FC = () => {
       const matching = judicaturas.filter(j => getStatus(j) === st);
       const penal = matching.filter(j => j.tipoRamo === 'Penal').length;
       const civil = matching.filter(j => j.tipoRamo === 'Civil').length;
+      const amparos = matching.filter(j => j.tipoRamo === 'Amparos').length;
       return {
         estatus: st,
         'Cámara Penal': penal,
-        'Cámara Paz Civil': civil,
-        total: penal + civil
+        'Cámara Civil': civil,
+        'Cámara Amparos': amparos,
+        total: penal + civil + amparos
       };
     });
 
@@ -391,24 +402,33 @@ export const JudicaturasView: React.FC = () => {
         color: item.color,
         porcentaje: item.pct,
         penal: item.penalCount,
-        civil: item.civilCount
+        civil: item.civilCount,
+        amparos: item.amparosCount
       }));
+
+    const penalTotal = judicaturas.filter(j => j.tipoRamo === 'Penal').length;
+    const civilTotal = judicaturas.filter(j => j.tipoRamo === 'Civil').length;
+    const amparosTotal = judicaturas.filter(j => j.tipoRamo === 'Amparos').length;
 
     return {
       statusCards,
       barChartData,
       pieChartData,
-      total
+      total,
+      penalTotal,
+      civilTotal,
+      amparosTotal
     };
   }, [judicaturas, catalogs]);
 
-  // Segmentación reactiva de judicaturas por Ramo (Penal y Civil) para análisis visual y reportes
+  // Segmentación reactiva de judicaturas por Ramo (Penal, Civil y Amparos) para análisis visual y reportes
   const judicaturasByRamo = useMemo(() => {
     const getStatus = (j: JudicaturaRecord) =>
       j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
 
     const penalList = filteredJudicaturas.filter(j => j.tipoRamo === 'Penal');
     const civilList = filteredJudicaturas.filter(j => j.tipoRamo === 'Civil');
+    const amparosList = filteredJudicaturas.filter(j => j.tipoRamo === 'Amparos');
 
     const calculateRamoStats = (list: JudicaturaRecord[]) => ({
       total: list.length,
@@ -429,17 +449,20 @@ export const JudicaturasView: React.FC = () => {
       penal: penalList,
       penalStats: calculateRamoStats(penalList),
       civil: civilList,
-      civilStats: calculateRamoStats(civilList)
+      civilStats: calculateRamoStats(civilList),
+      amparos: amparosList,
+      amparosStats: calculateRamoStats(amparosList)
     };
   }, [filteredJudicaturas]);
 
   // Handler para exportar directamente el reporte de un Ramo específico
-  const handleExportRamoPDF = (ramo: 'Penal' | 'Civil') => {
+  const handleExportRamoPDF = (ramo: 'Penal' | 'Civil' | 'Amparos') => {
     const list = filteredJudicaturas.filter(j => j.tipoRamo === ramo);
+    const camaraLabel = ramo === 'Penal' ? 'Penal' : ramo === 'Civil' ? 'Civil' : 'Amparos';
     if (list.length === 0) {
       showToast({
         title: 'Sin Registros',
-        message: `No existen judicaturas activas en Cámara ${ramo === 'Penal' ? 'Penal' : 'Paz Civil'} para exportar.`,
+        message: `No existen judicaturas activas en Cámara ${camaraLabel} para exportar.`,
         type: 'warning'
       });
       return;
@@ -489,6 +512,9 @@ export const JudicaturasView: React.FC = () => {
     let civilDurationDays = 0;
     let civilCount = 0;
 
+    let amparosDurationDays = 0;
+    let amparosCount = 0;
+
     let minDays = Infinity;
     let maxDays = -Infinity;
     let fastestJudicatura: JudicaturaRecord | null = null;
@@ -525,9 +551,12 @@ export const JudicaturasView: React.FC = () => {
           if (j.tipoRamo === 'Penal') {
             penalDurationDays += diffDays;
             penalCount++;
-          } else {
+          } else if (j.tipoRamo === 'Civil') {
             civilDurationDays += diffDays;
             civilCount++;
+          } else {
+            amparosDurationDays += diffDays;
+            amparosCount++;
           }
 
           if (diffDays < minDays) {
@@ -569,6 +598,7 @@ export const JudicaturasView: React.FC = () => {
     const avgDays = countWithDates > 0 ? Math.round(totalDurationDays / countWithDates) : 0;
     const penalAvgDays = penalCount > 0 ? Math.round(penalDurationDays / penalCount) : 0;
     const civilAvgDays = civilCount > 0 ? Math.round(civilDurationDays / civilCount) : 0;
+    const amparosAvgDays = amparosCount > 0 ? Math.round(amparosDurationDays / amparosCount) : 0;
     const avgGapDays = countWithInauguration > 0 ? Math.round(totalGapDays / countWithInauguration) : 0;
     const completionPct = countWithDates > 0 ? Math.round((completedAdecuacionesCount / countWithDates) * 100) : 0;
 
@@ -576,8 +606,10 @@ export const JudicaturasView: React.FC = () => {
       avgDays,
       penalAvgDays,
       civilAvgDays,
+      amparosAvgDays,
       penalCount,
       civilCount,
+      amparosCount,
       countWithDates,
       minDays: minDays === Infinity ? 0 : minDays,
       maxDays: maxDays === -Infinity ? 0 : maxDays,
@@ -827,17 +859,18 @@ export const JudicaturasView: React.FC = () => {
     }
   };
 
-  // Generación y exportación de informe consolidado en PDF (Descarga Directa)
+  // Generación y exportación de informe consolidado en PDF (Descarga Directa con Cámaras Separadas)
   const handleQuickExportPDF = () => {
     setIsExportingPdf(true);
     try {
       const filename = generateConsolidatedJudicaturasPDF({
-        judicaturas: filteredJudicaturas,
-        title: 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR',
-        subtitle: 'Gerencia de Informática • Seguimiento de Adecuaciones, Infraestructura TIC e Hitos de Apertura',
+        judicaturas: filteredJudicaturas.length > 0 ? filteredJudicaturas : judicaturas,
+        title: 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR (CÁMARAS PENAL, CIVIL Y AMPAROS)',
+        subtitle: 'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional',
         includeTable: true,
         includeGantt: true,
         includeStatusMatrix: true,
+        groupByRamo: true, // Forzar separación por Cámara Penal, Cámara Civil y Cámara Amparos
         filterInfo: {
           search: searchTerm.trim() || undefined,
           ramo: ramoFilter !== 'Todos' ? ramoFilter : undefined,
@@ -845,11 +878,11 @@ export const JudicaturasView: React.FC = () => {
           estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
         },
         currentUser,
-        filenamePrefix: 'Reporte_Consolidado_Judicaturas_OJ'
+        filenamePrefix: 'Reporte_Consolidado_Judicaturas_Penal_y_Civil'
       });
       showToast({
         title: 'Reporte Consolidado Descargado con Éxito',
-        message: `Se descargó "${filename}" con la tabla, estado y diagrama de Gantt.`,
+        message: `Se descargó "${filename}" con Cámaras Penal y Civil separadas.`,
         type: 'success'
       });
     } catch (err) {
@@ -987,10 +1020,15 @@ export const JudicaturasView: React.FC = () => {
                           <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
                           Cámara Penal
                         </span>
-                      ) : (
+                      ) : j.tipoRamo === 'Civil' ? (
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-blue-50 text-blue-900 border border-blue-200 inline-flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                          Cámara Paz Civil
+                          Cámara Civil
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200 inline-flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                          Cámara Amparos
                         </span>
                       )}
                     </td>
@@ -1134,6 +1172,15 @@ export const JudicaturasView: React.FC = () => {
                         <FileText className="w-4 h-4 text-blue-900" />
                       </button>
 
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBoletaJudicatura(j)}
+                        className="p-1.5 rounded-lg text-slate-600 hover:text-emerald-900 hover:bg-emerald-50 transition-colors cursor-pointer"
+                        title="Boleta Oficial de Control Judicaturas"
+                      >
+                        <FileCheck className="w-4 h-4 text-emerald-700" />
+                      </button>
+
                       {canEdit && (
                         <button
                           type="button"
@@ -1198,10 +1245,12 @@ export const JudicaturasView: React.FC = () => {
                         className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
                           j.tipoRamo === 'Penal'
                             ? 'bg-purple-50 text-purple-800 border-purple-200'
-                            : 'bg-blue-50 text-blue-800 border-blue-200'
+                            : j.tipoRamo === 'Civil'
+                            ? 'bg-blue-50 text-blue-800 border-blue-200'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                         }`}
                       >
-                        {j.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
+                        {j.tipoRamo === 'Penal' ? 'Cámara Penal' : j.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos'}
                       </span>
                       {isAllEquipped ? (
                         <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
@@ -1396,15 +1445,26 @@ export const JudicaturasView: React.FC = () => {
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => setDetailJudicaturaId(j.id)}
-                  className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-blue-900 border border-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
-                >
-                  <GitBranch className="w-4 h-4 text-blue-700" />
-                  <span>Ver Ficha y Árbol de Acciones ({(j.observaciones || []).length})</span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDetailJudicaturaId(j.id)}
+                    className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-blue-900 border border-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <GitBranch className="w-4 h-4 text-blue-700" />
+                    <span>Ver Ficha ({(j.observaciones || []).length})</span>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBoletaJudicatura(j)}
+                    className="py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                    title="Boleta Oficial de Control Judicaturas"
+                  >
+                    <FileCheck className="w-4 h-4 text-emerald-700" />
+                    <span className="hidden sm:inline">Boleta</span>
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -1481,6 +1541,25 @@ export const JudicaturasView: React.FC = () => {
             <span>{isExportingPdf ? 'Generando...' : 'Descarga Rápida'}</span>
           </button>
 
+          {/* Botón Boleta Oficial de Control Judicaturas */}
+          <button
+            id="btn-boleta-control-judicaturas"
+            type="button"
+            onClick={() => {
+              if (filteredJudicaturas.length > 0) {
+                setSelectedBoletaJudicatura(filteredJudicaturas[0]);
+              } else if (judicaturas.length > 0) {
+                setSelectedBoletaJudicatura(judicaturas[0]);
+              }
+            }}
+            disabled={judicaturas.length === 0}
+            className="px-3.5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs shadow-md border border-emerald-600 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            title="Abrir Boleta Oficial de Control Judicaturas"
+          >
+            <FileCheck className="w-4 h-4 text-amber-300" />
+            <span>Boleta de Control</span>
+          </button>
+
           {/* Botón de Nueva Judicatura */}
           <button
             id="btn-nueva-judicatura"
@@ -1551,7 +1630,7 @@ export const JudicaturasView: React.FC = () => {
         </div>
 
         {/* Rejilla de Indicadores (KPIs) de Rendimiento */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
           {/* KPI 1: Tiempo Promedio General de Adecuación */}
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/15 hover:border-white/30 transition-all flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-300 text-[11px] font-bold uppercase tracking-wider">
@@ -1569,10 +1648,12 @@ export const JudicaturasView: React.FC = () => {
                 Ciclo técnico institucional
               </p>
             </div>
-            <div className="pt-2 border-t border-white/10 text-[10px] text-slate-300 flex items-center justify-between font-mono">
-              <span className="text-purple-300">Pen: {performanceMetrics.penalAvgDays}d</span>
+            <div className="pt-2 border-t border-white/10 text-[9px] text-slate-300 flex items-center justify-between font-mono">
+              <span className="text-purple-300">P:{performanceMetrics.penalAvgDays}d</span>
               <span>•</span>
-              <span className="text-blue-300">Civ: {performanceMetrics.civilAvgDays}d</span>
+              <span className="text-blue-300">C:{performanceMetrics.civilAvgDays}d</span>
+              <span>•</span>
+              <span className="text-emerald-300">A:{performanceMetrics.amparosAvgDays}d</span>
             </div>
           </div>
 
@@ -1601,10 +1682,10 @@ export const JudicaturasView: React.FC = () => {
             </div>
           </div>
 
-          {/* KPI 3: Cámara Paz Civil */}
+          {/* KPI 3: Cámara Civil */}
           <div className="bg-blue-900/30 backdrop-blur-md rounded-xl p-3.5 border border-blue-500/30 hover:border-blue-500/50 transition-all flex flex-col justify-between">
             <div className="flex items-center justify-between text-blue-200 text-[11px] font-bold uppercase tracking-wider">
-              <span>Cámara Paz Civil</span>
+              <span>Cámara Civil</span>
               <Building2 className="w-4 h-4 text-blue-300" />
             </div>
             <div className="my-1.5">
@@ -1622,6 +1703,31 @@ export const JudicaturasView: React.FC = () => {
               <span>Ramo Civil</span>
               <span className="font-mono text-white bg-blue-800/60 px-1.5 py-0.2 rounded">
                 {performanceMetrics.civilCount} sedes
+              </span>
+            </div>
+          </div>
+
+          {/* KPI 4: Cámara Amparos */}
+          <div className="bg-emerald-900/30 backdrop-blur-md rounded-xl p-3.5 border border-emerald-500/30 hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+            <div className="flex items-center justify-between text-emerald-200 text-[11px] font-bold uppercase tracking-wider">
+              <span>Cámara Amparos</span>
+              <Landmark className="w-4 h-4 text-emerald-300" />
+            </div>
+            <div className="my-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black font-mono text-emerald-100 tracking-tight">
+                  {performanceMetrics.amparosAvgDays}
+                </span>
+                <span className="text-xs font-bold text-emerald-300 uppercase">Días</span>
+              </div>
+              <p className="text-[10px] text-emerald-200 mt-0.5">
+                {performanceMetrics.amparosCount} sedes amparos
+              </p>
+            </div>
+            <div className="pt-2 border-t border-emerald-500/20 text-[10px] text-emerald-300 flex items-center justify-between font-semibold">
+              <span>Ramo Amparos</span>
+              <span className="font-mono text-white bg-emerald-800/60 px-1.5 py-0.2 rounded">
+                {performanceMetrics.amparosCount} sedes
               </span>
             </div>
           </div>
@@ -1714,7 +1820,7 @@ export const JudicaturasView: React.FC = () => {
               <span>Resumen Ejecutivo y Gráficos por Estatus</span>
             </h2>
             <p className="text-xs text-indigo-200 mt-0.5">
-              Monitoreo analítico de inauguraciones, distribución por estatus y comparativa institucional por ramo (Cámara Penal y Cámara Paz Civil)
+              Monitoreo analítico de inauguraciones, distribución por estatus y comparativa institucional por ramo (Cámara Penal, Cámara Civil y Cámara Amparos)
             </p>
           </div>
 
@@ -1728,7 +1834,11 @@ export const JudicaturasView: React.FC = () => {
               <span>Civil: {statusExecutiveMetrics.civilTotal}</span>
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-emerald-900/60 border border-emerald-500/40 text-emerald-200 text-xs flex items-center gap-1.5 font-bold font-mono">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>Amparos: {statusExecutiveMetrics.amparosTotal}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-amber-900/60 border border-amber-500/40 text-amber-200 text-xs flex items-center gap-1.5 font-bold font-mono">
+              <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
               <span>TIC 100%: {stats.equipamiento100}</span>
             </div>
           </div>
@@ -1778,6 +1888,7 @@ export const JudicaturasView: React.FC = () => {
             }`}>
               <span>Penal: {statusExecutiveMetrics.penalTotal}</span>
               <span>Civil: {statusExecutiveMetrics.civilTotal}</span>
+              <span>Amparos: {statusExecutiveMetrics.amparosTotal}</span>
             </div>
           </div>
 
@@ -1912,7 +2023,7 @@ export const JudicaturasView: React.FC = () => {
                   </h3>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Comparativa de distribución entre Cámara Penal (púrpura) y Cámara Paz Civil (azul) por cada estatus
+                  Comparativa de distribución entre Cámara Penal (púrpura), Cámara Civil (azul) y Cámara Amparos (verde) por cada estatus
                 </p>
               </div>
 
@@ -1922,6 +2033,9 @@ export const JudicaturasView: React.FC = () => {
                 </span>
                 <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-900 border border-blue-200">
                   Civil: {statusExecutiveMetrics.civilTotal}
+                </span>
+                <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-200">
+                  Amparos: {statusExecutiveMetrics.amparosTotal}
                 </span>
               </div>
             </div>
@@ -1973,13 +2087,19 @@ export const JudicaturasView: React.FC = () => {
                       dataKey="Cámara Penal"
                       fill="#7c3aed"
                       radius={[4, 4, 0, 0]}
-                      barSize={20}
+                      barSize={16}
                     />
                     <Bar
-                      dataKey="Cámara Paz Civil"
+                      dataKey="Cámara Civil"
                       fill="#2563eb"
                       radius={[4, 4, 0, 0]}
-                      barSize={20}
+                      barSize={16}
+                    />
+                    <Bar
+                      dataKey="Cámara Amparos"
+                      fill="#059669"
+                      radius={[4, 4, 0, 0]}
+                      barSize={16}
                     />
                   </BarChart>
                 </ResponsiveContainer>
@@ -2206,7 +2326,8 @@ export const JudicaturasView: React.FC = () => {
             {[
               { id: 'Todos', label: 'Todas' },
               { id: 'Penal', label: 'Cámara Penal' },
-              { id: 'Civil', label: 'Cámara Paz Civil' }
+              { id: 'Civil', label: 'Cámara Civil' },
+              { id: 'Amparos', label: 'Cámara Amparos' }
             ].map((r) => (
               <button
                 key={r.id}
@@ -2236,7 +2357,7 @@ export const JudicaturasView: React.FC = () => {
                   ? 'bg-purple-900 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 bg-transparent'
               }`}
-              title="Separar visualmente las judicaturas por Ramo (Cámara Penal y Cámara Paz Civil) para un mejor análisis"
+              title="Separar visualmente las judicaturas por Ramo (Cámara Penal, Cámara Civil y Cámara Amparos) para un mejor análisis"
             >
               <FolderTree className="w-3.5 h-3.5 text-amber-400" />
               <span>{isGroupedByRamo ? 'Separado por Ramo' : 'Separar por Ramo'}</span>
@@ -2305,7 +2426,7 @@ export const JudicaturasView: React.FC = () => {
             )}
             {ramoFilter !== 'Todos' && (
               <span className="px-2 py-0.5 rounded bg-white border border-amber-300 font-bold">
-                {ramoFilter === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
+                {ramoFilter === 'Penal' ? 'Cámara Penal' : ramoFilter === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos'}
               </span>
             )}
             {equipamientoFilter !== 'Todos' && (
@@ -2342,10 +2463,82 @@ export const JudicaturasView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA SEPARADA POR RAMO (CÁMARA PENAL Y CÁMARA PAZ CIVIL)                */}
+      {/* VISTA SEPARADA POR RAMO (CÁMARAS PENAL, CIVIL Y AMPAROS)                 */}
       {/* ========================================================================= */}
       {isGroupedByRamo && viewMode !== 'gantt' && (
         <div className="space-y-6">
+          {/* Banner de Exportación de Reportes Oficiales: Consolidado (Penal + Civil + Amparos Separadas) y por Cámara */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white rounded-2xl p-4 sm:p-5 border border-indigo-900 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-400/40 text-amber-300 flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-white">
+                    Reportes de Judicaturas: Consolidado y por Cámara
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                    PDF Oficial OJ
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Reporte consolidado con Cámaras Penal, Civil y Amparos separadas, o reportes independientes por cada cámara jurisdiccional.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {/* Reporte Consolidado con separación Penal, Civil y Amparos */}
+              <button
+                type="button"
+                onClick={handleQuickExportPDF}
+                disabled={isExportingPdf || filteredJudicaturas.length === 0}
+                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs shadow-md border border-amber-400 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                title="Generar y descargar de inmediato el reporte consolidado oficial con Cámaras Penal, Civil y Amparos separadas"
+              >
+                <Download className="w-4 h-4 text-slate-950" />
+                <span>Reporte Consolidado (Penal + Civil + Amparos)</span>
+              </button>
+
+              {/* Reporte Individual Cámara Penal */}
+              <button
+                type="button"
+                onClick={() => handleExportRamoPDF('Penal')}
+                disabled={judicaturasByRamo.penal.length === 0}
+                className="px-3 py-2 rounded-xl bg-purple-900/80 hover:bg-purple-800 text-white font-bold text-xs border border-purple-600 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                title="Descargar reporte exclusivo de Cámara Penal"
+              >
+                <Scale className="w-3.5 h-3.5 text-purple-300" />
+                <span>Reporte Penal</span>
+              </button>
+
+              {/* Reporte Individual Cámara Civil */}
+              <button
+                type="button"
+                onClick={() => handleExportRamoPDF('Civil')}
+                disabled={judicaturasByRamo.civil.length === 0}
+                className="px-3 py-2 rounded-xl bg-blue-900/80 hover:bg-blue-800 text-white font-bold text-xs border border-blue-600 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                title="Descargar reporte exclusivo de Cámara Civil"
+              >
+                <Building2 className="w-3.5 h-3.5 text-blue-300" />
+                <span>Reporte Civil</span>
+              </button>
+
+              {/* Reporte Individual Cámara Amparos */}
+              <button
+                type="button"
+                onClick={() => handleExportRamoPDF('Amparos')}
+                disabled={judicaturasByRamo.amparos.length === 0}
+                className="px-3 py-2 rounded-xl bg-emerald-900/80 hover:bg-emerald-800 text-white font-bold text-xs border border-emerald-600 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                title="Descargar reporte exclusivo de Cámara Amparos"
+              >
+                <Landmark className="w-3.5 h-3.5 text-emerald-300" />
+                <span>Reporte Amparos</span>
+              </button>
+            </div>
+          </div>
+
           {/* BLOQUE 1: CÁMARA PENAL */}
           <div className="bg-white border-2 border-purple-200/80 rounded-2xl shadow-xs overflow-hidden">
             {/* Cabecera Distintiva de Cámara Penal */}
@@ -2395,6 +2588,17 @@ export const JudicaturasView: React.FC = () => {
                   <FileText className="w-3.5 h-3.5 text-amber-400" />
                   <span>Reporte Penal PDF</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleQuickExportPDF}
+                  disabled={isExportingPdf || filteredJudicaturas.length === 0}
+                  className="px-2.5 py-1.5 bg-white hover:bg-purple-50 text-purple-900 text-xs font-bold rounded-xl border border-purple-300 transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Exportar reporte consolidado completo (Penal + Civil separadas)"
+                >
+                  <Download className="w-3.5 h-3.5 text-purple-700" />
+                  <span>Consolidado</span>
+                </button>
               </div>
             </div>
 
@@ -2408,9 +2612,9 @@ export const JudicaturasView: React.FC = () => {
             )}
           </div>
 
-          {/* BLOQUE 2: CÁMARA PAZ CIVIL */}
+          {/* BLOQUE 2: CÁMARA CIVIL */}
           <div className="bg-white border-2 border-blue-200/80 rounded-2xl shadow-xs overflow-hidden">
-            {/* Cabecera Distintiva de Cámara Paz Civil */}
+            {/* Cabecera Distintiva de Cámara Civil */}
             <div className="p-4 sm:p-5 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-sky-50/50 to-white flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-900 text-white flex items-center justify-center shadow-md">
@@ -2419,14 +2623,14 @@ export const JudicaturasView: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="font-black text-slate-900 text-base tracking-tight">
-                      CÁMARA PAZ CIVIL
+                      CÁMARA CIVIL
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-900 border border-blue-300 font-mono">
                       {judicaturasByRamo.civil.length} {judicaturasByRamo.civil.length === 1 ? 'Judicatura' : 'Judicaturas'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Órganos jurisdiccionales del Ramo Paz y Civil en adecuación física y tecnológica
+                    Órganos jurisdiccionales del Ramo Civil, Familia y Mercantil en adecuación física y tecnológica
                   </p>
                 </div>
               </div>
@@ -2452,10 +2656,21 @@ export const JudicaturasView: React.FC = () => {
                   onClick={() => handleExportRamoPDF('Civil')}
                   disabled={judicaturasByRamo.civil.length === 0}
                   className="px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold rounded-xl shadow-2xs border border-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title="Exportar reporte oficial exclusivo de Cámara Paz Civil en PDF"
+                  title="Exportar reporte oficial exclusivo de Cámara Civil en PDF"
                 >
                   <FileText className="w-3.5 h-3.5 text-amber-400" />
                   <span>Reporte Civil PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleQuickExportPDF}
+                  disabled={isExportingPdf || filteredJudicaturas.length === 0}
+                  className="px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-900 text-xs font-bold rounded-xl border border-blue-300 transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Exportar reporte consolidado completo (Penal + Civil + Amparos separadas)"
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-700" />
+                  <span>Consolidado</span>
                 </button>
               </div>
             </div>
@@ -2466,6 +2681,79 @@ export const JudicaturasView: React.FC = () => {
             ) : (
               <div className="p-4 sm:p-5">
                 {renderJudicaturasCards(judicaturasByRamo.civil)}
+              </div>
+            )}
+          </div>
+
+          {/* BLOQUE 3: CÁMARA AMPAROS */}
+          <div className="bg-white border-2 border-emerald-200/80 rounded-2xl shadow-xs overflow-hidden">
+            {/* Cabecera Distintiva de Cámara Amparos */}
+            <div className="p-4 sm:p-5 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-teal-50/50 to-white flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-900 text-white flex items-center justify-center shadow-md">
+                  <Landmark className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-black text-slate-900 text-base tracking-tight">
+                      CÁMARA AMPAROS
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono">
+                      {judicaturasByRamo.amparos.length} {judicaturasByRamo.amparos.length === 1 ? 'Judicatura' : 'Judicaturas'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Órganos jurisdiccionales del Ramo de Amparos y Antejuicios en adecuación física y tecnológica
+                  </p>
+                </div>
+              </div>
+
+              {/* Badges de estatus y acción de exportación para Amparos */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-white/80 border border-emerald-200 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold">
+                  <span className="text-emerald-700">Inaugurados: {judicaturasByRamo.amparosStats.inaugurados}</span>
+                  <span>•</span>
+                  <span className="text-amber-700">Pendientes: {judicaturasByRamo.amparosStats.pendientes}</span>
+                  <span>•</span>
+                  <span className="text-rose-700">Reprog: {judicaturasByRamo.amparosStats.reprogramados}</span>
+                  <span>•</span>
+                  <span className="text-blue-700">Fin: {judicaturasByRamo.amparosStats.finalizados}</span>
+                  <span>•</span>
+                  <span className="text-purple-700">Traslado: {judicaturasByRamo.amparosStats.traslados}</span>
+                  <span>•</span>
+                  <span className="text-teal-700 font-black">TIC 100%: {judicaturasByRamo.amparosStats.equip100}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportRamoPDF('Amparos')}
+                  disabled={judicaturasByRamo.amparos.length === 0}
+                  className="px-3 py-1.5 bg-emerald-900 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-2xs border border-emerald-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Exportar reporte oficial exclusivo de Cámara Amparos en PDF"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Reporte Amparos PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleQuickExportPDF}
+                  disabled={isExportingPdf || filteredJudicaturas.length === 0}
+                  className="px-2.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-900 text-xs font-bold rounded-xl border border-emerald-300 transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Exportar reporte consolidado completo (Penal + Civil + Amparos separadas)"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Consolidado</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido Amparos: Tabla o Fichas */}
+            {viewMode === 'table' ? (
+              renderJudicaturasTable(judicaturasByRamo.amparos, true)
+            ) : (
+              <div className="p-4 sm:p-5">
+                {renderJudicaturasCards(judicaturasByRamo.amparos)}
               </div>
             )}
           </div>
@@ -2606,7 +2894,11 @@ export const JudicaturasView: React.FC = () => {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded bg-blue-600"></div>
-                <span className="text-slate-700 font-medium">Adecuaciones Cámara Paz Civil</span>
+                <span className="text-slate-700 font-medium">Adecuaciones Cámara Civil</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-emerald-600"></div>
+                <span className="text-slate-700 font-medium">Adecuaciones Cámara Amparos</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded-full bg-amber-500 border border-amber-300"></div>
@@ -2664,10 +2956,12 @@ export const JudicaturasView: React.FC = () => {
                               className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
                                 j.tipoRamo === 'Penal'
                                   ? 'bg-purple-100 text-purple-800'
-                                  : 'bg-blue-100 text-blue-800'
+                                  : j.tipoRamo === 'Civil'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-emerald-100 text-emerald-800'
                               }`}
                             >
-                              {j.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
+                              {j.tipoRamo === 'Penal' ? 'Cámara Penal' : j.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos'}
                             </span>
                             <span className="text-[10px] text-slate-400 font-mono">
                               Inauguración: {formatDate(j.fechaInauguracion)}
@@ -2703,7 +2997,9 @@ export const JudicaturasView: React.FC = () => {
                                 className={`w-full h-5 rounded-md shadow-xs opacity-90 transition-all ${
                                   j.tipoRamo === 'Penal'
                                     ? 'bg-purple-600 hover:bg-purple-700'
-                                    : 'bg-blue-600 hover:bg-blue-700'
+                                    : j.tipoRamo === 'Civil'
+                                    ? 'bg-blue-600 hover:bg-blue-700'
+                                    : 'bg-emerald-600 hover:bg-emerald-700'
                                 }`}
                                 title={`Adecuaciones: ${formatDate(j.fechaInicioAdecuaciones)} al ${formatDate(j.fechaFinAdecuaciones)}`}
                               />
@@ -2783,15 +3079,15 @@ export const JudicaturasView: React.FC = () => {
                 )}
               </div>
 
-              {/* Tipo de Ramo: "Cámara Penal" y "Cámara Paz Civil" (Requisito Explícito) */}
+              {/* Tipo de Ramo: "Cámara Penal", "Cámara Civil" y "Cámara Amparos" */}
               <div>
                 <label className="block font-bold text-slate-700 mb-1.5">
                   Cámara Asignada <span className="text-rose-600">*</span>
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {/* Opción Cámara Penal */}
                   <label
-                    className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                    className={`p-3 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
                       tipoRamo === 'Penal'
                         ? 'bg-purple-50 border-purple-500 text-purple-950 ring-2 ring-purple-500/20'
                         : 'border-slate-300 hover:bg-slate-50'
@@ -2805,18 +3101,18 @@ export const JudicaturasView: React.FC = () => {
                       onChange={() => setTipoRamo('Penal')}
                       className="sr-only"
                     />
-                    <div className="w-4 h-4 rounded-full border-2 border-purple-600 flex items-center justify-center">
+                    <div className="w-4 h-4 rounded-full border-2 border-purple-600 flex items-center justify-center shrink-0">
                       {tipoRamo === 'Penal' && <div className="w-2 h-2 rounded-full bg-purple-600" />}
                     </div>
                     <div>
                       <span className="font-black text-xs block">Cámara Penal</span>
-                      <span className="text-[10px] text-slate-500">Juzgados de Paz y Primera Instancia Penal</span>
+                      <span className="text-[10px] text-slate-500">Juzgados y Salas del Ramo Penal</span>
                     </div>
                   </label>
 
-                  {/* Opción Cámara Paz Civil */}
+                  {/* Opción Cámara Civil */}
                   <label
-                    className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                    className={`p-3 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
                       tipoRamo === 'Civil'
                         ? 'bg-blue-50 border-blue-500 text-blue-950 ring-2 ring-blue-500/20'
                         : 'border-slate-300 hover:bg-slate-50'
@@ -2830,12 +3126,37 @@ export const JudicaturasView: React.FC = () => {
                       onChange={() => setTipoRamo('Civil')}
                       className="sr-only"
                     />
-                    <div className="w-4 h-4 rounded-full border-2 border-blue-600 flex items-center justify-center">
+                    <div className="w-4 h-4 rounded-full border-2 border-blue-600 flex items-center justify-center shrink-0">
                       {tipoRamo === 'Civil' && <div className="w-2 h-2 rounded-full bg-blue-600" />}
                     </div>
                     <div>
-                      <span className="font-black text-xs block">Cámara Paz Civil</span>
-                      <span className="text-[10px] text-slate-500">Juzgados de Paz, Civil, Familia y Mercantil</span>
+                      <span className="font-black text-xs block">Cámara Civil</span>
+                      <span className="text-[10px] text-slate-500">Juzgados y Salas de Paz, Civil, Familia y Trabajo</span>
+                    </div>
+                  </label>
+
+                  {/* Opción Cámara Amparos */}
+                  <label
+                    className={`p-3 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
+                      tipoRamo === 'Amparos'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20'
+                        : 'border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="tipoRamo"
+                      value="Amparos"
+                      checked={tipoRamo === 'Amparos'}
+                      onChange={() => setTipoRamo('Amparos')}
+                      className="sr-only"
+                    />
+                    <div className="w-4 h-4 rounded-full border-2 border-emerald-600 flex items-center justify-center shrink-0">
+                      {tipoRamo === 'Amparos' && <div className="w-2 h-2 rounded-full bg-emerald-600" />}
+                    </div>
+                    <div>
+                      <span className="font-black text-xs block">Cámara Amparos</span>
+                      <span className="text-[10px] text-slate-500">Juzgados y Salas de Amparos y Antejuicios</span>
                     </div>
                   </label>
                 </div>
@@ -3160,10 +3481,12 @@ export const JudicaturasView: React.FC = () => {
                       className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
                         activeDetailJudicatura.tipoRamo === 'Penal'
                           ? 'bg-purple-900/80 text-purple-200 border border-purple-400/40'
-                          : 'bg-blue-900/80 text-blue-200 border border-blue-400/40'
+                          : activeDetailJudicatura.tipoRamo === 'Civil'
+                          ? 'bg-blue-900/80 text-blue-200 border border-blue-400/40'
+                          : 'bg-emerald-900/80 text-emerald-200 border border-emerald-400/40'
                       }`}
                     >
-                      {activeDetailJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
+                      {activeDetailJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : activeDetailJudicatura.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos'}
                     </span>
                     <span className="text-[11px] text-slate-300 font-mono">
                       Inauguración: {formatDate(activeDetailJudicatura.fechaInauguracion)}
@@ -3200,6 +3523,15 @@ export const JudicaturasView: React.FC = () => {
                     >
                       <FileText className="w-3.5 h-3.5 text-amber-400" />
                       <span>Generar Ficha PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBoletaJudicatura(activeDetailJudicatura)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      title="Generar e imprimir Boleta Oficial de Control Judicaturas"
+                    >
+                      <FileCheck className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Boleta de Control Judicaturas</span>
                     </button>
                     {canEdit && (
                       <button
@@ -3252,7 +3584,7 @@ export const JudicaturasView: React.FC = () => {
                   <div>
                     <span className="text-[10px] uppercase text-slate-400 font-bold block">Cámara</span>
                     <span className="font-bold text-slate-900">
-                      {activeDetailJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}
+                      {activeDetailJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : activeDetailJudicatura.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos'}
                     </span>
                   </div>
                 </div>
@@ -3412,7 +3744,7 @@ export const JudicaturasView: React.FC = () => {
                 {deleteConfirmJudicatura.nombreJudicatura}
               </p>
               <p className="text-[11px] text-slate-600">
-                Cámara: <strong>{deleteConfirmJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}</strong> • Estatus: <strong>{deleteConfirmJudicatura.estadoInauguracion || (deleteConfirmJudicatura.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')}</strong> • Inauguración: <strong>{deleteConfirmJudicatura.fechaInauguracion ? formatDate(deleteConfirmJudicatura.fechaInauguracion) : 'Por definir'}</strong>
+                Cámara: <strong>{deleteConfirmJudicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : deleteConfirmJudicatura.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos'}</strong> • Estatus: <strong>{deleteConfirmJudicatura.estadoInauguracion || (deleteConfirmJudicatura.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha')}</strong> • Inauguración: <strong>{deleteConfirmJudicatura.fechaInauguracion ? formatDate(deleteConfirmJudicatura.fechaInauguracion) : 'Por definir'}</strong>
               </p>
               <p className="text-[10px] text-rose-800 mt-2 font-medium">
                 Esta acción removerá definitivamente la judicatura y todo su árbol de acciones registradas.
@@ -3456,6 +3788,16 @@ export const JudicaturasView: React.FC = () => {
           estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
         }}
       />
+
+      {/* ========================================================================= */}
+      {/* BOLETA OFICIAL DE CONTROL JUDICATURAS (MODAL INSTITUCIONAL)              */}
+      {/* ========================================================================= */}
+      {selectedBoletaJudicatura && (
+        <BoletaJudicaturasModal
+          judicatura={selectedBoletaJudicatura}
+          onClose={() => setSelectedBoletaJudicatura(null)}
+        />
+      )}
     </div>
   );
 };

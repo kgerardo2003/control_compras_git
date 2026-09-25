@@ -283,7 +283,7 @@ export type ActiveTab = 'dashboard' | 'compras' | 'judicaturas' | 'presupuesto' 
 // MÓDULO DE JUDICATURAS POR INAUGURAR
 // ==========================================
 
-export type TipoRamoJudicatura = 'Penal' | 'Civil';
+export type TipoRamoJudicatura = 'Penal' | 'Civil' | 'Amparos';
 export type OpcionSiNo = 'Si' | 'No';
 export type EstadoInauguracionJudicatura = 'Pendiente Fecha' | 'Reprogramado' | 'Inaugurado' | 'Finalizado' | 'Traslado' | string;
 

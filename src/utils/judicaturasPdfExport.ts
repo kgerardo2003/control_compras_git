@@ -171,7 +171,7 @@ function drawPageHeader(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(255, 255, 255);
-  doc.text('GERENCIA DE INFORMÁTICA • DIRECCIÓN DE INFRAESTRUCTURA Y SISTEMAS', marginX + 27, bannerY + 11.5);
+  doc.text('GERENCIA DE INFORMÁTICA', marginX + 27, bannerY + 11.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
@@ -310,7 +310,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       const filters = [];
       if (filterInfo.search) filters.push(`Búsqueda: "${filterInfo.search}"`);
       if (filterInfo.ramo && filterInfo.ramo !== 'Todos') {
-        filters.push(`Cámara: ${filterInfo.ramo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil'}`);
+        const rName = filterInfo.ramo === 'Penal' ? 'Cámara Penal' : filterInfo.ramo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos';
+        filters.push(`Cámara: ${rName}`);
       }
       if (filterInfo.equipamiento && filterInfo.equipamiento !== 'Todos') {
         filters.push(`Equipamiento TIC: ${filterInfo.equipamiento}`);
@@ -337,6 +338,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     // Desglose detallado por Cámara y Estatus
     const penalJudicaturas = judicaturas.filter((j) => j.tipoRamo === 'Penal');
     const civilJudicaturas = judicaturas.filter((j) => j.tipoRamo === 'Civil');
+    const amparosJudicaturas = judicaturas.filter((j) => j.tipoRamo === 'Amparos');
 
     const penalInaug = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length;
     const penalPend = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Pendiente Fecha').length;
@@ -364,12 +366,25 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         j.enlaceDatos === 'Si'
     ).length;
 
-    const totalInaug = penalInaug + civilInaug;
-    const totalPend = penalPend + civilPend;
-    const totalReprog = penalReprog + civilReprog;
-    const totalFin = penalFin + civilFin;
-    const totalTras = penalTras + civilTras;
-    const totalEquip100 = penalEquip100 + civilEquip100;
+    const amparosInaug = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length;
+    const amparosPend = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Pendiente Fecha').length;
+    const amparosReprog = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length;
+    const amparosFin = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length;
+    const amparosTras = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Traslado').length;
+    const amparosEquip100 = amparosJudicaturas.filter(
+      (j) =>
+        j.equipoComputo === 'Si' &&
+        j.equipoAudio === 'Si' &&
+        j.cableadoEstructurado === 'Si' &&
+        j.enlaceDatos === 'Si'
+    ).length;
+
+    const totalInaug = penalInaug + civilInaug + amparosInaug;
+    const totalPend = penalPend + civilPend + amparosPend;
+    const totalReprog = penalReprog + civilReprog + amparosReprog;
+    const totalFin = penalFin + civilFin + amparosFin;
+    const totalTras = penalTras + civilTras + amparosTras;
+    const totalEquip100 = penalEquip100 + civilEquip100 + amparosEquip100;
 
     // Tarjetas de Métricas Resumen
     const summaryCards = [
@@ -437,7 +452,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           `${penalJudicaturas.length > 0 ? Math.round((penalEquip100 / penalJudicaturas.length) * 100) : 0}%`,
         ],
         [
-          'CÁMARA PAZ CIVIL',
+          'CÁMARA CIVIL',
           String(civilJudicaturas.length),
           String(civilInaug),
           String(civilPend),
@@ -446,6 +461,17 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           String(civilTras),
           String(civilEquip100),
           `${civilJudicaturas.length > 0 ? Math.round((civilEquip100 / civilJudicaturas.length) * 100) : 0}%`,
+        ],
+        [
+          'CÁMARA AMPAROS',
+          String(amparosJudicaturas.length),
+          String(amparosInaug),
+          String(amparosPend),
+          String(amparosReprog),
+          String(amparosFin),
+          String(amparosTras),
+          String(amparosEquip100),
+          `${amparosJudicaturas.length > 0 ? Math.round((amparosEquip100 / amparosJudicaturas.length) * 100) : 0}%`,
         ],
         [
           'TOTAL CONSOLIDADO',
@@ -664,21 +690,31 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         );
       }
 
-      // 2. Sección Cámara Paz Civil
+      // 2. Sección Cámara Civil
       if (civilJudicaturas.length > 0) {
         renderRamoJudicaturasTable(
-          'SECCIÓN 2: CÁMARA PAZ CIVIL',
+          'SECCIÓN 2: CÁMARA CIVIL',
           `${civilJudicaturas.length} Judicaturas • Inauguradas: ${civilInaug} | Pendiente: ${civilPend} | Reprog: ${civilReprog} | Finalizadas: ${civilFin} | Traslado: ${civilTras}`,
           civilJudicaturas,
           [30, 58, 138] // Blue-900
         );
       }
 
-      // 3. Otros Ramos si existieran
-      const otrosRamos = judicaturas.filter(j => j.tipoRamo !== 'Penal' && j.tipoRamo !== 'Civil');
+      // 3. Sección Cámara Amparos
+      if (amparosJudicaturas.length > 0) {
+        renderRamoJudicaturasTable(
+          'SECCIÓN 3: CÁMARA AMPAROS',
+          `${amparosJudicaturas.length} Judicaturas • Inauguradas: ${amparosInaug} | Pendiente: ${amparosPend} | Reprog: ${amparosReprog} | Finalizadas: ${amparosFin} | Traslado: ${amparosTras}`,
+          amparosJudicaturas,
+          [6, 78, 59] // Emerald-900
+        );
+      }
+
+      // 4. Otros Ramos si existieran
+      const otrosRamos = judicaturas.filter(j => j.tipoRamo !== 'Penal' && j.tipoRamo !== 'Civil' && j.tipoRamo !== 'Amparos');
       if (otrosRamos.length > 0) {
         renderRamoJudicaturasTable(
-          'SECCIÓN 3: OTROS RAMOS JURISDICCIONALES',
+          'SECCIÓN 4: OTROS RAMOS JURISDICCIONALES',
           `${otrosRamos.length} Judicaturas Registradas`,
           otrosRamos,
           [15, 23, 42]
@@ -687,8 +723,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     } else {
       // Renderizado unificado estándar
       const unifiedData = judicaturas.map((j, index) => {
-        const isPenal = j.tipoRamo === 'Penal';
-        const camaraText = isPenal ? 'Cámara Penal' : 'Cámara Paz Civil';
+        const camaraText = j.tipoRamo === 'Penal' ? 'Cámara Penal' : j.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos';
         const adecuacionesText = `${formatDate(j.fechaInicioAdecuaciones)} al ${formatDate(j.fechaFinAdecuaciones)}`;
         const estatus = getJudEstatus(j);
         const fechaInaug = j.fechaInauguracion ? formatDate(j.fechaInauguracion) : 'Por definir';
@@ -817,21 +852,27 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6);
     doc.setTextColor(71, 85, 105);
-    doc.text('Adecuaciones Cámara Penal', legX + 5, legendY + 4.3);
+    doc.text('Adecuaciones Penal', legX + 5, legendY + 4.3);
 
-    legX += 37;
+    legX += 31;
     // Adecuaciones Civil
     doc.setFillColor(29, 78, 216); // blue-700
     doc.roundedRect(legX, legendY + 2, 3.5, 3, 0.5, 0.5, 'F');
-    doc.text('Adecuaciones Cámara Paz Civil', legX + 5, legendY + 4.3);
+    doc.text('Adecuaciones Civil', legX + 5, legendY + 4.3);
 
-    legX += 39;
+    legX += 31;
+    // Adecuaciones Amparos
+    doc.setFillColor(5, 150, 105); // emerald-600
+    doc.roundedRect(legX, legendY + 2, 3.5, 3, 0.5, 0.5, 'F');
+    doc.text('Adecuaciones Amparos', legX + 5, legendY + 4.3);
+
+    legX += 34;
     // Hito Inauguración
     doc.setFillColor(245, 158, 11); // amber-500
     doc.circle(legX + 2, legendY + 3.5, 1.8, 'F');
-    doc.text('Hito Fecha de Inauguración', legX + 5.5, legendY + 4.3);
+    doc.text('Hito Fecha Inauguración', legX + 5.5, legendY + 4.3);
 
-    legX += 36;
+    legX += 34;
     // Estado Inaugurado
     doc.setFillColor(4, 120, 87);
     doc.roundedRect(legX, legendY + 2, 3, 3, 0.5, 0.5, 'F');
@@ -843,7 +884,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     doc.roundedRect(legX, legendY + 2, 3, 3, 0.5, 0.5, 'F');
     doc.text('Reprogramado', legX + 4.5, legendY + 4.3);
 
-    legX += 23;
+    legX += 22;
     // Estado Pendiente
     doc.setFillColor(100, 116, 139);
     doc.roundedRect(legX, legendY + 2, 3, 3, 0.5, 0.5, 'F');
@@ -940,11 +981,17 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
       // Badges: Cámara y Estatus
       const isPenal = j.tipoRamo === 'Penal';
-      const ramoColor: [number, number, number] = isPenal ? [109, 40, 217] : [29, 78, 216];
+      const isCivil = j.tipoRamo === 'Civil';
+      const ramoColor: [number, number, number] = isPenal 
+        ? [109, 40, 217] 
+        : isCivil 
+        ? [29, 78, 216] 
+        : [5, 150, 105];
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(5);
       doc.setTextColor(ramoColor[0], ramoColor[1], ramoColor[2]);
-      doc.text(isPenal ? 'Cámara Penal' : 'Cámara Paz Civil', marginX + 2.5, currentY + 7.5);
+      const camaraBadge = isPenal ? 'Cámara Penal' : isCivil ? 'Cámara Civil' : 'Cámara Amparos';
+      doc.text(camaraBadge, marginX + 2.5, currentY + 7.5);
 
       const estatus = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
       let estatusColor: [number, number, number] = [100, 116, 139];
@@ -1062,8 +1109,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       : judicaturas;
 
     const matrixData = sortedMatrixJudicaturas.map((j, idx) => {
-      const isPenal = j.tipoRamo === 'Penal';
-      const camara = isPenal ? 'Cámara Penal' : 'Cámara Paz Civil';
+      const camara = j.tipoRamo === 'Penal' ? 'Cámara Penal' : j.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos';
       
       const computoStatus = j.equipoComputo === 'Si' ? 'Completado' : 'Pendiente';
       const audioStatus = j.equipoAudio === 'Si' ? 'Completado' : 'Pendiente';
@@ -1252,7 +1298,7 @@ export function generateIndividualJudicaturaPDF(
 
     doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
-    doc.text('GERENCIA DE INFORMÁTICA • DIRECCIÓN DE INFRAESTRUCTURA Y SISTEMAS', marginX + 26, 19.5);
+    doc.text('GERENCIA DE INFORMÁTICA', marginX + 26, 19.5);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
@@ -1303,7 +1349,8 @@ export function generateIndividualJudicaturaPDF(
   doc.setTextColor(15, 23, 42);
   doc.text('CÁMARA:', marginX + 5, metaY);
   doc.setFont('helvetica', 'normal');
-  doc.text(judicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : 'Cámara Paz Civil', marginX + 22, metaY);
+  const camaraNombreFicha = judicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : judicatura.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos';
+  doc.text(camaraNombreFicha, marginX + 22, metaY);
 
   doc.setFont('helvetica', 'bold');
   doc.text('ESTATUS:', marginX + 68, metaY);

@@ -186,5 +186,53 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     ],
     creadoPor: 'Lic. Kevin Gerardo López de León',
     fechaCreacion: '2026-05-01T11:20:00Z'
+  },
+  {
+    id: 'jud-2026-007',
+    nombreJudicatura: 'Juzgado de Primera Instancia de Amparos y Exhibición Personal del Departamento de Guatemala',
+    tipoRamo: 'Amparos',
+    fechaInicioAdecuaciones: '2026-03-01',
+    fechaFinAdecuaciones: '2026-05-15',
+    equipoComputo: 'Si',
+    equipoAudio: 'Si',
+    cableadoEstructurado: 'Si',
+    enlaceDatos: 'Si',
+    fechaInauguracion: '2026-06-10',
+    estadoInauguracion: 'Inaugurado',
+    observaciones: [
+      {
+        id: 'obs-007-1',
+        numeroAccion: 1,
+        fecha: '2026-03-01T09:00:00Z',
+        autor: 'Lic. Kevin Gerardo López de León (Administrador)',
+        texto: 'Instalación de estaciones de trabajo de alta seguridad y enlace encriptado hacia la Secretaría de la Corte Suprema de Justicia para tramitación expedita de garantías constitucionales.'
+      }
+    ],
+    creadoPor: 'Lic. Kevin Gerardo López de León',
+    fechaCreacion: '2026-03-01T09:00:00Z'
+  },
+  {
+    id: 'jud-2026-008',
+    nombreJudicatura: 'Sala Pluripersonal de la Corte de Apelaciones de Amparos y Antejuicios',
+    tipoRamo: 'Amparos',
+    fechaInicioAdecuaciones: '2026-04-10',
+    fechaFinAdecuaciones: '2026-07-20',
+    equipoComputo: 'Si',
+    equipoAudio: 'No',
+    cableadoEstructurado: 'Si',
+    enlaceDatos: 'Si',
+    fechaInauguracion: '2026-08-05',
+    estadoInauguracion: 'Pendiente Fecha',
+    observaciones: [
+      {
+        id: 'obs-008-1',
+        numeroAccion: 1,
+        fecha: '2026-04-10T10:30:00Z',
+        autor: 'Ing. Rodrigo Sagastume (Telecomunicaciones GIT)',
+        texto: 'Adecuación de infraestructura de red y enlace punto a punto para sala de vistas y audiencias de amparo constitucional.'
+      }
+    ],
+    creadoPor: 'Lic. Kevin Gerardo López de León',
+    fechaCreacion: '2026-04-10T10:30:00Z'
   }
 ];
