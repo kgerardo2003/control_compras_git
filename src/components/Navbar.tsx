@@ -18,12 +18,15 @@ import {
   Cloud,
   KeyRound,
   Smartphone,
-  QrCode
+  QrCode,
+  Briefcase,
+  Clock
 } from 'lucide-react';
 import { UserRole, SystemThemeId } from '../types';
 import { formatDateTime } from '../utils/formatters';
 import { SYSTEM_THEMES } from '../utils/themeConfig';
 import { FirestoreStatusModal } from './FirestoreStatusModal';
+import { calcularMetricasServicio } from '../utils/serviciosCalculations';
 
 interface NavbarProps {
   onOpenMobileMenu: () => void;
@@ -44,6 +47,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
     triggerSimulatedNotification,
     setSelectedPurchase,
     purchases,
+    servicios,
+    serviciosAlertCount,
+    setSelectedServicio,
+    setIsServicioDetailModalOpen,
     setActiveTab,
     theme,
     setTheme,
@@ -62,6 +69,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const demoMenuRef = useRef<HTMLDivElement>(null);
   const themeMenuRef = useRef<HTMLDivElement>(null);
+
+  // Servicios que requieren gestión inmediata o alerta temprana
+  const alertServices = (servicios || []).filter(s => {
+    const m = calcularMetricasServicio(s);
+    return m.requiereAlertaTemprana || m.esVencido;
+  });
+  const totalAlertsCount = unreadNotificationsCount + alertServices.length;
 
   // Cerrar dropdowns al hacer click afuera
   useEffect(() => {
@@ -267,24 +281,27 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
           )}
         </div>
 
-        {/* Campana de Notificaciones */}
+        {/* Campana de Notificaciones y Alertas Tempranas de Servicios */}
         <div className="relative" ref={notifRef}>
           <button
             id="btn-notifications-dropdown"
             type="button"
             onClick={() => setIsNotifOpen(!isNotifOpen)}
-            className="relative p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            className="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
             aria-label="Notificaciones"
+            title={`${totalAlertsCount} alerta(s) y notificaciones`}
           >
             <Bell className="w-5 h-5" />
-            {unreadNotificationsCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse" />
+            {totalAlertsCount > 0 && (
+              <span className="absolute top-1 right-1 px-1.5 py-0.2 min-w-[18px] text-[10px] font-bold bg-rose-600 text-white rounded-full ring-2 ring-white animate-pulse flex items-center justify-center">
+                {totalAlertsCount}
+              </span>
             )}
           </button>
 
           {/* Menú de Notificaciones */}
           {isNotifOpen && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-slate-900">
+            <div className="absolute right-0 mt-2 w-80 sm:w-[420px] bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-slate-900">
               <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Bell className="w-4 h-4 text-amber-400" />
@@ -301,8 +318,58 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                 )}
               </div>
 
+              {/* Sección Destacada: Alertas de Servicios Contratados */}
+              {alertServices.length > 0 && (
+                <div className="p-3 bg-rose-50/70 border-b border-rose-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-rose-900">
+                      <Briefcase className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Alertas Tempranas de Servicios ({alertServices.length})</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTab('servicios'); setIsNotifOpen(false); }}
+                      className="text-[10px] text-rose-700 font-bold hover:underline"
+                    >
+                      Ir al módulo →
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {alertServices.map(srv => {
+                      const m = calcularMetricasServicio(srv);
+                      return (
+                        <div 
+                          key={srv.id}
+                          onClick={() => {
+                            setSelectedServicio(srv);
+                            setIsServicioDetailModalOpen(true);
+                            setIsNotifOpen(false);
+                          }}
+                          className="p-2 bg-white rounded-lg border border-rose-200 hover:border-rose-400 cursor-pointer shadow-2xs transition-all text-left"
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-800">
+                            <span className="truncate max-w-[240px]">{srv.servicioContratado}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              m.esVencido ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {m.esVencido ? `Vencido (${m.diasDesfase}d)` : `${m.diasRestantes} días`}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            {srv.modalidad} • Responsable: {srv.responsableSeguimiento}
+                          </p>
+                          <p className="text-[10px] font-semibold text-rose-700 mt-1">
+                            ⚠️ {m.mensajeAlertaGestion}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="p-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
-                <span className="text-slate-500 font-medium">Alertas automáticas GIT:</span>
+                <span className="text-slate-500 font-medium">Bandeja de Eventos GIT:</span>
                 <button
                   type="button"
                   onClick={triggerSimulatedNotification}

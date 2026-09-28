@@ -9,7 +9,8 @@ import {
   BudgetLineItem, 
   BudgetModification,
   JudicaturaRecord,
-  JudicaturaObservacion
+  JudicaturaObservacion,
+  ServicioContratado
 } from '../types';
 import { 
   INITIAL_PURCHASES, 
@@ -19,6 +20,7 @@ import {
   INITIAL_AUDIT_LOGS 
 } from '../data/initialData';
 import { INITIAL_JUDICATURAS } from '../data/initialJudicaturasData';
+import { INITIAL_SERVICIOS_CONTRATADOS } from '../data/initialServiciosData';
 import { 
   INITIAL_BUDGET_LINES, 
   INITIAL_BUDGET_MODIFICATIONS 
@@ -29,6 +31,7 @@ export interface DataStoreState {
   lastUpdated: string;
   purchases: PurchaseRecord[];
   judicaturas: JudicaturaRecord[];
+  servicios: ServicioContratado[];
   users: User[];
   catalogs: Catalog[];
   budgetLines: BudgetLineItem[];
@@ -37,7 +40,9 @@ export interface DataStoreState {
   userProfiles: UserProfile[];
   deletedPurchaseIds: string[];
   deletedUserIds: string[];
+  deletedServicioIds?: string[];
   isPurchasesInitialized: boolean;
+  isServiciosInitialized?: boolean;
 }
 
 // Cuentas institucionales esenciales que NUNCA deben perderse (Lic. Kevin Gerardo López de León)
@@ -88,6 +93,7 @@ export function initDataStore(): DataStoreState {
         lastUpdated: parsed.lastUpdated || new Date().toISOString(),
         purchases: Array.isArray(parsed.purchases) ? parsed.purchases : (isPurchasesInitialized ? [] : [...INITIAL_PURCHASES]),
         judicaturas: Array.isArray(parsed.judicaturas) ? parsed.judicaturas : [...INITIAL_JUDICATURAS],
+        servicios: Array.isArray(parsed.servicios) ? parsed.servicios : [...INITIAL_SERVICIOS_CONTRATADOS],
         users: Array.isArray(parsed.users) ? parsed.users : [...INITIAL_USERS],
         catalogs: Array.isArray(parsed.catalogs) ? parsed.catalogs : [...INITIAL_CATALOGS],
         budgetLines: Array.isArray(parsed.budgetLines) ? parsed.budgetLines : [...INITIAL_BUDGET_LINES],
@@ -149,6 +155,7 @@ export function initDataStore(): DataStoreState {
     lastUpdated: new Date().toISOString(),
     purchases: [...INITIAL_PURCHASES],
     judicaturas: [...INITIAL_JUDICATURAS],
+    servicios: [...INITIAL_SERVICIOS_CONTRATADOS],
     users: INITIAL_USERS.filter(u => ESSENTIAL_USER_USERNAMES.includes(u.username.toLowerCase())),
     catalogs: [...INITIAL_CATALOGS],
     budgetLines: [...INITIAL_BUDGET_LINES],
@@ -508,4 +515,107 @@ export function addJudicaturaObservation(judicaturaId: string, obs: JudicaturaOb
   persistToDisk();
   return jud;
 }
+
+// ==========================================
+// MÉTODOS PARA SERVICIOS CONTRATADOS
+// ==========================================
+
+export function saveServicio(servicio: ServicioContratado): ServicioContratado {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [...INITIAL_SERVICIOS_CONTRATADOS];
+  }
+  const index = store.servicios.findIndex(s => s.id === servicio.id);
+  if (index >= 0) {
+    store.servicios[index] = { ...store.servicios[index], ...servicio };
+  } else {
+    store.servicios.unshift(servicio);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return servicio;
+}
+
+export function saveBulkServicios(records: ServicioContratado[], replaceAll = false): ServicioContratado[] {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [...INITIAL_SERVICIOS_CONTRATADOS];
+  }
+  if (replaceAll) {
+    store.servicios = [...records];
+  } else {
+    const map = new Map(store.servicios.map(s => [s.id, s]));
+    records.forEach(r => map.set(r.id, r));
+    store.servicios = Array.from(map.values());
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return store.servicios;
+}
+
+export function deleteServicio(id: string): boolean {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [];
+    return false;
+  }
+  if (!store.deletedServicioIds) store.deletedServicioIds = [];
+  if (!store.deletedServicioIds.includes(id)) {
+    store.deletedServicioIds.push(id);
+  }
+  const initialLength = store.servicios.length;
+  store.servicios = store.servicios.filter(s => s.id !== id);
+  const deleted = store.servicios.length < initialLength;
+  if (deleted) {
+    store.isServiciosInitialized = true;
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+    console.log(`[DataStore] Servicio eliminado: ${id}`);
+  }
+  return deleted;
+}
+
+export function deleteBulkServicios(ids: string[]): number {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [];
+    return 0;
+  }
+  if (!store.deletedServicioIds) store.deletedServicioIds = [];
+  const idSet = new Set(ids);
+  ids.forEach(id => {
+    if (!store.deletedServicioIds!.includes(id)) {
+      store.deletedServicioIds!.push(id);
+    }
+  });
+  const initialLength = store.servicios.length;
+  store.servicios = store.servicios.filter(s => !idSet.has(s.id));
+  const count = initialLength - store.servicios.length;
+  if (count > 0) {
+    store.isServiciosInitialized = true;
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+    console.log(`[DataStore] Eliminación en lote: ${count} servicios retirados.`);
+  }
+  return count;
+}
+
+export function clearAllServicios(): number {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) store.servicios = [];
+  if (!store.deletedServicioIds) store.deletedServicioIds = [];
+  store.servicios.forEach(s => {
+    if (!store.deletedServicioIds!.includes(s.id)) {
+      store.deletedServicioIds!.push(s.id);
+    }
+  });
+  const count = store.servicios.length;
+  store.servicios = [];
+  store.isServiciosInitialized = true;
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  console.log(`[DataStore] Todos los servicios contratados (${count}) fueron vaciados permanentemente.`);
+  return count;
+}
+
 

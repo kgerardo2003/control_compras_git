@@ -65,6 +65,16 @@ service cloud.firestore {
       allow read, write: if isValidId(judicaturaId);
     }
 
+    // Reglas para Servicios Contratados de la Gerencia de Informática
+    match /servicios_contratados/{servicioId} {
+      allow read, write: if isValidId(servicioId);
+
+      // Subcolección para adjuntos pesados si aplica
+      match /attachments/{attachmentId} {
+        allow read, write: if true;
+      }
+    }
+
     // Reglas para Renglones Presupuestarios y Matriz de Disponibilidad
     match /budget_lines/{lineId} {
       allow read, write: if true;

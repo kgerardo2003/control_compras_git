@@ -59,6 +59,10 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
     const judicaturas: any[] = [];
     judicaturasSnap.forEach(d => judicaturas.push(d.data()));
 
+    const serviciosSnap = await getDocs(collection(db, 'servicios_contratados'));
+    const servicios: any[] = [];
+    serviciosSnap.forEach(d => servicios.push(d.data()));
+
     const usersSnap = await getDocs(collection(db, 'users'));
     const users: any[] = [];
     usersSnap.forEach(d => users.push(d.data()));
@@ -84,9 +88,7 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
     
     // Si Firestore tiene compras, actualizar sin resucitar compras eliminadas
     const deletedPurchasesSet = new Set(current.deletedPurchaseIds || []);
-    const updatedPurchases = purchases.length > 0 
-      ? purchases.filter(p => !deletedPurchasesSet.has(p.id)) 
-      : current.purchases;
+    const updatedPurchases = purchases.filter(p => !deletedPurchasesSet.has(p.id));
 
     // Sincronizar judicaturas bidireccionalmente
     let updatedJudicaturas = current.judicaturas;
@@ -99,6 +101,19 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
         }
       });
       updatedJudicaturas = Array.from(jMap.values());
+    }
+
+    // Sincronizar servicios contratados bidireccionalmente
+    let updatedServicios = current.servicios || [];
+    if (servicios.length > 0) {
+      const sMap = new Map<string, any>();
+      (current.servicios || []).forEach(s => sMap.set(s.id, s));
+      servicios.forEach(s => {
+        if (s && s.id) {
+          sMap.set(s.id, { ...(sMap.get(s.id) || {}), ...s });
+        }
+      });
+      updatedServicios = Array.from(sMap.values());
     }
 
     // Si Firestore tiene usuarios, actualizar preservando contraseñas pero IGNORANDO usuarios eliminados
@@ -136,6 +151,7 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
       lastUpdated: new Date().toISOString(),
       purchases: updatedPurchases,
       judicaturas: updatedJudicaturas,
+      servicios: updatedServicios,
       users: updatedUsers,
       catalogs: catalogs.length > 0 ? catalogs : current.catalogs,
       budgetLines: budgetLines.length > 0 ? budgetLines : current.budgetLines,
@@ -148,6 +164,7 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
     const counts = {
       purchases: updated.purchases.length,
       judicaturas: updated.judicaturas.length,
+      servicios: updated.servicios.length,
       users: updated.users.length,
       catalogs: updated.catalogs.length,
       budgetLines: updated.budgetLines.length,
@@ -211,6 +228,19 @@ export async function forcePushToFirestore(): Promise<{
       }
       await batch.commit();
       console.log(`[FirestoreSync] ${store.judicaturas.length} judicaturas sincronizadas a producción.`);
+    }
+
+    // 1b. Subir Servicios Contratados a Firestore
+    if (store.servicios && store.servicios.length > 0) {
+      const batch = writeBatch(db);
+      for (const s of store.servicios) {
+        if (s && s.id) {
+          const docRef = doc(db, 'servicios_contratados', s.id);
+          batch.set(docRef, cleanUndefined(s), { merge: true });
+        }
+      }
+      await batch.commit();
+      console.log(`[FirestoreSync] ${store.servicios.length} servicios contratados sincronizados a producción.`);
     }
 
     // 2. Subir Compras a Firestore (por lotes de 400)
@@ -279,6 +309,7 @@ export async function forcePushToFirestore(): Promise<{
 
     const counts = {
       judicaturas: store.judicaturas.length,
+      servicios: (store.servicios || []).length,
       purchases: store.purchases.length,
       budgetLines: store.budgetLines.length,
       catalogs: store.catalogs.length,

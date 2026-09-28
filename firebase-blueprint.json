@@ -107,6 +107,31 @@
         "fechaCreacion": { "type": "string", "description": "Fecha y hora de creación ISO" }
       },
       "required": ["id", "nombreJudicatura", "tipoRamo", "fechaInicioAdecuaciones", "fechaFinAdecuaciones", "fechaInauguracion"]
+    },
+    "ServicioContratado": {
+      "title": "ServicioContratado",
+      "description": "Control, vigencia y alertas tempranas de servicios contratados de la Gerencia de Informática",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único" },
+        "codigo": { "type": "string", "description": "Correlativo alfanumérico del servicio" },
+        "area": { "type": "string", "description": "Área técnica solicitante de la Gerencia de Informática" },
+        "departamento": { "type": "string", "description": "Unidad o departamento interno responsable" },
+        "servicioContratado": { "type": "string", "description": "Título o descripción del servicio o licenciamiento" },
+        "objetoAlcance": { "type": "string", "description": "Descripción detallada y alcance técnico" },
+        "modalidad": { "type": "string", "description": "Modalidad de contratación Guatecompras" },
+        "nogExpediente": { "type": "string", "description": "Número de NOG o expediente administrativo" },
+        "proveedorActual": { "type": "string", "description": "Razón social del contratista" },
+        "inicioVigencia": { "type": "string", "description": "Fecha de inicio de contrato YYYY-MM-DD" },
+        "finVigencia": { "type": "string", "description": "Fecha de término de vigencia YYYY-MM-DD" },
+        "estatusActual": { "type": "string", "description": "Estado operativo del servicio" },
+        "accionRequerida": { "type": "string", "description": "Acción administrativa a ejecutar" },
+        "fechaInicioGestion": { "type": "string", "description": "Fecha estimada para inicio de nueva gestión" },
+        "responsableSeguimiento": { "type": "string", "description": "Técnico o profesional a cargo" },
+        "riesgoContinuidad": { "type": "string", "description": "Impacto si se interrumpe (Alto, Medio, Bajo)" },
+        "observaciones": { "type": "string", "description": "Notas técnicas o versiones" }
+      },
+      "required": ["id", "codigo", "area", "servicioContratado", "modalidad", "inicioVigencia", "finVigencia", "estatusActual"]
     }
   },
   "firestore": {
@@ -117,6 +142,10 @@
     "/judicaturas/{judicaturaId}": {
       "schema": "Judicatura",
       "description": "Colección de control de nuevas judicaturas por inaugurar"
+    },
+    "/servicios_contratados/{servicioId}": {
+      "schema": "ServicioContratado",
+      "description": "Colección de servicios contratados, vigencia y alertas tempranas"
     },
     "/audit_logs/{logId}": {
       "schema": "AuditLog",

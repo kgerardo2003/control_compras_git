@@ -24,7 +24,8 @@ import {
   AlertCircle,
   HelpCircle,
   Sparkles,
-  Scale
+  Scale,
+  Briefcase
 } from 'lucide-react';
 import { UserProfile, ActiveTab } from '../types';
 
@@ -40,6 +41,12 @@ export const SYSTEM_MODULES: { id: ActiveTab; label: string; desc: string; icon:
     label: 'Compras y Eventos', 
     desc: 'Gestión y seguimiento de expedientes F56-e, eventos NOG y actas GIT', 
     icon: ShoppingBag 
+  },
+  { 
+    id: 'servicios', 
+    label: 'Servicios Contratados', 
+    desc: 'Control de vigencia, motor de semáforos y alertas tempranas de Guatecompras', 
+    icon: Briefcase 
   },
   { 
     id: 'judicaturas', 

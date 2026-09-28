@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   User, 
   UserProfile,
@@ -23,7 +23,8 @@ import {
   TwoFactorState,
   TwoFactorMethod,
   JudicaturaRecord,
-  JudicaturaObservacion
+  JudicaturaObservacion,
+  ServicioContratado
 } from '../types';
 import { 
   getOrCreateTotpSecret, 
@@ -40,6 +41,11 @@ import {
   INITIAL_NOTIFICATIONS 
 } from '../data/initialData';
 import { INITIAL_JUDICATURAS } from '../data/initialJudicaturasData';
+import { INITIAL_SERVICIOS_CONTRATADOS } from '../data/initialServiciosData';
+import { 
+  calcularMetricasServicio, 
+  construirPayloadCorreoAlertaServicio 
+} from '../utils/serviciosCalculations';
 import { 
   INITIAL_BUDGET_LINES, 
   INITIAL_BUDGET_MODIFICATIONS 
@@ -87,6 +93,11 @@ import {
   removeJudicaturaFromFirestore,
   onJudicaturasSnapshot,
   saveBatchJudicaturasToFirestore,
+  saveServicioToFirestore,
+  removeServicioFromFirestore,
+  removeBatchServiciosFromFirestore,
+  onServiciosSnapshot,
+  saveBatchServiciosToFirestore,
   forcePushAllLocalDataToFirestore
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit, getDocs } from 'firebase/firestore';
@@ -183,6 +194,7 @@ interface AppContextType {
   ) => void;
   deletePurchase: (id: string) => void;
   deletePurchases: (ids: string[]) => Promise<{ count: number }>;
+  clearAllPurchases: () => Promise<{ count: number }>;
 
   // Catálogos CRUD
   addCatalog: (data: Omit<Catalog, 'id' | 'esSistema'>) => Catalog;
@@ -264,6 +276,25 @@ interface AppContextType {
     records: Array<Omit<JudicaturaRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string }>,
     replaceAll?: boolean
   ) => Promise<{ count: number }>;
+
+  // Módulo de Servicios Contratados, Vigencia y Alertas Tempranas (GIT)
+  servicios: ServicioContratado[];
+  addServicio: (data: Omit<ServicioContratado, 'id' | 'creadoPor' | 'fechaCreacion'>) => Promise<ServicioContratado>;
+  updateServicio: (id: string, data: Partial<ServicioContratado>) => Promise<ServicioContratado>;
+  deleteServicio: (id: string) => Promise<boolean>;
+  deleteBatchServicios: (ids: string[]) => Promise<number>;
+  clearAllServicios: () => Promise<number>;
+  bulkImportServicios: (records: Partial<ServicioContratado>[], replaceAll?: boolean) => Promise<{ count: number; total: number }>;
+  selectedServicio: ServicioContratado | null;
+  setSelectedServicio: (servicio: ServicioContratado | null) => void;
+  servicioToEdit: ServicioContratado | null;
+  setServicioToEdit: (servicio: ServicioContratado | null) => void;
+  isServicioModalOpen: boolean;
+  setIsServicioModalOpen: (open: boolean) => void;
+  isServicioDetailModalOpen: boolean;
+  setIsServicioDetailModalOpen: (open: boolean) => void;
+  sendServicioAlertEmail: (servicioId: string, customRecipients?: string[]) => Promise<{ success: boolean; message: string }>;
+  serviciosAlertCount: number;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -273,6 +304,7 @@ const STORAGE_KEYS = {
   USER_PROFILES: 'oj_git_user_profiles_v1',
   PURCHASES: 'oj_git_purchases_v1',
   JUDICATURAS: 'oj_git_judicaturas_v1',
+  SERVICIOS: 'oj_git_servicios_v1',
   CATALOGS: 'oj_git_catalogs_v1',
   AUDIT_LOGS: 'oj_git_audit_v1',
   NOTIFICATIONS: 'oj_git_notifs_v1',
@@ -460,6 +492,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return [...INITIAL_JUDICATURAS];
   });
+
+  const [servicios, setServicios] = useState<ServicioContratado[]>(() => {
+    let deletedSet = new Set<string>();
+    try {
+      const stored = safeGetLocalStorage('OJ_DELETED_SERVICIOS_IDS');
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) arr.forEach((id: string) => deletedSet.add(id));
+      }
+    } catch {}
+
+    const saved = safeGetLocalStorage(STORAGE_KEYS.SERVICIOS);
+    if (saved !== null && saved !== undefined) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(s => s && s.id && !deletedSet.has(s.id));
+        }
+      } catch {}
+    }
+    return INITIAL_SERVICIOS_CONTRATADOS.filter(s => s && s.id && !deletedSet.has(s.id));
+  });
+
+  const [selectedServicio, setSelectedServicio] = useState<ServicioContratado | null>(null);
+  const [servicioToEdit, setServicioToEdit] = useState<ServicioContratado | null>(null);
+  const [isServicioModalOpen, setIsServicioModalOpen] = useState(false);
+  const [isServicioDetailModalOpen, setIsServicioDetailModalOpen] = useState(false);
 
   const [catalogs, setCatalogs] = useState<Catalog[]>(() => {
     const saved = safeGetLocalStorage(STORAGE_KEYS.CATALOGS);
@@ -771,6 +830,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return set;
   })());
 
+  // Registro persistente de IDs de servicios eliminados para evitar resurrección por caché o semillas
+  const deletedServicioIdsRef = useRef<Set<string>>((() => {
+    const set = new Set<string>();
+    try {
+      const stored = safeGetLocalStorage('OJ_DELETED_SERVICIOS_IDS');
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) arr.forEach((id: string) => set.add(id));
+      }
+    } catch {}
+    return set;
+  })());
+
   const serverVersionRef = useRef<number>(0);
 
   // Sincronización autoritativa multi-estación con el almacén central del servidor
@@ -803,8 +875,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
       }
 
-      // Sincronizar compras con reconciliación bidireccional resiliente
-      // Garantiza que ningún registro local se pierda y que los cambios de otros usuarios se integren al instante
+      // Sincronizar conjunto central de servicios eliminados
+      if (Array.isArray(data.deletedServicioIds)) {
+        data.deletedServicioIds.forEach((id: string) => deletedServicioIdsRef.current.add(id));
+        try {
+          safeSetLocalStorage('OJ_DELETED_SERVICIOS_IDS', JSON.stringify(Array.from(deletedServicioIdsRef.current)));
+        } catch {}
+      }
+
+      // Sincronizar compras con reconciliación autoritativa
       let localPurchasesMap = new Map<string, PurchaseRecord>();
       try {
         const localSaved = safeGetLocalStorage(STORAGE_KEYS.PURCHASES);
@@ -821,7 +900,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
 
       const serverPurchases: PurchaseRecord[] = Array.isArray(data.purchases) ? data.purchases : [];
-      const serverIds = new Set<string>(serverPurchases.map(p => p.id));
       const combinedPurchasesMap = new Map<string, PurchaseRecord>();
 
       // 1. Agregar registros que vienen del servidor central
@@ -840,31 +918,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
 
-      // 2. Si esta estación local tiene compras pendientes que el servidor no tiene aún, integrarlas y enviarlas al servidor
-      localPurchasesMap.forEach((localP, id) => {
-        if (!deletedPurchaseIdsRef.current.has(id)) {
-          if (!serverIds.has(id)) {
-            combinedPurchasesMap.set(id, localP);
-            // Empujar al servidor central para que se refleje de inmediato en todas las demás estaciones
-            fetch('/api/db/purchases', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(localP)
-            }).catch(() => {});
-          }
-        }
-      });
-
       const finalPurchasesList = Array.from(combinedPurchasesMap.values())
         .filter(p => !deletedPurchaseIdsRef.current.has(p.id))
         .sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
 
-      if (finalPurchasesList.length > 0) {
-        setPurchases(finalPurchasesList);
-        try {
-          safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(finalPurchasesList));
-        } catch {}
-      }
+      setPurchases(finalPurchasesList);
+      try {
+        safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(finalPurchasesList));
+      } catch {}
 
       // Sincronizar usuarios: solo los usuarios reales guardados en el servidor que no hayan sido eliminados
       if (Array.isArray(data.users) && data.users.length > 0) {
@@ -920,6 +981,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAuditLogs(data.auditLogs);
         try {
           safeSetLocalStorage(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
+        } catch {}
+      }
+
+      // Sincronizar servicios contratados
+      if (Array.isArray(data.servicios)) {
+        const filteredServicios = data.servicios.filter(
+          (s: ServicioContratado) => s && s.id && !deletedServicioIdsRef.current.has(s.id)
+        );
+        setServicios(filteredServicios);
+        try {
+          safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(filteredServicios));
         } catch {}
       }
 
@@ -1029,40 +1101,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           remoteItems.push(item);
         });
         remoteItems.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
-        if (remoteItems.length > 0) {
-          setPurchases(prevPurchases => {
-            const combinedMap = new Map<string, PurchaseRecord>(prevPurchases.map(p => [p.id, p]));
-            remoteItems.forEach(item => {
-              if (!deletedPurchaseIdsRef.current.has(item.id)) {
-                const prevItem = combinedMap.get(item.id);
-                if (item.f56Documento && prevItem?.f56Documento?.dataUrl) {
-                  if (!item.f56Documento.dataUrl || item.f56Documento.dataUrl.length < prevItem.f56Documento.dataUrl.length) {
-                    combinedMap.set(item.id, {
-                      ...item,
-                      f56Documento: {
-                        ...item.f56Documento,
-                        dataUrl: prevItem.f56Documento.dataUrl,
-                        nombre: item.f56Documento.nombre || prevItem.f56Documento.nombre,
-                        tamano: item.f56Documento.tamano || prevItem.f56Documento.tamano,
-                        tipo: item.f56Documento.tipo || prevItem.f56Documento.tipo,
-                        fechaSubida: item.f56Documento.fechaSubida || prevItem.f56Documento.fechaSubida
-                      }
-                    });
-                    return;
+        
+        setPurchases(prevPurchases => {
+          const prevMap = new Map<string, PurchaseRecord>(prevPurchases.map(p => [p.id, p]));
+          const updated = remoteItems.map(item => {
+            const prevItem = prevMap.get(item.id);
+            if (item.f56Documento && prevItem?.f56Documento?.dataUrl) {
+              if (!item.f56Documento.dataUrl || item.f56Documento.dataUrl.length < prevItem.f56Documento.dataUrl.length) {
+                return {
+                  ...item,
+                  f56Documento: {
+                    ...item.f56Documento,
+                    dataUrl: prevItem.f56Documento.dataUrl,
+                    nombre: item.f56Documento.nombre || prevItem.f56Documento.nombre,
+                    tamano: item.f56Documento.tamano || prevItem.f56Documento.tamano,
+                    tipo: item.f56Documento.tipo || prevItem.f56Documento.tipo,
+                    fechaSubida: item.f56Documento.fechaSubida || prevItem.f56Documento.fechaSubida
                   }
-                }
-                combinedMap.set(item.id, item);
+                };
               }
-            });
-            const updated = Array.from(combinedMap.values())
-              .filter(item => !deletedPurchaseIdsRef.current.has(item.id))
-              .sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
-            try {
-              safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
-            } catch {}
-            return updated;
+            }
+            return item;
           });
-        }
+          try {
+            safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
         handleSnapshotMetadata(snapshot);
       }, (error) => {
         handleSnapshotError('Compras', error);
@@ -1226,6 +1291,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn("No se pudo iniciar listener de judicaturas:", err);
     }
 
+    // Suscripción reactiva a Servicios Contratados
+    let unsubServicios: (() => void) | undefined;
+    try {
+      unsubServicios = onServiciosSnapshot((cloudServicios) => {
+        if (Array.isArray(cloudServicios)) {
+          const filtered = cloudServicios.filter(
+            s => s && s.id && !deletedServicioIdsRef.current.has(s.id)
+          );
+          setServicios(filtered);
+          safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(filtered));
+        }
+      });
+    } catch (err) {
+      console.warn("No se pudo iniciar listener de servicios contratados:", err);
+    }
+
     return () => {
       if (unsubPurchases) unsubPurchases();
       if (unsubLogs) unsubLogs();
@@ -1235,12 +1316,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (unsubBudgetMods) unsubBudgetMods();
       if (unsubUserProfiles) unsubUserProfiles();
       if (unsubJudicaturas) unsubJudicaturas();
+      if (unsubServicios) unsubServicios();
     };
   }, [syncWithCentralServer]);
 
   useEffect(() => {
     safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(judicaturas));
   }, [judicaturas]);
+
+  useEffect(() => {
+    safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(servicios));
+  }, [servicios]);
 
   useEffect(() => {
     safeSetLocalStorage(STORAGE_KEYS.USER_PROFILES, JSON.stringify(userProfiles));
@@ -2896,7 +2982,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deletePurchase = (id: string) => {
     const prev = purchases.find(p => p.id === id);
-    if (!prev) return;
+    const nogText = prev ? `NOG ${prev.nog}` : `registro ID ${id}`;
 
     // Registrar ID en el conjunto persistente para bloquear cualquier resurrección por caché
     deletedPurchaseIdsRef.current.add(id);
@@ -2911,6 +2997,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       return updated;
     });
+
+    if (selectedPurchase && selectedPurchase.id === id) {
+      setSelectedPurchase(null);
+    }
+    if (purchaseToEdit && purchaseToEdit.id === id) {
+      setPurchaseToEdit(null);
+    }
     
     // Eliminación definitiva en el servidor centralizado institucional
     fetch(`/api/db/purchases/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(err => {
@@ -2924,12 +3017,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }).catch(err => console.warn("Aviso red Firestore:", err));
 
-    logAudit('ELIMINAR_COMPRA', 'Compras', `Eliminación de evento NOG: ${prev.nog} (${prev.descripcion.slice(0, 40)}...)`, id, prev);
+    logAudit('ELIMINAR_COMPRA', 'Compras', `Eliminación de evento ${nogText}`, id, prev);
 
     showToast({
       type: 'info',
       title: 'Compra Eliminada Definitivamente',
-      message: `El registro NOG ${prev.nog} ha sido retirado del sistema de manera permanente.`,
+      message: `El ${nogText} ha sido retirado del sistema de manera permanente.`,
       duration: 4000
     });
   };
@@ -2938,8 +3031,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!ids || ids.length === 0) return { count: 0 };
     const idSet = new Set(ids);
     const removedPurchases = purchases.filter(p => idSet.has(p.id));
-    const count = removedPurchases.length;
-    if (count === 0) return { count: 0 };
+    const count = ids.length;
 
     // Registrar todos los IDs eliminados en el conjunto persistente
     ids.forEach(id => deletedPurchaseIdsRef.current.add(id));
@@ -2955,6 +3047,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       return updated;
     });
+
+    if (selectedPurchase && idSet.has(selectedPurchase.id)) {
+      setSelectedPurchase(null);
+    }
+    if (purchaseToEdit && idSet.has(purchaseToEdit.id)) {
+      setPurchaseToEdit(null);
+    }
 
     // Eliminar en servidor centralizado institucional por lote
     fetch('/api/db/purchases/batch-delete', {
@@ -2976,9 +3075,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit(
       'ELIMINAR_COMPRA',
       'Compras',
-      `Eliminación masiva de ${count} adquisiciones por un monto total de Q${totalMontoEliminado.toLocaleString('es-GT', { minimumFractionDigits: 2 })}. NOGs: ${nogSample}`,
+      `Eliminación de ${count} adquisiciones por un monto total de Q${totalMontoEliminado.toLocaleString('es-GT', { minimumFractionDigits: 2 })}. ${nogSample ? `NOGs: ${nogSample}` : ''}`,
       undefined,
-      { cantidadEliminada: count, totalMonto: totalMontoEliminado, nogs: removedPurchases.map(p => p.nog) }
+      { cantidadEliminada: count, totalMonto: totalMontoEliminado, ids }
     );
 
     addNotification({
@@ -2992,6 +3091,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'info',
       title: 'Adquisiciones Eliminadas',
       message: `Se eliminaron ${count} adquisiciones del sistema exitosamente.`,
+      duration: 5000
+    });
+
+    return { count };
+  };
+
+  const clearAllPurchases = async (): Promise<{ count: number }> => {
+    const allCurrentIds = purchases.map(p => p.id);
+    const allKnownIds = Array.from(new Set([...allCurrentIds, ...INITIAL_PURCHASES.map(ip => ip.id)]));
+    const count = allCurrentIds.length;
+
+    allKnownIds.forEach(id => deletedPurchaseIdsRef.current.add(id));
+    try {
+      safeSetLocalStorage('OJ_DELETED_PURCHASES_IDS', JSON.stringify(Array.from(deletedPurchaseIdsRef.current)));
+    } catch {}
+
+    setPurchases([]);
+    setSelectedPurchase(null);
+    setPurchaseToEdit(null);
+    try {
+      safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify([]));
+    } catch {}
+
+    fetch('/api/db/purchases/clear-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(err => {
+      console.warn("Aviso servidor central vaciando compras:", err);
+    });
+
+    if (allKnownIds.length > 0) {
+      removeBatchPurchasesFromFirestore(allKnownIds).catch(err => {
+        console.warn("Aviso Firestore vaciando compras:", err);
+      });
+    }
+
+    logAudit(
+      'ELIMINAR_COMPRA',
+      'Compras',
+      `Vaciado completo del módulo de adquisiciones institucionales (${count} registros eliminados).`
+    );
+
+    addNotification({
+      tipo: 'urgente',
+      titulo: 'Módulo de Compras Vaciado',
+      mensaje: `Se han eliminado los ${count} registros de adquisiciones del sistema.`,
+      categoria: 'sistema'
+    });
+
+    showToast({
+      type: 'info',
+      title: 'Módulo de Adquisiciones Vaciado',
+      message: `Se han eliminado permanentemente todos los registros del módulo de adquisiciones.`,
       duration: 5000
     });
 
@@ -3279,10 +3431,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Reglas de respaldo si el perfil no fue cargado
     if (currentUser.rol === 'auditor') {
-      return ['dashboard', 'compras', 'judicaturas', 'presupuesto', 'reportes', 'auditoria'].includes(tab);
+      return ['dashboard', 'compras', 'servicios', 'judicaturas', 'presupuesto', 'reportes', 'auditoria'].includes(tab);
     }
     if (currentUser.rol === 'usuario_estandar') {
-      return ['dashboard', 'compras', 'judicaturas', 'reportes'].includes(tab);
+      return ['dashboard', 'compras', 'servicios', 'judicaturas', 'reportes'].includes(tab);
     }
 
     return tab === 'dashboard';
@@ -4053,10 +4205,356 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { count: importedCount };
   };
 
+  // ==========================================
+  // MÉTODOS DEL MÓDULO DE SERVICIOS CONTRATADOS
+  // ==========================================
+
+  const serviciosAlertCount = useMemo(() => {
+    return servicios.reduce((acc, s) => {
+      const m = calcularMetricasServicio(s);
+      return (m.requiereAlertaTemprana || m.esVencido) ? acc + 1 : acc;
+    }, 0);
+  }, [servicios]);
+
+  const addServicio = async (data: Omit<ServicioContratado, 'id' | 'creadoPor' | 'fechaCreacion'>): Promise<ServicioContratado> => {
+    const id = `srv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const nowIso = new Date().toISOString();
+    const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
+
+    const newServicio: ServicioContratado = {
+      ...data,
+      id,
+      codigo: data.codigo?.trim() || `SC-${new Date().getFullYear()}-${String(servicios.length + 1).padStart(3, '0')}`,
+      creadoPor: creator,
+      fechaCreacion: nowIso
+    };
+
+    const updated = [newServicio, ...servicios];
+    setServicios(updated);
+    safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(updated));
+
+    // Persistir en Firestore
+    saveServicioToFirestore(newServicio).catch(err => console.warn("Aviso Firestore al guardar servicio:", err));
+
+    // Persistir en servidor central
+    fetch('/api/db/servicios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newServicio)
+    }).catch(err => console.warn("Aviso servidor central al guardar servicio:", err));
+
+    logAudit(
+      'CREAR_SERVICIO',
+      'Servicios',
+      `Registro de servicio contratado: ${newServicio.servicioContratado} (${newServicio.codigo}) - Proveedor: ${newServicio.proveedorActual}. Vigencia hasta ${newServicio.finVigencia}`,
+      newServicio.id
+    );
+
+    showToast({
+      title: 'Servicio Contratado Registrado',
+      message: `${newServicio.servicioContratado} registrado exitosamente.`,
+      type: 'exito'
+    });
+
+    return newServicio;
+  };
+
+  const updateServicio = async (id: string, data: Partial<ServicioContratado>): Promise<ServicioContratado> => {
+    const existing = servicios.find(s => s.id === id);
+    const nowIso = new Date().toISOString();
+    const updatedRecord: ServicioContratado = {
+      ...(existing || ({} as ServicioContratado)),
+      ...data,
+      id,
+      modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaModificacion: nowIso
+    };
+
+    const updated = servicios.map(s => s.id === id ? updatedRecord : s);
+    setServicios(updated);
+    safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(updated));
+
+    saveServicioToFirestore(updatedRecord).catch(err => console.warn("Aviso Firestore al actualizar servicio:", err));
+
+    fetch('/api/db/servicios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedRecord)
+    }).catch(err => console.warn("Aviso servidor central al actualizar servicio:", err));
+
+    logAudit(
+      'EDITAR_SERVICIO',
+      'Servicios',
+      `Actualización de servicio contratado: ${updatedRecord.servicioContratado} (${updatedRecord.codigo})`,
+      updatedRecord.id
+    );
+
+    showToast({
+      title: 'Servicio Actualizado',
+      message: `Los cambios en ${updatedRecord.servicioContratado} fueron guardados.`,
+      type: 'exito'
+    });
+
+    return updatedRecord;
+  };
+
+  const deleteServicio = async (id: string): Promise<boolean> => {
+    const existing = servicios.find(s => s.id === id);
+    const updated = servicios.filter(s => s.id !== id);
+
+    // Registrar en IDs eliminados persistentes para evitar resurrección por caché
+    deletedServicioIdsRef.current.add(id);
+    try {
+      safeSetLocalStorage('OJ_DELETED_SERVICIOS_IDS', JSON.stringify(Array.from(deletedServicioIdsRef.current)));
+    } catch {}
+
+    setServicios(updated);
+    safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(updated));
+
+    removeServicioFromFirestore(id).catch(err => console.warn("Aviso Firestore al eliminar servicio:", err));
+
+    fetch(`/api/db/servicios/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      .catch(err => console.warn("Aviso servidor central al eliminar servicio:", err));
+
+    logAudit(
+      'ELIMINAR_SERVICIO',
+      'Servicios',
+      `Eliminación de servicio contratado: ${existing?.servicioContratado || id} (${existing?.codigo || id})`,
+      id
+    );
+
+    showToast({
+      title: 'Servicio Removido',
+      message: `El registro "${existing?.servicioContratado || id}" ha sido eliminado exitosamente.`,
+      type: 'info'
+    });
+
+    return true;
+  };
+
+  const deleteBatchServicios = async (ids: string[]): Promise<number> => {
+    if (!ids || ids.length === 0) return 0;
+    const idSet = new Set(ids);
+
+    ids.forEach(id => deletedServicioIdsRef.current.add(id));
+    try {
+      safeSetLocalStorage('OJ_DELETED_SERVICIOS_IDS', JSON.stringify(Array.from(deletedServicioIdsRef.current)));
+    } catch {}
+
+    const remaining = servicios.filter(s => !idSet.has(s.id));
+    setServicios(remaining);
+    safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(remaining));
+
+    removeBatchServiciosFromFirestore(ids).catch(err => console.warn("Aviso Firestore lote servicios:", err));
+
+    fetch('/api/db/servicios/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    }).catch(err => console.warn("Aviso servidor central lote servicios:", err));
+
+    logAudit(
+      'ELIMINAR_SERVICIOS_LOTE',
+      'Servicios',
+      `Eliminación por lotes de ${ids.length} servicios contratados`,
+      ids.join(', ')
+    );
+
+    showToast({
+      title: 'Lote Eliminado',
+      message: `Se eliminaron exitosamente ${ids.length} servicios contratados.`,
+      type: 'info'
+    });
+
+    return ids.length;
+  };
+
+  const clearAllServicios = async (): Promise<number> => {
+    const allIds = servicios.map(s => s.id);
+    const count = allIds.length;
+
+    allIds.forEach(id => deletedServicioIdsRef.current.add(id));
+    try {
+      safeSetLocalStorage('OJ_DELETED_SERVICIOS_IDS', JSON.stringify(Array.from(deletedServicioIdsRef.current)));
+    } catch {}
+
+    setServicios([]);
+    safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify([]));
+
+    if (allIds.length > 0) {
+      removeBatchServiciosFromFirestore(allIds).catch(err => console.warn("Aviso Firestore limpiar servicios:", err));
+    }
+
+    fetch('/api/db/servicios/clear-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(err => console.warn("Aviso servidor central limpiar servicios:", err));
+
+    logAudit(
+      'VACIAR_SERVICIOS',
+      'Servicios',
+      `Se eliminaron todos los registros (${count}) del módulo de Servicios Contratados`,
+      'ALL_SERVICIOS'
+    );
+
+    showToast({
+      title: 'Módulo Vaciado',
+      message: `Se eliminaron todos los registros (${count}) de Servicios Contratados.`,
+      type: 'info'
+    });
+
+    return count;
+  };
+
+  const bulkImportServicios = async (records: Partial<ServicioContratado>[], replaceAll: boolean = false): Promise<{ count: number; total: number }> => {
+    if (!records || records.length === 0) return { count: 0, total: servicios.length };
+
+    const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
+    const nowIso = new Date().toISOString();
+
+    const baseList = replaceAll ? [] : [...servicios];
+    const existingMap = new Map(baseList.map(s => [s.id, s]));
+    const codeMap = new Map(baseList.map(s => [s.codigo?.toLowerCase().trim() || '', s]));
+
+    const processed: ServicioContratado[] = [];
+    let importedCount = 0;
+
+    records.forEach((rec, idx) => {
+      const cleanName = (rec.servicioContratado || '').trim();
+      if (!cleanName) return;
+
+      const codeKey = (rec.codigo || '').toLowerCase().trim();
+      let existing: ServicioContratado | undefined;
+      if (rec.id && existingMap.has(rec.id)) {
+        existing = existingMap.get(rec.id);
+      } else if (codeKey && codeMap.has(codeKey)) {
+        existing = codeMap.get(codeKey);
+      }
+
+      const srvId = existing?.id || rec.id || `srv-imp-${Date.now()}-${idx + 1}-${Math.random().toString(36).substring(2, 6)}`;
+
+      const newObj: ServicioContratado = {
+        id: srvId,
+        codigo: rec.codigo || existing?.codigo || `SC-IMP-${Date.now()}-${idx + 1}`,
+        area: rec.area || existing?.area || 'Servicios',
+        departamento: rec.departamento || existing?.departamento || 'Gerencia de Informática',
+        servicioContratado: cleanName,
+        objetoAlcance: rec.objetoAlcance || existing?.objetoAlcance || '',
+        modalidad: rec.modalidad || existing?.modalidad || 'Compra directa',
+        nogExpediente: String(rec.nogExpediente || existing?.nogExpediente || '0'),
+        proveedorActual: rec.proveedorActual || existing?.proveedorActual || 'No especificado',
+        inicioVigencia: rec.inicioVigencia || existing?.inicioVigencia || '2026-01-01',
+        finVigencia: rec.finVigencia || existing?.finVigencia || '2026-12-31',
+        estatusActual: rec.estatusActual || existing?.estatusActual || 'Vigente',
+        accionRequerida: rec.accionRequerida || existing?.accionRequerida || 'No aplica',
+        fechaInicioGestion: rec.fechaInicioGestion || existing?.fechaInicioGestion,
+        responsableSeguimiento: rec.responsableSeguimiento || existing?.responsableSeguimiento || 'GIT',
+        riesgoContinuidad: (rec.riesgoContinuidad || existing?.riesgoContinuidad || 'Medio') as any,
+        observaciones: rec.observaciones || existing?.observaciones || '',
+        adjuntos: rec.adjuntos || existing?.adjuntos || {},
+        creadoPor: existing?.creadoPor || creator,
+        fechaCreacion: existing?.fechaCreacion || nowIso,
+        modificadoPor: creator,
+        fechaModificacion: nowIso
+      };
+
+      processed.push(newObj);
+      importedCount++;
+    });
+
+    let finalList: ServicioContratado[];
+    if (replaceAll) {
+      finalList = processed;
+    } else {
+      const updatedMap = new Map(baseList.map(s => [s.id, s]));
+      processed.forEach(p => updatedMap.set(p.id, p));
+      finalList = Array.from(updatedMap.values());
+    }
+
+    setServicios(finalList);
+    safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(finalList));
+
+    saveBatchServiciosToFirestore(processed).catch(err => console.warn("Aviso Firestore al guardar servicios:", err));
+
+    fetch('/api/db/servicios/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ servicios: processed, replaceAll })
+    }).catch(() => {});
+
+    logAudit(
+      'IMPORTAR_SERVICIOS',
+      'Servicios',
+      `Importación masiva de ${importedCount} servicios contratados (${replaceAll ? 'Reemplazo total' : 'Actualización/Inserción'}).`
+    );
+
+    showToast({
+      title: 'Servicios Importados',
+      message: `Se procesaron exitosamente ${importedCount} registros de servicios.`,
+      type: 'exito'
+    });
+
+    return { count: importedCount, total: finalList.length };
+  };
+
+  const sendServicioAlertEmail = async (servicioId: string, customRecipients?: string[]): Promise<{ success: boolean; message: string }> => {
+    const servicio = servicios.find(s => s.id === servicioId);
+    if (!servicio) {
+      return { success: false, message: 'Servicio no encontrado.' };
+    }
+
+    const metricas = calcularMetricasServicio(servicio);
+    const payload = construirPayloadCorreoAlertaServicio(servicio, metricas);
+
+    const targets = (customRecipients && customRecipients.length > 0)
+      ? customRecipients
+      : (gmailConfig.recipientEmails && gmailConfig.recipientEmails.length > 0 ? gmailConfig.recipientEmails : payload.destinatarios);
+
+    try {
+      const res = await sendEmailNotification({
+        to: targets,
+        subject: payload.subject,
+        html: payload.html,
+        text: payload.text
+      });
+
+      logAudit(
+        'ENVIAR_ALERTA_CORREO_SERVICIO',
+        'Servicios',
+        `Despacho de alerta por correo para servicio ${servicio.codigo} (${servicio.modalidad}) a ${targets.join(', ')}`,
+        servicio.id
+      );
+
+      if (res.success) {
+        showToast({
+          title: 'Alerta Enviada por Correo',
+          message: `Se notificó exitosamente el vencimiento de ${servicio.servicioContratado} a ${targets.length} destinatario(s).`,
+          type: 'exito'
+        });
+        return { success: true, message: `Alerta enviada satisfactoriamente a ${targets.join(', ')}.` };
+      } else {
+        showToast({
+          title: 'Aviso de Envío',
+          message: res.message || 'Se procesó la solicitud de despacho.',
+          type: 'info'
+        });
+        return { success: true, message: res.message || 'Procesado' };
+      }
+    } catch (err: any) {
+      showToast({
+        title: 'Error Despachando Alerta',
+        message: err?.message || 'Fallo de conexión SMTP',
+        type: 'error'
+      });
+      return { success: false, message: err?.message || 'Error al despachar correo.' };
+    }
+  };
+
   const resetToDemoData = () => {
     setUsers(INITIAL_USERS);
     setPurchases(INITIAL_PURCHASES);
     setJudicaturas(INITIAL_JUDICATURAS);
+    setServicios(INITIAL_SERVICIOS_CONTRATADOS);
     setCatalogs(INITIAL_CATALOGS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
     setNotifications(INITIAL_NOTIFICATIONS);
@@ -4124,6 +4622,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recordPurchaseMilestone,
         deletePurchase,
         deletePurchases,
+        clearAllPurchases,
         addCatalog,
         updateCatalog,
         deleteCatalog,
@@ -4181,6 +4680,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteJudicatura,
         addJudicaturaObservacion,
         importJudicaturas,
+        servicios,
+        addServicio,
+        updateServicio,
+        deleteServicio,
+        deleteBatchServicios,
+        clearAllServicios,
+        bulkImportServicios,
+        selectedServicio,
+        setSelectedServicio,
+        servicioToEdit,
+        setServicioToEdit,
+        isServicioModalOpen,
+        setIsServicioModalOpen,
+        isServicioDetailModalOpen,
+        setIsServicioDetailModalOpen,
+        sendServicioAlertEmail,
+        serviciosAlertCount,
       }}
     >
       {children}

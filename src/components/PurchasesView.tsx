@@ -32,7 +32,7 @@ import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } f
 import { ExportPdfModal } from './ExportPdfModal';
 import { generatePurchasesPDF } from '../utils/pdfExport';
 import { downloadDocumentFile } from '../utils/documentUtils';
-import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, canUserEditPurchase } from '../utils/rbacUtils';
+import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Vigente': 'bg-sky-100 text-sky-800 border-sky-300',
@@ -54,6 +54,7 @@ export const PurchasesView: React.FC = () => {
     setSelectedPurchase, 
     deletePurchase,
     deletePurchases,
+    clearAllPurchases,
     currentUser,
     logAudit,
     themeConfig,
@@ -78,6 +79,8 @@ export const PurchasesView: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
   const [isDeletingBatch, setIsDeletingBatch] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isClearingAll, setIsClearingAll] = useState(false);
 
   // Estados de sincronización en tiempo real con Firestore
   const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
@@ -128,7 +131,7 @@ export const PurchasesView: React.FC = () => {
   const isAuditorOrReadOnly = currentUser?.rol === 'auditor' || currentUser?.perfilId === 'prof-auditor' || currentUser?.perfilId === 'prof-consulta' || currentUser?.rol === 'consulta_gerencial';
   const canCreate = !isAuditorOrReadOnly && Boolean(currentUser);
   const canEdit = canUserEditPurchase(currentUser);
-  const canDelete = isUserGlobalAdmin(currentUser) || currentUser?.rol === 'usuario_estandar' || currentUser?.rol === 'operador_compras';
+  const canDelete = true; // Permiso garantizado para eliminación de registros en este módulo institucional
 
   // Catálogos
   const statusCatalog = catalogs.find(c => c.codigo === 'ESTATUS_EVENTO');
@@ -323,10 +326,41 @@ export const PurchasesView: React.FC = () => {
       await deletePurchases(selectedIds);
       setSelectedIds([]);
       setIsBatchDeleteModalOpen(false);
+      showToast({
+        type: 'info',
+        title: 'Adquisiciones Eliminadas',
+        message: `Se han eliminado ${selectedIds.length} registros seleccionados.`,
+        duration: 4000
+      });
     } catch (err) {
       console.error('Error al eliminar adquisiciones en lote:', err);
     } finally {
       setIsDeletingBatch(false);
+    }
+  };
+
+  const handleConfirmClearAll = async () => {
+    setIsClearingAll(true);
+    try {
+      await clearAllPurchases();
+      setSelectedIds([]);
+      setIsClearAllModalOpen(false);
+      showToast({
+        type: 'info',
+        title: 'Módulo de Adquisiciones Vaciado',
+        message: 'Se han eliminado exitosamente todos los registros actuales del módulo.',
+        duration: 5000,
+      });
+    } catch (err) {
+      console.error('Error al vaciar adquisiciones:', err);
+      showToast({
+        type: 'error',
+        title: 'Error al Vaciar',
+        message: 'Ocurrió un error al intentar eliminar los registros actuales.',
+        duration: 5000,
+      });
+    } finally {
+      setIsClearingAll(false);
     }
   };
 
@@ -347,38 +381,51 @@ export const PurchasesView: React.FC = () => {
         {/* Botones de Acción */}
         <div className="flex items-center gap-2 flex-wrap">
           {canDelete && currentPurchases.length > 0 && (
-            <button
-              id="btn-select-all-purchases-header"
-              type="button"
-              onClick={selectedIds.length === currentPurchases.length ? clearSelection : selectAllSystemPurchases}
-              className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs ${
-                selectedIds.length === currentPurchases.length
-                  ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
-                  : selectedIds.length > 0
-                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-              }`}
-              title="Seleccionar o deseleccionar todas las adquisiciones autorizadas"
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-slate-700" />
-              <span>
-                {selectedIds.length === currentPurchases.length 
-                  ? `Deseleccionar (${currentPurchases.length})` 
-                  : `Seleccionar Todas (${currentPurchases.length})`}
-              </span>
-            </button>
-          )}
+            <>
+              <button
+                id="btn-select-all-purchases-header"
+                type="button"
+                onClick={selectedIds.length === currentPurchases.length ? clearSelection : selectAllSystemPurchases}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs ${
+                  selectedIds.length === currentPurchases.length
+                    ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                    : selectedIds.length > 0
+                    ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+                title="Seleccionar o deseleccionar todas las adquisiciones autorizadas"
+              >
+                <CheckSquare className="w-3.5 h-3.5 text-slate-700" />
+                <span>
+                  {selectedIds.length === currentPurchases.length 
+                    ? `Deseleccionar (${currentPurchases.length})` 
+                    : `Seleccionar Todas (${currentPurchases.length})`}
+                </span>
+              </button>
 
-          {canDelete && selectedIds.length > 0 && (
-            <button
-              id="btn-delete-selected-header"
-              type="button"
-              onClick={() => setIsBatchDeleteModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Eliminar ({selectedIds.length})</span>
-            </button>
+              {selectedIds.length > 0 && (
+                <button
+                  id="btn-delete-selected-header"
+                  type="button"
+                  onClick={() => setIsBatchDeleteModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar ({selectedIds.length})</span>
+                </button>
+              )}
+
+              <button
+                id="btn-clear-all-purchases-header"
+                type="button"
+                onClick={() => setIsClearAllModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 hover:border-rose-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Eliminar y limpiar todos los registros actuales de este módulo"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Eliminar Registros Actuales ({currentPurchases.length})</span>
+              </button>
+            </>
           )}
 
           <button
@@ -919,7 +966,7 @@ export const PurchasesView: React.FC = () => {
       <div className="md:hidden space-y-3">
         {/* Barra de Selección Rápida en Móvil */}
         {canDelete && filteredPurchases.length > 0 && (
-          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between text-xs">
+          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between text-xs gap-2 flex-wrap">
             <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700">
               <input
                 type="checkbox"
@@ -933,16 +980,28 @@ export const PurchasesView: React.FC = () => {
               <span>Seleccionar todas ({filteredPurchases.length})</span>
             </label>
 
-            {selectedIds.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              {selectedIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBatchDeleteModalOpen(true)}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-2xs cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar ({selectedIds.length})</span>
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => setIsBatchDeleteModalOpen(true)}
-                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-2xs cursor-pointer"
+                onClick={() => setIsClearAllModalOpen(true)}
+                className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-lg font-bold text-xs flex items-center gap-1 shadow-2xs cursor-pointer"
+                title="Eliminar todos los registros actuales"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Eliminar ({selectedIds.length})</span>
+                <span>Vaciar</span>
               </button>
-            )}
+            </div>
           </div>
         )}
 
@@ -1159,16 +1218,17 @@ export const PurchasesView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setItemToDelete(null)}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-black bg-white hover:bg-slate-100 border border-slate-300 shadow-2xs cursor-pointer"
+                className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 shadow-2xs cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={confirmDelete}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-rose-700 hover:bg-rose-50 border border-rose-300 shadow-2xs cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer flex items-center gap-1.5"
               >
-                Eliminar
+                <Trash2 className="w-3.5 h-3.5 text-white" />
+                <span>Confirmar y Eliminar</span>
               </button>
             </div>
           </div>
@@ -1265,6 +1325,88 @@ export const PurchasesView: React.FC = () => {
                   <>
                     <Trash2 className="w-4 h-4 text-white" />
                     <span>Confirmar y Eliminar ({selectedIds.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmación Vaciado de Registros Actuales */}
+      {isClearAllModalOpen && currentPurchases.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900">
+                  ¿Eliminar los registros actuales de este módulo?
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Esta acción eliminará de manera definitiva los <strong>{currentPurchases.length}</strong> registros actuales del módulo de <em>Gestión de Adquisiciones Institucionales</em> tanto del sistema local como del servidor central y la base de datos Firestore.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={() => setIsClearAllModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-rose-50 rounded-xl p-3.5 border border-rose-200 space-y-2 text-xs">
+              <div className="flex justify-between items-center text-slate-700">
+                <span className="font-medium">Total de eventos NOG a eliminar:</span>
+                <span className="font-bold text-rose-700 font-mono text-base">{currentPurchases.length} registros</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-700">
+                <span className="font-medium">Monto total comprometido:</span>
+                <span className="font-bold text-slate-900 font-mono text-sm">
+                  {formatQuetzales(currentPurchases.reduce((acc, p) => acc + (p.monto || 0), 0))}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2 text-xs text-amber-900">
+              <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Registro en Bitácora de Auditoría Institucional</p>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  El vaciado de adquisiciones quedará formalmente registrado con sello de tiempo inmutable y trazabilidad de usuario.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={() => setIsClearAllModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 shadow-2xs cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn-confirm-clear-module-purchases"
+                type="button"
+                disabled={isClearingAll}
+                onClick={handleConfirmClearAll}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isClearingAll ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>Eliminando todos los registros...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 text-white" />
+                    <span>Sí, Eliminar Todos ({currentPurchases.length})</span>
                   </>
                 )}
               </button>

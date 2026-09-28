@@ -11,6 +11,9 @@ import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { PurchasesView } from './components/PurchasesView';
 import { JudicaturasView } from './components/JudicaturasView';
+import { ServiciosView } from './components/servicios/ServiciosView';
+import { ServicioFormModal } from './components/servicios/ServicioFormModal';
+import { ServicioDetailModal } from './components/servicios/ServicioDetailModal';
 import { CatalogsView } from './components/CatalogsView';
 import { AuditLogView } from './components/AuditLogView';
 import { UsersView } from './components/UsersView';
@@ -86,6 +89,15 @@ const AppContent: React.FC = () => {
                 <AdminAccessGate 
                   moduleTitle="Compras y Eventos Tecnológicos" 
                   moduleDescription="Gestión y seguimiento de expedientes F56-e, eventos NOG y actas GIT" 
+                />
+              )
+            )}
+
+            {activeTab === 'servicios' && (
+              hasModuleAccess('servicios') ? <ServiciosView /> : (
+                <AdminAccessGate 
+                  moduleTitle="Control, Vigencia y Alertas Tempranas de Servicios Contratados" 
+                  moduleDescription="Monitoreo de vencimientos contractuales, cálculo de días restantes, semáforos y alertas preventivas Guatecompras" 
                 />
               )
             )}
@@ -212,6 +224,8 @@ const AppContent: React.FC = () => {
       <LoginModal />
       <PurchaseFormModal />
       <PurchaseDetailModal />
+      <ServicioFormModal />
+      <ServicioDetailModal />
       <ChangePasswordModal />
       <GoogleAuthModal />
       <ImportExcelModal />

@@ -248,7 +248,12 @@ export type AuditAction =
   | 'CREAR_JUDICATURA'
   | 'EDITAR_JUDICATURA'
   | 'ELIMINAR_JUDICATURA'
-  | 'AGREGAR_OBSERVACION_JUDICATURA';
+  | 'AGREGAR_OBSERVACION_JUDICATURA'
+  | 'CREAR_SERVICIO'
+  | 'EDITAR_SERVICIO'
+  | 'ELIMINAR_SERVICIO'
+  | 'ENVIAR_ALERTA_CORREO_SERVICIO'
+  | 'IMPORTAR_SERVICIOS';
 
 export interface AuditLogEntry {
   id: string;
@@ -256,7 +261,7 @@ export interface AuditLogEntry {
   usuario: string;
   rol: UserRole;
   accion: AuditAction;
-  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema' | 'Perfiles' | 'Judicaturas';
+  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema' | 'Perfiles' | 'Judicaturas' | 'Servicios';
   detalles: string;
   registroId?: string;
   ip: string;
@@ -274,10 +279,105 @@ export interface AppNotification {
   fecha: string;
   leida: boolean;
   enlaceId?: string;
-  categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema';
+  categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema' | 'alerta_servicio';
 }
 
-export type ActiveTab = 'dashboard' | 'compras' | 'judicaturas' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo';
+export type ActiveTab = 'dashboard' | 'compras' | 'servicios' | 'judicaturas' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo';
+
+// ==========================================
+// MÓDULO DE SERVICIOS CONTRATADOS (GIT)
+// ==========================================
+
+export type AreaServicio = 
+  | 'Servicios'
+  | 'Infraestructura'
+  | 'Seguridad Informática'
+  | 'Administración y Desarrollo de Sistemas'
+  | 'Estadística'
+  | 'Unidad de Operación de los Servicios'
+  | 'Redes y Telecomunicaciones'
+  | string;
+
+export type ModalidadContratacionServicio = 
+  | 'Compra directa'
+  | 'Baja cuantía'
+  | 'Cotización'
+  | 'Licitación'
+  | 'Licitación UEEP'
+  | 'Renovación'
+  | 'Excepción'
+  | string;
+
+export type EstatusServicioContratado = 
+  | 'Vigente'
+  | 'Por vencer'
+  | 'Vencido'
+  | 'En prórroga'
+  | 'En ejecución'
+  | 'En gestión de nuevo evento'
+  | 'Pendiente de adjudicación'
+  | 'Suspendido'
+  | string;
+
+export type AccionRequeridaServicio = 
+  | 'Iniciar nuevo evento'
+  | 'Solicitar prórroga'
+  | 'Dar seguimiento a adjudicación'
+  | 'Regularizar expediente'
+  | 'Definir técnicamente requerimiento'
+  | 'No aplica'
+  | string;
+
+export type RiesgoContinuidad = 'Alto' | 'Medio' | 'Bajo';
+
+export interface DocumentosAdjuntosServicio {
+  especificacionesTecnicas?: AttachedDocument;
+  f56?: AttachedDocument;
+  ordenCompra?: AttachedDocument;
+  factura?: AttachedDocument;
+}
+
+export interface ServicioContratado {
+  id: string;
+  codigo: string;
+  area: AreaServicio;
+  departamento: string;
+  servicioContratado: string;
+  objetoAlcance: string;
+  modalidad: ModalidadContratacionServicio;
+  nogExpediente: string;
+  proveedorActual: string;
+  inicioVigencia: string; // YYYY-MM-DD
+  finVigencia: string;    // YYYY-MM-DD
+  estatusActual: EstatusServicioContratado;
+  accionRequerida: AccionRequeridaServicio;
+  fechaInicioGestion?: string; // YYYY-MM-DD
+  responsableSeguimiento: string;
+  riesgoContinuidad: RiesgoContinuidad;
+  observaciones?: string;
+  adjuntos?: DocumentosAdjuntosServicio;
+  creadoPor: string;
+  fechaCreacion: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
+
+export type SemaforoVigencia = 'verde' | 'amarillo' | 'naranja' | 'rojo';
+export type NivelAlertaGestion = 'critico' | 'alerta' | 'anticipado' | 'normal';
+
+export interface ServicioCalculos {
+  duracionTotalDias: number;
+  diasTranscurridos: number;
+  diasRestantes: number;
+  porcentajeConsumido: number;
+  semaforoVigencia: SemaforoVigencia;
+  nivelAlertaGestion: NivelAlertaGestion;
+  mensajeAlertaGestion: string;
+  requiereAlertaTemprana: boolean;
+  esVencido: boolean;
+  diasDesfase: number;
+  diasUmbralAlerta: number;
+}
 
 // ==========================================
 // MÓDULO DE JUDICATURAS POR INAUGURAR

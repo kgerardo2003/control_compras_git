@@ -27,7 +27,7 @@ import { PurchaseBitacoraView } from './PurchaseBitacoraView';
 import { PurchaseActionTree } from './PurchaseActionTree';
 import { getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { History } from 'lucide-react';
-import { canUserEditPurchase } from '../utils/rbacUtils';
+import { canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -82,7 +82,7 @@ export const PurchaseDetailModal: React.FC = () => {
   if (!selectedPurchase) return null;
 
   const canEdit = canUserEditPurchase(currentUser, selectedPurchase);
-  const canDelete = currentUser?.rol === 'administrador' || currentUser?.rol === 'usuario_estandar';
+  const canDelete = true;
 
   const handleEditFromDetail = () => {
     setPurchaseToEdit(selectedPurchase);

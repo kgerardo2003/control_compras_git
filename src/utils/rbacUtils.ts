@@ -89,6 +89,24 @@ export function canUserEditPurchase(user?: User | null, purchase?: PurchaseRecor
 }
 
 /**
+ * Determina si el usuario tiene privilegios para eliminar registros en el Módulo de Adquisiciones.
+ * Todos los usuarios con acceso al módulo institucional cuentan con permiso de eliminación
+ * de registros (individual, selección por lotes y vaciado de registros).
+ */
+export function canUserDeletePurchase(_user?: User | null): boolean {
+  return true;
+}
+
+/**
+ * Determina si el usuario tiene privilegios para eliminar registros en el Módulo de Servicios Contratados (GIT).
+ * Todos los usuarios con acceso al módulo institucional cuentan con permiso de eliminación
+ * de registros (individual, selección por lotes y vaciado total).
+ */
+export function canUserDeleteServicio(_user?: User | null): boolean {
+  return true;
+}
+
+/**
  * Normaliza un nombre de área para identificadores seguros y nombres de archivo
  */
 export function normalizeAreaName(rawArea?: string | null): string {

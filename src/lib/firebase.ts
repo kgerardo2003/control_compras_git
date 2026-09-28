@@ -23,7 +23,7 @@ try {
   setLogLevel('silent');
 } catch (_) {}
 import firebaseConfigFile from '../../firebase-applet-config.json';
-import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument, JudicaturaRecord } from '../types';
+import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument, JudicaturaRecord, ServicioContratado } from '../types';
 
 export const FIREBASE_CONFIG = {
   apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || firebaseConfigFile.apiKey,
@@ -62,6 +62,7 @@ export const CATALOGS_COLLECTION = 'catalogs';
 export const USERS_COLLECTION = 'users';
 export const USER_PROFILES_COLLECTION = 'user_profiles';
 export const JUDICATURAS_COLLECTION = 'judicaturas';
+export const SERVICIOS_COLLECTION = 'servicios_contratados';
 export const BUDGET_LINES_COLLECTION = 'budget_lines';
 export const BUDGET_MODIFICATIONS_COLLECTION = 'budget_modifications';
 export const SYSTEM_CONFIG_COLLECTION = 'system_config';
@@ -766,12 +767,107 @@ export async function saveBatchJudicaturasToFirestore(judicaturas: JudicaturaRec
   }
 }
 
+// Helpers Firestore para Servicios Contratados
+export async function saveServicioToFirestore(data: ServicioContratado): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cleaned = cleanUndefined(data);
+    const docRef = doc(db, SERVICIOS_COLLECTION, data.id);
+    await setDoc(docRef, cleaned, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error guardando servicio en Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function removeServicioFromFirestore(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, SERVICIOS_COLLECTION, id);
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error eliminando servicio de Firestore:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function removeBatchServiciosFromFirestore(ids: string[]): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    if (!ids || ids.length === 0) return { success: true, count: 0 };
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const id of chunk) {
+        const docRef = doc(db, SERVICIOS_COLLECTION, id);
+        batch.delete(docRef);
+      }
+      await batch.commit();
+    }
+    return { success: true, count: ids.length };
+  } catch (err: any) {
+    console.error("Error eliminando lote de servicios de Firestore:", err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
+export async function saveBatchServiciosToFirestore(servicios: ServicioContratado[]): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    if (!servicios || servicios.length === 0) return { success: true, count: 0 };
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < servicios.length; i += CHUNK_SIZE) {
+      const chunk = servicios.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const s of chunk) {
+        if (s && s.id) {
+          const docRef = doc(db, SERVICIOS_COLLECTION, s.id);
+          batch.set(docRef, cleanUndefined(s), { merge: true });
+        }
+      }
+      await batch.commit();
+    }
+    return { success: true, count: servicios.length };
+  } catch (err: any) {
+    console.error("Error guardando lote de servicios en Firestore:", err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
+export function onServiciosSnapshot(
+  onData: (servicios: ServicioContratado[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  try {
+    const colRef = collection(db, SERVICIOS_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: ServicioContratado[] = [];
+        snapshot.forEach((d) => {
+          items.push(d.data() as ServicioContratado);
+        });
+        items.sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''));
+        onData(items);
+      },
+      (err) => {
+        console.warn("Error en listener de servicios contratados:", err);
+        onError?.(err);
+      }
+    );
+  } catch (err) {
+    console.warn("Excepción al iniciar listener de servicios contratados:", err);
+    onError?.(err as Error);
+    return () => {};
+  }
+}
+
 /**
  * Forzar sincronización masiva y reflejo de todos los datos en la base de datos de producción Firestore
  */
 export async function forcePushAllLocalDataToFirestore(data: {
   purchases: PurchaseRecord[];
   judicaturas: JudicaturaRecord[];
+  servicios?: ServicioContratado[];
   budgetLines?: BudgetLineItem[];
   catalogs?: Catalog[];
   users?: User[];
@@ -782,6 +878,7 @@ export async function forcePushAllLocalDataToFirestore(data: {
     const counts = {
       purchases: 0,
       judicaturas: 0,
+      servicios: 0,
       budgetLines: 0,
       catalogs: 0,
       users: 0,
@@ -791,6 +888,12 @@ export async function forcePushAllLocalDataToFirestore(data: {
     if (data.judicaturas && data.judicaturas.length > 0) {
       const res = await saveBatchJudicaturasToFirestore(data.judicaturas);
       counts.judicaturas = res.count;
+    }
+
+    // 1b. Servicios Contratados
+    if (data.servicios && data.servicios.length > 0) {
+      const res = await saveBatchServiciosToFirestore(data.servicios);
+      counts.servicios = res.count;
     }
 
     // 2. Compras

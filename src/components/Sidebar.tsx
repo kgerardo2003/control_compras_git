@@ -16,7 +16,8 @@ import {
   KeyRound,
   Key,
   DollarSign,
-  Scale
+  Scale,
+  Briefcase
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { OJLogo } from './OJLogo';
@@ -37,6 +38,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
     resetToDemoData,
     purchases,
     judicaturas,
+    servicios,
+    serviciosAlertCount,
     budgetAvailability,
     userProfiles,
     hasModuleAccess,
@@ -171,6 +174,35 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
               <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeConfig.sidebarBadge} font-mono`}>
                 {purchases.length}
               </span>
+            </button>
+          )}
+
+          {/* Control, Vigencia y Alertas Tempranas de Servicios Contratados */}
+          {hasModuleAccess('servicios') && (
+            <button
+              id="nav-tab-servicios"
+              type="button"
+              onClick={() => handleNavClick('servicios')}
+              className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'servicios'
+                  ? themeConfig.sidebarActive
+                  : `text-slate-300 ${themeConfig.sidebarHover}`
+              }`}
+            >
+              <div className="flex items-center">
+                <Briefcase className={`w-4 h-4 mr-3 ${activeTab === 'servicios' ? themeConfig.sidebarIconActive : 'text-slate-400'}`} />
+                <span>Servicios GIT</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {serviciosAlertCount > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono font-bold animate-pulse" title={`${serviciosAlertCount} servicio(s) en alerta temprana o vencidos`}>
+                    {serviciosAlertCount}
+                  </span>
+                )}
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeConfig.sidebarBadge} font-mono`}>
+                  {(servicios || []).length}
+                </span>
+              </div>
             </button>
           )}
 
