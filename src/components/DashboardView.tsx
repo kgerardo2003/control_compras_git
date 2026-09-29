@@ -31,7 +31,8 @@ import {
   Percent,
   ChevronLeft,
   ChevronRight,
-  Radio
+  Radio,
+  Ban
 } from 'lucide-react';
 import { getEventDelayDays } from '../utils/delayUtils';
 import {
@@ -51,6 +52,7 @@ import {
 import { formatQuetzales, formatDate, exportToCSV, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, ALL_AREAS_LABEL } from '../utils/rbacUtils';
+import { DesertedAndPrescindedAnalytics } from './analytics/DesertedAndPrescindedAnalytics';
 
 // Helper para determinar si un evento NOG está vigente (en convocatoria pública o recepción de plicas)
 export const isPurchaseVigente = (p: { estatusEvento?: string }): boolean => {
@@ -416,9 +418,9 @@ export const DashboardView: React.FC = () => {
   const [recentPage, setRecentPage] = useState<number>(1);
   const RECENT_ITEMS_PER_PAGE = 8;
 
-  // Estados para Modal Interactivo de Indicadores (NOG Adjudicados / NOG en Evaluación / NOG Vigentes)
+  // Estados para Modal Interactivo de Indicadores (NOG Adjudicados / NOG en Evaluación / NOG Vigentes / NOG Desiertos)
   const [nogModalOpen, setNogModalOpen] = useState<boolean>(false);
-  const [nogModalType, setNogModalType] = useState<'adjudicados' | 'evaluacion' | 'vigentes'>('adjudicados');
+  const [nogModalType, setNogModalType] = useState<'adjudicados' | 'evaluacion' | 'vigentes' | 'desiertos'>('adjudicados');
   const [nogModalFilter, setNogModalFilter] = useState<string>('todos');
   const [nogModalSearch, setNogModalSearch] = useState<string>('');
   const [nogModalPage, setNogModalPage] = useState<number>(1);
@@ -915,6 +917,43 @@ export const DashboardView: React.FC = () => {
       rojo: enEvaluacion.filter(p => getEventDelayDays(p) > 30),
     };
 
+    // 5. Indicador de NOG Desiertos / Sin Ofertas / Prescindidos
+    const desiertos = filteredPurchases.filter(p => {
+      const est = (p.estatusEvento || '').toLowerCase();
+      const numOfertas = Number(p.cantidadOfertas);
+      const obs = (p.observaciones || '').toLowerCase();
+      const isDesierto = est.includes('desierto') || obs.includes('desierto');
+      const isPrescindido = est.includes('prescindido') || obs.includes('prescindido');
+      const isSinOfertas = numOfertas === 0 || obs.includes('sin oferta') || obs.includes('no se presentaron ofertas');
+      return isDesierto || isPrescindido || (isSinOfertas && !est.includes('adjudic'));
+    });
+    const desiertosCount = desiertos.length;
+    const desiertosMonto = desiertos.reduce((acc, p) => acc + (p.monto || 0), 0);
+    const desiertosPorcentaje = totalEventos > 0 ? Math.round((desiertosCount / totalEventos) * 100) : 0;
+
+    // Desglose de NOG Desiertos por Área Solicitante
+    const areasDesiertasMap: Record<string, { count: number; monto: number }> = {};
+    desiertos.forEach(p => {
+      const area = p.areaSolicitante || p.dependenciaSolicitante || 'Soporte técnico';
+      if (!areasDesiertasMap[area]) {
+        areasDesiertasMap[area] = { count: 0, monto: 0 };
+      }
+      areasDesiertasMap[area].count += 1;
+      areasDesiertasMap[area].monto += (p.monto || 0);
+    });
+
+    const desiertosPorArea = Object.entries(areasDesiertasMap)
+      .map(([area, data], idx) => ({
+        area,
+        name: area,
+        count: data.count,
+        value: data.count,
+        monto: data.monto,
+        porcentaje: desiertosCount > 0 ? Math.round((data.count / desiertosCount) * 100) : 0,
+        color: AREA_PALETTE[idx % AREA_PALETTE.length],
+      }))
+      .sort((a, b) => b.count - a.count);
+
     return {
       totalEventos,
       totalMonto,
@@ -931,6 +970,11 @@ export const DashboardView: React.FC = () => {
       vigentesMonto,
       vigentesPorcentaje,
       vigentesPorArea,
+      desiertosCount,
+      desiertosMonto,
+      desiertosPorcentaje,
+      desiertosPorArea,
+      desiertosList: desiertos,
       semaforoAdjudicados,
       semaforoEvaluacion,
       adjudicadosPorArea,
@@ -1165,12 +1209,20 @@ export const DashboardView: React.FC = () => {
         return p.estatusEvento === 'Adjudicación' || p.estatusEvento === 'Adjudicada';
       } else if (nogModalType === 'vigentes') {
         return isPurchaseVigente(p);
+      } else if (nogModalType === 'desiertos') {
+        const est = (p.estatusEvento || '').toLowerCase();
+        const numOfertas = Number(p.cantidadOfertas);
+        const obs = (p.observaciones || '').toLowerCase();
+        const isDesierto = est.includes('desierto') || obs.includes('desierto');
+        const isPrescindido = est.includes('prescindido') || obs.includes('prescindido');
+        const isSinOfertas = numOfertas === 0 || obs.includes('sin oferta') || obs.includes('no se presentaron ofertas');
+        return isDesierto || isPrescindido || (isSinOfertas && !est.includes('adjudic'));
       } else {
         return p.estatusEvento === 'Evaluación';
       }
     });
 
-    if (nogModalType === 'adjudicados' || nogModalType === 'vigentes') {
+    if (nogModalType === 'adjudicados' || nogModalType === 'vigentes' || nogModalType === 'desiertos') {
       if (nogModalFilter !== 'todos') {
         list = list.filter(p => (p.areaSolicitante || p.dependenciaSolicitante || 'Soporte técnico') === nogModalFilter);
       }
@@ -1238,6 +1290,14 @@ export const DashboardView: React.FC = () => {
     setNogModalOpen(true);
   };
 
+  const handleOpenDesiertosModal = (areaFilter: string = 'todos') => {
+    setNogModalType('desiertos');
+    setNogModalFilter(areaFilter);
+    setNogModalSearch('');
+    setNogModalPage(1);
+    setNogModalOpen(true);
+  };
+
   const handleExportModalCSV = () => {
     const rows = modalPurchases.map(p => ({
       NOG: p.nog || '',
@@ -1255,6 +1315,8 @@ export const DashboardView: React.FC = () => {
       ? 'NOG_Adjudicados'
       : nogModalType === 'vigentes'
       ? 'NOG_Vigentes'
+      : nogModalType === 'desiertos'
+      ? 'NOG_Desiertos_SinOfertas'
       : 'NOG_En_Evaluacion';
     exportToCSV(`${prefix}_${nogModalFilter}_${new Date().toISOString().slice(0, 10)}`, rows);
   };
@@ -1369,7 +1431,7 @@ export const DashboardView: React.FC = () => {
       )}
 
       {/* Paneles e Indicadores de Avance de Gran Visibilidad y Alto Contraste Profesional */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
 
         {/* PANEL 1: Indicador de NOG Adjudicados */}
         <div className="bg-white p-6 sm:p-7 rounded-2xl border-2 border-emerald-500 shadow-md hover:shadow-xl transition-all flex flex-col justify-between">
@@ -2004,6 +2066,211 @@ export const DashboardView: React.FC = () => {
             </div>
             <div className="mt-2 text-center text-[10px] text-blue-800 font-semibold bg-blue-50/60 py-1 px-2 rounded-md border border-blue-200/60 flex items-center justify-center gap-1">
               <span>👆 Haz clic en la gráfica o en cualquier área para ver sus NOGs vigentes</span>
+            </div>
+          </div>
+        </div>
+
+        {/* PANEL 4: Indicador de NOG Desiertos y/o Sin Ofertas / Prescindidos */}
+        <div className="bg-white p-6 sm:p-7 rounded-2xl border-2 border-rose-500 shadow-md hover:shadow-xl transition-all flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-300">
+                  <Ban className="w-5 h-5 text-rose-700" />
+                </div>
+                <div>
+                  <span className="text-xs font-black uppercase tracking-wider text-rose-950 block">
+                    NOG Desiertos / Sin Ofertas
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    Convocatorias No Concretadas
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenDesiertosModal('todos')}
+                className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-700 hover:bg-rose-800 text-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+                title="Haga clic para ver el listado de todos los NOGs desiertos o sin ofertas"
+              >
+                <span>{metrics.desiertosPorcentaje}% {isAdmin ? 'del Total' : 'del Área'}</span>
+                <Eye className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div
+              onClick={() => handleOpenDesiertosModal('todos')}
+              className="mt-5 flex items-center justify-between gap-4 cursor-pointer p-2 -mx-2 rounded-xl hover:bg-rose-50/60 transition-all group"
+              title="Haga clic para ver el listado de NOGs desiertos o sin ofertas"
+            >
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-5xl sm:text-6xl font-black text-slate-950 tracking-tight font-mono group-hover:text-rose-950 transition-colors">
+                    {metrics.desiertosCount}
+                  </span>
+                  <span className="text-base font-bold text-slate-500">
+                    / {metrics.totalEventos}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-slate-600 mt-1.5 leading-snug group-hover:text-rose-900 transition-colors flex items-center gap-1">
+                  <span>Convocatorias desiertas o 0 ofertas</span>
+                  <span className="text-[10px] text-rose-700 font-extrabold uppercase">(Ver NOGs)</span>
+                </p>
+              </div>
+
+              {/* Medidor Circular de Alto Contraste */}
+              <div className="relative w-22 h-22 sm:w-24 sm:h-24 flex-shrink-0 group-hover:scale-105 transition-transform">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    className="stroke-slate-200 fill-none"
+                    strokeWidth="3.8"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                  <path
+                    className="stroke-rose-600 fill-none transition-all duration-700"
+                    strokeDasharray={`${metrics.desiertosPorcentaje}, 100`}
+                    strokeWidth="3.8"
+                    strokeLinecap="round"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-xl sm:text-2xl font-black text-rose-950 font-mono">
+                    {metrics.desiertosPorcentaje}%
+                  </span>
+                  <span className="text-[9px] font-black text-rose-800 uppercase tracking-tighter">
+                    Desiertos
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            onClick={() => handleOpenDesiertosModal('todos')}
+            className="mt-5 pt-3 border-t border-slate-200 bg-slate-900 hover:bg-slate-800 text-white p-3.5 rounded-xl flex items-center justify-between shadow-xs cursor-pointer transition-all"
+            title="Haga clic para ver los NOGs desiertos y sus montos liberados"
+          >
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Monto No Adjudicado</span>
+              <span className="text-[10px] text-rose-400 font-normal underline">(Ver listado)</span>
+            </span>
+            <span className="text-sm sm:text-base font-black font-mono text-rose-400">
+              {formatQuetzales(metrics.desiertosMonto)}
+            </span>
+          </div>
+
+          {/* Gráfica Circular y Desglose de Áreas para NOG Desiertos */}
+          <div className="mt-4 pt-3 border-t border-slate-200/80 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                <PieChartIcon className="w-3.5 h-3.5 text-rose-600" />
+                Áreas de NOGs Desiertos
+              </span>
+              <span className="text-[10px] text-rose-800 font-bold bg-rose-100/90 px-2 py-0.5 rounded-full border border-rose-300">
+                Clic en gráfica o área para filtrar
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+              {/* Gráfica de Círculo (Donut) interactiva */}
+              <div
+                className="sm:col-span-5 h-28 relative flex items-center justify-center cursor-pointer group"
+                onClick={() => handleOpenDesiertosModal('todos')}
+                title="Haga clic en la gráfica para ver los NOGs desiertos"
+              >
+                {metrics.desiertosCount > 0 && metrics.desiertosPorArea.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={metrics.desiertosPorArea}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={24}
+                        outerRadius={42}
+                        paddingAngle={3}
+                        dataKey="value"
+                        onClick={(entry: any) => {
+                          const areaName = entry?.area || entry?.name || 'todos';
+                          handleOpenDesiertosModal(areaName);
+                        }}
+                      >
+                        {metrics.desiertosPorArea.map((entry, index) => (
+                          <Cell
+                            key={`des-cell-${index}`}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDesiertosModal(entry.area);
+                            }}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: any, name: any) => [`${val} NOGs (clic para ver)`, name]}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px] italic">
+                    Sin eventos desiertos
+                  </div>
+                )}
+                {metrics.desiertosCount > 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-xs font-black font-mono text-slate-800 group-hover:text-rose-700 transition-colors">
+                      {metrics.desiertosCount}
+                    </span>
+                    <span className="text-[8px] font-bold uppercase text-slate-500">
+                      NOGs
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Lista Detallada de Áreas con Contador y Porcentaje - Interactivo */}
+              <div className="sm:col-span-7 flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
+                {metrics.desiertosPorArea.length > 0 ? (
+                  metrics.desiertosPorArea.map((item, idx) => (
+                    <button
+                      key={`des-area-item-${idx}`}
+                      type="button"
+                      onClick={() => handleOpenDesiertosModal(item.area)}
+                      className="p-1.5 px-2 rounded-lg bg-white hover:bg-rose-50/90 border border-slate-200/90 hover:border-rose-300 flex items-center justify-between shadow-2xs text-[11px] cursor-pointer transition-all text-left group"
+                      title={`Haga clic para ver los ${item.count} NOGs desiertos de ${item.area}`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0 group-hover:scale-125 transition-transform"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-[10px] font-bold text-slate-800 group-hover:text-rose-950 truncate" title={item.area}>
+                          {item.area}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-mono font-bold text-slate-500">
+                          {item.porcentaje}%
+                        </span>
+                        <span className="text-xs font-black text-rose-900 font-mono bg-rose-50 group-hover:bg-rose-100 px-1.5 py-0.2 rounded border border-rose-200">
+                          {item.count}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="text-center text-slate-400 text-[11px] italic py-2">
+                    No hay convocatorias desiertas
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 text-center text-[10px] text-rose-800 font-semibold bg-rose-50/60 py-1 px-2 rounded-md border border-rose-200/60 flex items-center justify-center gap-1">
+              <span>👆 Haz clic en la gráfica o en cualquier área para ver sus NOGs desiertos</span>
             </div>
           </div>
         </div>
@@ -2982,6 +3249,16 @@ export const DashboardView: React.FC = () => {
 
       </div>
 
+      {/* ========================================================================= */}
+      {/* PANEL ANALÍTICO DE EVENTOS DESIERTOS, SIN OFERTAS Y PRESCINDIDOS          */}
+      {/* ========================================================================= */}
+      <DesertedAndPrescindedAnalytics
+        purchases={filteredPurchases}
+        isAdmin={isAdmin}
+        userAssignedArea={userAssignedArea}
+        onViewPurchase={(p) => setSelectedPurchase(p)}
+      />
+
       {/* PANEL DE ANÁLISIS INDIVIDUAL POR UNIDAD SOLICITANTE */}
       {selectedDeptData && (
         <div id="panel-analisis-unidad" className="bg-white border-2 border-[#1c39bb]/70 rounded-2xl p-5 sm:p-7 shadow-lg space-y-6 animate-in fade-in slide-in-from-top-3 duration-250">
@@ -3876,6 +4153,8 @@ export const DashboardView: React.FC = () => {
                   ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 border-b border-emerald-800/50'
                   : nogModalType === 'vigentes'
                   ? 'bg-gradient-to-r from-blue-950 via-sky-900 to-slate-900 border-b border-blue-800/50'
+                  : nogModalType === 'desiertos'
+                  ? 'bg-gradient-to-r from-rose-950 via-rose-900 to-slate-900 border-b border-rose-800/50'
                   : 'bg-gradient-to-r from-amber-950 via-amber-900 to-slate-900 border-b border-amber-800/50'
               }`}
             >
@@ -3886,6 +4165,8 @@ export const DashboardView: React.FC = () => {
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
                       : nogModalType === 'vigentes'
                       ? 'bg-blue-500/20 text-blue-300 border-blue-400/30'
+                      : nogModalType === 'desiertos'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-400/30'
                       : 'bg-amber-500/20 text-amber-300 border-amber-400/30'
                   }`}
                 >
@@ -3893,6 +4174,8 @@ export const DashboardView: React.FC = () => {
                     <CheckCircle2 className="w-6 h-6 text-emerald-400" />
                   ) : nogModalType === 'vigentes' ? (
                     <Radio className="w-6 h-6 text-blue-400 animate-pulse" />
+                  ) : nogModalType === 'desiertos' ? (
+                    <Ban className="w-6 h-6 text-rose-400" />
                   ) : (
                     <Clock className="w-6 h-6 text-amber-400" />
                   )}
@@ -3905,6 +4188,8 @@ export const DashboardView: React.FC = () => {
                           ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
                           : nogModalType === 'vigentes'
                           ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40'
+                          : nogModalType === 'desiertos'
+                          ? 'bg-rose-500/30 text-rose-200 border border-rose-400/40'
                           : 'bg-amber-500/30 text-amber-200 border border-amber-400/40'
                       }`}
                     >
@@ -3912,6 +4197,8 @@ export const DashboardView: React.FC = () => {
                         ? 'Contrataciones Adjudicadas'
                         : nogModalType === 'vigentes'
                         ? 'Convocatorias Vigentes'
+                        : nogModalType === 'desiertos'
+                        ? 'Convocatorias Desiertas / Sin Ofertas'
                         : 'Procesos en Evaluación'}
                     </span>
                     <span className="text-xs text-slate-300 font-mono">
@@ -3923,6 +4210,8 @@ export const DashboardView: React.FC = () => {
                       ? 'NOGs Adjudicados del Sistema'
                       : nogModalType === 'vigentes'
                       ? 'NOGs Vigentes en Guatecompras'
+                      : nogModalType === 'desiertos'
+                      ? 'NOGs Desiertos y Sin Ofertas'
                       : 'NOGs en Evaluación Técnica'}
                   </h2>
                 </div>
@@ -3952,7 +4241,13 @@ export const DashboardView: React.FC = () => {
                   Monto Acumulado
                 </span>
                 <span className={`text-lg sm:text-xl font-black font-mono ${
-                  nogModalType === 'vigentes' ? 'text-blue-700' : nogModalType === 'adjudicados' ? 'text-emerald-700' : 'text-amber-700'
+                  nogModalType === 'vigentes' 
+                    ? 'text-blue-700' 
+                    : nogModalType === 'adjudicados' 
+                    ? 'text-emerald-700' 
+                    : nogModalType === 'desiertos'
+                    ? 'text-rose-700'
+                    : 'text-amber-700'
                 }`}>
                   {formatQuetzales(totalMontoModal)}
                 </span>
@@ -3962,7 +4257,7 @@ export const DashboardView: React.FC = () => {
                   Filtro Aplicado
                 </span>
                 <span className="text-xs font-bold text-slate-800 truncate block">
-                  {nogModalType === 'adjudicados' || nogModalType === 'vigentes'
+                  {nogModalType === 'adjudicados' || nogModalType === 'vigentes' || nogModalType === 'desiertos'
                     ? (nogModalFilter === 'todos' ? 'Todas las Áreas' : nogModalFilter)
                     : (nogModalFilter === 'todos'
                         ? 'Todos los Plazos'
@@ -4031,6 +4326,36 @@ export const DashboardView: React.FC = () => {
                         className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
                           nogModalFilter === item.area
                             ? 'bg-blue-900 text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span>{item.area}</span>
+                        <span className="text-[10px] opacity-80 font-mono">({item.count})</span>
+                      </button>
+                    ))}
+                  </>
+                ) : nogModalType === 'desiertos' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setNogModalFilter('todos'); setNogModalPage(1); }}
+                      className={`px-3 py-1 rounded-lg font-bold text-xs shrink-0 transition-all cursor-pointer ${
+                        nogModalFilter === 'todos'
+                          ? 'bg-rose-700 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Todas ({metrics.desiertosCount})
+                    </button>
+                    {metrics.desiertosPorArea.map((item, idx) => (
+                      <button
+                        key={`modal-pill-des-${idx}`}
+                        type="button"
+                        onClick={() => { setNogModalFilter(item.area); setNogModalPage(1); }}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                          nogModalFilter === item.area
+                            ? 'bg-rose-900 text-white shadow-xs'
                             : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                         }`}
                       >

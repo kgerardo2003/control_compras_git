@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, getModalidadCompraByMonto } from './formatters';
 import { OJ_LOGO_DATA_URI } from './ojLogoAsset';
+import { generateExecutiveDashboardImage } from './pdfChartRenderer';
 
 export interface ExportPurchasesPDFOptions {
   purchases: PurchaseRecord[];
@@ -22,6 +23,7 @@ export interface ExportPurchasesPDFOptions {
   } | null;
   filenamePrefix?: string;
   includeSummaryTable?: boolean;
+  includeCharts?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
     currentUser,
     filenamePrefix = 'Reporte_Adquisiciones_GIT_OJ',
     includeSummaryTable = true,
+    includeCharts = true,
   } = options;
 
   // Orientación horizontal (landscape) en formato A4 para óptima legibilidad de columnas
@@ -49,7 +52,6 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   const pageWidth = doc.internal.pageSize.getWidth(); // 297mm
   const pageHeight = doc.internal.pageSize.getHeight(); // 210mm
   const marginX = 14;
-  let currentY = 10;
 
   // Generar código único de auditoría para trazabilidad
   const now = new Date();
@@ -66,163 +68,215 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   const auditRandom = Math.random().toString(36).substring(2, 8).toUpperCase();
   const auditCode = `AUD-OJ-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${auditRandom}`;
 
-  // 1. CABECERA INSTITUCIONAL SUPERIOR (Azul Oficial #0A0A69 sin cinta amarilla)
-  const headerHeight = 22;
-  doc.setFillColor(10, 10, 105); // #0A0A69
-  doc.rect(marginX, currentY, pageWidth - (marginX * 2), headerHeight, 'F');
+  const renderOfficialHeader = (pageTitle: string, pageSub: string) => {
+    let currentY = 10;
+    const headerHeight = 20;
+    doc.setFillColor(10, 10, 105); // #0A0A69
+    doc.rect(marginX, currentY, pageWidth - (marginX * 2), headerHeight, 'F');
 
-  // Borde sutil inferior sin cinta amarilla
-  doc.setFillColor(30, 41, 130);
-  doc.rect(marginX, currentY + headerHeight - 0.5, pageWidth - (marginX * 2), 0.5, 'F');
+    // Borde sutil inferior
+    doc.setFillColor(30, 41, 130);
+    doc.rect(marginX, currentY + headerHeight - 0.5, pageWidth - (marginX * 2), 0.5, 'F');
 
-  // Logo Oficial del Organismo Judicial de Guatemala
-  try {
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(marginX + 2.5, currentY + 2, 18, 18, 2, 2, 'F');
-    doc.addImage(OJ_LOGO_DATA_URI, 'PNG', marginX + 3.5, currentY + 3, 16, 16);
-  } catch (err) {
-    console.warn('Error al incrustar el logo en el PDF', err);
+    // Logo Oficial del Organismo Judicial de Guatemala
+    try {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(marginX + 2.5, currentY + 2, 16, 16, 2, 2, 'F');
+      doc.addImage(OJ_LOGO_DATA_URI, 'PNG', marginX + 3.5, currentY + 2.5, 14, 14);
+    } catch (err) {
+      console.warn('Error al incrustar el logo en el PDF', err);
+    }
+
+    // Textos de la Cabecera Institucional
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text('ORGANISMO JUDICIAL DE GUATEMALA', marginX + 22, currentY + 6.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('GERENCIA DE INFORMÁTICA', marginX + 22, currentY + 11);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(224, 231, 255);
+    doc.text('SISTEMA INTEGRAL DE CONTROL DE ADQUISICIONES Y PROCESOS DE TI', marginX + 22, currentY + 15);
+
+    // Insignia de Control de Auditoría
+    doc.setFillColor(23, 37, 84);
+    doc.roundedRect(pageWidth - marginX - 68, currentY + 3, 62, 14, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text('CONTROL DE AUDITORÍA INTERNA', pageWidth - marginX - 65, currentY + 7);
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text(auditCode, pageWidth - marginX - 65, currentY + 12);
+
+    currentY += headerHeight + 4;
+
+    // Título y Subtítulo
+    doc.setTextColor(15, 39, 68);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text(pageTitle.toUpperCase(), marginX, currentY);
+
+    currentY += 4;
+    doc.setTextColor(100, 116, 139);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(pageSub, marginX, currentY);
+
+    currentY += 3.5;
+    return currentY;
+  };
+
+  const renderMetadataBox = (currentY: number) => {
+    const totalMonto = purchases.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
+    const conDictamen = purchases.filter(p => p.evaluadoGIT === 'Sí' || Boolean(p.fechaDictamenGIT)).length;
+    const adjudicados = purchases.filter(p => p.estatusEvento === 'Adjudicación').length;
+
+    const boxHeight = 16;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(marginX, currentY, pageWidth - (marginX * 2), boxHeight, 1.5, 1.5, 'FD');
+
+    const col1X = marginX + 4;
+    const col2X = marginX + 90;
+    const col3X = marginX + 185;
+
+    // Columna 1
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Emisión:', col1X, currentY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${dateStr} ${timeStr} (UTC-6 Guatemala)`, col1X + 18, currentY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Emisor:', col1X, currentY + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    const userName = currentUser?.nombreCompleto || currentUser?.username || 'Usuario Autorizado';
+    const userRole = currentUser?.rol ? currentUser.rol.toUpperCase() : 'AUDITORÍA / GIT';
+    doc.text(`${userName} [${userRole}]`, col1X + 18, currentY + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Filtros:', col1X, currentY + 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    let filterText = 'Todos los registros';
+    if (filterInfo) {
+      const parts = [];
+      if (filterInfo.status && filterInfo.status !== 'todos') parts.push(`Estatus: ${filterInfo.status}`);
+      if (filterInfo.area && filterInfo.area !== 'todas') parts.push(`Área: ${filterInfo.area}`);
+      if (filterInfo.search) parts.push(`Búsqueda: "${filterInfo.search}"`);
+      if (parts.length > 0) filterText = parts.join(' | ');
+    }
+    doc.text(filterText.length > 42 ? filterText.substring(0, 40) + '...' : filterText, col1X + 18, currentY + 12);
+
+    // Columna 2
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Registros:', col2X, currentY + 4);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${purchases.length} Adquisiciones`, col2X + 22, currentY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Monto Total:', col2X, currentY + 8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(formatQuetzales(totalMonto), col2X + 22, currentY + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Dictámenes:', col2X, currentY + 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${conDictamen} de ${purchases.length} con informe técnico GIT`, col2X + 22, currentY + 12);
+
+    // Columna 3
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Adjudicados:', col3X, currentY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${adjudicados} resueltos con proveedor`, col3X + 22, currentY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Carácter:', col3X, currentY + 8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(180, 83, 9);
+    doc.text('OFICIAL - FISCALIZACIÓN Y TOMA DE DECISIONES', col3X + 22, currentY + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Verificación:', col3X, currentY + 12);
+    doc.setFont('courier', 'bold');
+    doc.setTextColor(15, 39, 68);
+    doc.text(auditCode, col3X + 22, currentY + 12);
+
+    return currentY + boxHeight + 3;
+  };
+
+  // =========================================================================
+  // PÁGINA 1: PANEL EJECUTIVO DE KPIS Y GRÁFICAS CIRCULARES DE DECISIÓN
+  // =========================================================================
+  if (includeCharts && purchases.length > 0) {
+    let page1Y = renderOfficialHeader(
+      `${title} • PANEL EJECUTIVO Y KPIS DE DECISIÓN`,
+      `${subtitle} • Análisis visual y gráficos circulares para toma de decisiones institucionales`
+    );
+
+    page1Y = renderMetadataBox(page1Y);
+
+    // Generar imagen de gráficos circulares y KPIs con canvas a 300 DPI
+    const dashboardImg = generateExecutiveDashboardImage(purchases);
+    if (dashboardImg) {
+      const imgWidth = pageWidth - (marginX * 2); // 269 mm
+      const imgHeight = 150; // mm (aspecto 3000x1680 con máxima nitidez)
+      doc.addImage(dashboardImg, 'PNG', marginX, page1Y, imgWidth, imgHeight);
+    }
+
+    // Pie de página de la página 1
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(marginX, pageHeight - 10, pageWidth - marginX, pageHeight - 10);
+    doc.text(
+      'Documento oficial de control y auditoría interna • Gerencia de Informática • Organismo Judicial de Guatemala',
+      marginX,
+      pageHeight - 6
+    );
+
+    // Añadir siguiente página para la tabla de adquisiciones
+    doc.addPage();
   }
 
-  // Textos de la Cabecera Institucional (Blancos de alto contraste)
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', marginX + 24, currentY + 7);
+  // =========================================================================
+  // PÁGINA DE TABLA DETALLADA DE ADQUISICIONES
+  // =========================================================================
+  let tableStartY = renderOfficialHeader(
+    title,
+    `${subtitle} • Matriz oficial de control de compras y proveedores`
+  );
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(255, 255, 255);
-  doc.text('GERENCIA DE INFORMÁTICA', marginX + 24, currentY + 12);
+  tableStartY = renderMetadataBox(tableStartY);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(224, 231, 255); // Indigo 100
-  doc.text('SISTEMA INTEGRAL DE CONTROL DE ADQUISICIONES Y PROCESOS DE TI', marginX + 24, currentY + 16.5);
-
-  // Insignia de Control de Auditoría en la esquina superior derecha
-  doc.setFillColor(23, 37, 84); // Indigo 950 contrastante
-  doc.roundedRect(pageWidth - marginX - 68, currentY + 3.5, 62, 13, 1.5, 1.5, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
-  doc.setTextColor(255, 255, 255);
-  doc.text('CONTROL DE AUDITORÍA INTERNA', pageWidth - marginX - 65, currentY + 7.5);
-  doc.setFont('courier', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(255, 255, 255);
-  doc.text(auditCode, pageWidth - marginX - 65, currentY + 12.5);
-
-  currentY += headerHeight + 5;
-
-  // 2. TÍTULO Y SUBTÍTULO DEL DOCUMENTO
-  doc.setTextColor(15, 39, 68);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text(title.toUpperCase(), marginX, currentY);
-
-  currentY += 4.5;
-  doc.setTextColor(100, 116, 139); // Slate 500
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(subtitle, marginX, currentY);
-
-  currentY += 4;
-
-  // 3. CUADRO DE METADATOS Y TRAZABILIDAD DE AUDITORÍA
   const totalMonto = purchases.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
-  const conDictamen = purchases.filter(p => p.evaluadoGIT === 'Sí').length;
+  const conDictamen = purchases.filter(p => p.evaluadoGIT === 'Sí' || Boolean(p.fechaDictamenGIT)).length;
   const adjudicados = purchases.filter(p => p.estatusEvento === 'Adjudicación').length;
 
-  const boxHeight = 18;
-  doc.setFillColor(248, 250, 252); // Slate 50
-  doc.setDrawColor(203, 213, 225); // Slate 300
-  doc.setLineWidth(0.3);
-  doc.roundedRect(marginX, currentY, pageWidth - (marginX * 2), boxHeight, 1.5, 1.5, 'FD');
-
-  const col1X = marginX + 4;
-  const col2X = marginX + 90;
-  const col3X = marginX + 185;
-
-  // Columna 1: Datos de Emisión y Auditoría
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.setTextColor(71, 85, 105);
-  doc.text('Fecha y Hora de Emisión:', col1X, currentY + 4.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${dateStr} ${timeStr} (UTC-6 Guatemala)`, col1X + 33, currentY + 4.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Usuario Auditor / Emisor:', col1X, currentY + 9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  const userName = currentUser?.nombreCompleto || currentUser?.username || 'Usuario Autorizado';
-  const userRole = currentUser?.rol ? currentUser.rol.toUpperCase() : 'AUDITORÍA / GIT';
-  doc.text(`${userName} [${userRole}]`, col1X + 33, currentY + 9);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Filtros Aplicados:', col1X, currentY + 13.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  let filterText = 'Todos los registros';
-  if (filterInfo) {
-    const parts = [];
-    if (filterInfo.status && filterInfo.status !== 'todos') parts.push(`Estatus: ${filterInfo.status}`);
-    if (filterInfo.area && filterInfo.area !== 'todas') parts.push(`Área: ${filterInfo.area}`);
-    if (filterInfo.search) parts.push(`Búsqueda: "${filterInfo.search}"`);
-    if (parts.length > 0) filterText = parts.join(' | ');
-  }
-  doc.text(filterText.length > 40 ? filterText.substring(0, 38) + '...' : filterText, col1X + 33, currentY + 13.5);
-
-  // Columna 2: Cifras Consolidadas
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Total Registros Listados:', col2X, currentY + 4.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${purchases.length} Adquisiciones`, col2X + 33, currentY + 4.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Presupuesto Acumulado:', col2X, currentY + 9);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(formatQuetzales(totalMonto), col2X + 33, currentY + 9);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Dictámenes GIT Emitidos:', col2X, currentY + 13.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${conDictamen} de ${purchases.length} con informe técnico`, col2X + 33, currentY + 13.5);
-
-  // Columna 3: Estado y Validez Institucional
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Eventos Adjudicados:', col3X, currentY + 4.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${adjudicados} eventos con proveedor`, col3X + 30, currentY + 4.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Carácter del Documento:', col3X, currentY + 9);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(180, 83, 9); // Amber 700
-  doc.text('OFICIAL - FISCALIZACIÓN INTERNA', col3X + 30, currentY + 9);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Verificación:', col3X, currentY + 13.5);
-  doc.setFont('courier', 'bold');
-  doc.setTextColor(15, 39, 68);
-  doc.text(auditCode, col3X + 30, currentY + 13.5);
-
-  currentY += boxHeight + 4;
-
-  // 4. TABLA DE ADQUISICIONES CON AUTO-TABLE
   const tableHeaders = [
     '#',
     'NOG',
@@ -236,7 +290,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   ];
 
   const tableRows = purchases.map((p, index) => {
-    const dictamenText = p.evaluadoGIT === 'Sí'
+    const dictamenText = (p.evaluadoGIT === 'Sí' || Boolean(p.fechaDictamenGIT))
       ? `Sí ${p.fechaDictamenGIT ? `(${p.fechaDictamenGIT})` : ''}`
       : 'No';
 
@@ -256,7 +310,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   });
 
   autoTable(doc, {
-    startY: currentY,
+    startY: tableStartY,
     head: [tableHeaders],
     body: tableRows,
     theme: 'grid',
@@ -338,7 +392,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
     },
   });
 
-  // PIE DE PÁGINA INSTITUCIONAL EN TODAS LAS HOJAS (con conteo total exacto)
+  // PIE DE PÁGINA INSTITUCIONAL EN TODAS LAS HOJAS (con numeración exacta)
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);

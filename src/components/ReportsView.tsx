@@ -13,16 +13,27 @@ import {
   Eye,
   Layers,
   TrendingUp,
-  PieChart,
+  PieChart as PieChartIcon,
   ShieldCheck,
   AlertCircle,
   HelpCircle,
   FolderTree,
   ListTree,
-  Sparkles
+  Sparkles,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
 import { generatePurchasesPDF } from '../utils/pdfExport';
+import { calculateExecutiveKPIs } from '../utils/pdfChartRenderer';
+import { 
+  ResponsiveContainer, 
+  PieChart as RechartsPieChart, 
+  Pie, 
+  Cell, 
+  Tooltip as RechartsTooltip, 
+  Legend as RechartsLegend 
+} from 'recharts';
 import { 
   isUserGlobalAdmin, 
   getUserAssignedArea, 
@@ -31,6 +42,7 @@ import {
   normalizeAreaName 
 } from '../utils/rbacUtils';
 import { InstitutionalReportModal } from './InstitutionalReportModal';
+import { BudgetExecutionKPI } from './budget/BudgetExecutionKPI';
 import { OFFICIAL_BUDGET_GROUPS, OFFICIAL_RENGLONES, getGrupoFullName } from '../data/budgetStandardCatalog';
 import { PurchaseRecord } from '../types';
 
@@ -108,6 +120,37 @@ export const ReportsView: React.FC = () => {
   const totalMontoDictaminado = useMemo(() => {
     return evaluadosGIT.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
   }, [evaluadosGIT]);
+
+  // Estado para alternar la visualización del panel de gráficas circulares en el consolidado
+  const [showConsolidadoCharts, setShowConsolidadoCharts] = useState(true);
+
+  // Cálculos de KPIs ejecutivos y datasets para gráficas circulares
+  const { kpis, estatusChartData, modalidadChartData, dictamenChartData, areaChartData, recommendations } =
+    useMemo(() => calculateExecutiveKPIs(basePurchases), [basePurchases]);
+
+  const CustomReportPieTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-slate-900 text-white text-xs p-2.5 rounded-lg shadow-xl border border-slate-700 space-y-1 z-50">
+          <p className="font-bold flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: data.color }} />
+            {data.name}
+          </p>
+          <p className="text-slate-300">
+            Eventos: <strong className="text-white font-mono">{data.value}</strong>
+            {data.percentage !== undefined && (
+              <span className="ml-1 text-emerald-400 font-bold">({data.percentage}%)</span>
+            )}
+          </p>
+          <p className="text-slate-300">
+            Monto: <strong className="text-amber-300 font-mono">{formatQuetzales(data.amount)}</strong>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   // 4. Datos estructurados para el informe de Balance Financiero
   const balanceData = useMemo(() => {
@@ -454,6 +497,7 @@ export const ReportsView: React.FC = () => {
         },
         currentUser,
         filenamePrefix: `Informe_${selectedReportType}_${!isAdmin ? 'Area' : 'Admin'}`,
+        includeCharts: true,
       });
 
       logAudit('EXPORTAR_DATOS', 'Reportes', `Exportación PDF oficial de "${reportTitle}".`);
@@ -582,6 +626,14 @@ export const ReportsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Componente de KPI: Porcentaje de Ejecución Presupuestaria Actual vs Presupuesto Asignado */}
+      <BudgetExecutionKPI
+        purchases={basePurchases}
+        budgetAvailability={budgetAvailability}
+        isAdmin={isAdmin}
+        userAssignedArea={userAssignedArea}
+      />
 
       {/* 3. Selector de Pestañas de Informe (5 Pestañas Completas) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 print:hidden">
@@ -756,24 +808,422 @@ export const ReportsView: React.FC = () => {
         {selectedReportType === 'consolidado' && (
           <div className="space-y-6">
             
-            {/* Tarjetas KPI de Resumen */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-              <div>
-                <span className="text-slate-500 block">Total Eventos Registrados:</span>
-                <span className="text-base font-bold text-slate-900">{basePurchases.length} registros</span>
+            {/* PANEL EJECUTIVO DE KPIS Y GRÁFICAS CIRCULARES PARA TOMA DE DECISIONES */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4 shadow-2xs">
+              
+              {/* Encabezado del Panel con Botón de Alternar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-blue-100 text-blue-700">
+                    <PieChartIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                        Panel Ejecutivo de Decisión & Gráficas Circulares
+                      </h4>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        {basePurchases.length} Adquisiciones
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Indicadores de desempeño (KPIs), modalidades de compra y gobernanza técnica para análisis estratégico
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowConsolidadoCharts(!showConsolidadoCharts)}
+                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-center shadow-2xs"
+                >
+                  {showConsolidadoCharts ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ocultar Gráficas</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ver Gráficas y KPIs</span>
+                    </>
+                  )}
+                </button>
               </div>
-              <div>
-                <span className="text-slate-500 block">Total Presupuestado / Comprometido:</span>
-                <span className="text-base font-bold text-blue-700 font-mono">{formatQuetzales(totalMontoConsolidado)}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">Total Adjudicado a Proveedores:</span>
-                <span className="text-base font-bold text-emerald-700 font-mono">{formatQuetzales(totalMontoAdjudicado)}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">Expedientes con Dictamen GIT:</span>
-                <span className="text-base font-bold text-amber-700">{evaluadosGIT.length} de {basePurchases.length} ({basePurchases.length > 0 ? Math.round((evaluadosGIT.length / basePurchases.length) * 100) : 0}%)</span>
-              </div>
+
+              {/* Contenido Desplegable de Gráficas y KPIs */}
+              {showConsolidadoCharts && (
+                <div className="space-y-5 pt-1">
+                  
+                  {/* Fila de 4 Tarjetas de KPIs Ejecutivos */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    
+                    {/* KPI 1: Presupuesto Total */}
+                    <div className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Presupuesto Total Analizado
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono block mt-0.5">
+                        {formatQuetzales(kpis.totalAmount)}
+                      </span>
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        {kpis.totalPurchases} eventos registrados
+                      </span>
+                    </div>
+
+                    {/* KPI 2: Tasa de Adjudicación */}
+                    <div className="bg-white border border-blue-200 p-3.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">
+                        Efectividad en Adjudicación
+                      </span>
+                      <div className="flex items-baseline gap-1.5 mt-0.5">
+                        <span className="text-base sm:text-lg font-black text-blue-800 font-mono">
+                          {kpis.adjudicationRate.toFixed(1)}%
+                        </span>
+                        <span className="text-[11px] text-blue-600 font-medium">
+                          ({kpis.adjudicatedCount} resueltas)
+                        </span>
+                      </div>
+                      <div className="w-full bg-blue-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                        <div 
+                          className="bg-blue-600 h-full rounded-full"
+                          style={{ width: `${Math.min(100, kpis.adjudicationRate)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* KPI 3: Cobertura Dictamen GIT */}
+                    <div className="bg-white border border-emerald-200 p-3.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">
+                        Cobertura Dictamen Técnico GIT
+                      </span>
+                      <div className="flex items-baseline gap-1.5 mt-0.5">
+                        <span className="text-base sm:text-lg font-black text-emerald-800 font-mono">
+                          {kpis.dictamenRate.toFixed(1)}%
+                        </span>
+                        <span className="text-[11px] text-emerald-600 font-medium">
+                          ({kpis.dictamenCount} aprobadas)
+                        </span>
+                      </div>
+                      <div className="w-full bg-emerald-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                        <div 
+                          className="bg-emerald-600 h-full rounded-full"
+                          style={{ width: `${Math.min(100, kpis.dictamenRate)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* KPI 4: Ticket Promedio y Modalidad Predominante */}
+                    <div className="bg-white border border-amber-200 p-3.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">
+                        Ticket Medio / Modalidad
+                      </span>
+                      <span className="text-sm sm:text-base font-black text-amber-900 font-mono block mt-0.5">
+                        {formatQuetzales(kpis.averageTicket)}
+                      </span>
+                      <span className="text-[11px] text-amber-800 font-medium mt-1 block truncate">
+                        Predomina: <strong>{kpis.modalidadPredominante}</strong>
+                      </span>
+                    </div>
+
+                  </div>
+
+                  {/* Cuadrícula de 4 Gráficas Circulares Amplias con Desglose Nítido y Proporciones Espaciosas */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    
+                    {/* Gráfica 1: Estatus */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
+                      <div className="border-b border-slate-100 pb-2.5 mb-3 flex items-center justify-between">
+                        <div>
+                          <h5 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide">
+                            1. Estatus del Evento
+                          </h5>
+                          <p className="text-[11px] text-slate-400">Adjudicación vs Trámite vs Desiertos</p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 text-xs font-bold font-mono">
+                          {kpis.totalPurchases} Total
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                        <div className="sm:col-span-5 h-48 relative flex items-center justify-center">
+                          {estatusChartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={estatusChartData}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={46}
+                                  outerRadius={68}
+                                  paddingAngle={3}
+                                >
+                                  {estatusChartData.map((entry, index) => (
+                                    <Cell key={`rep-est-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip content={<CustomReportPieTooltip />} />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-xs text-slate-400">Sin datos</div>
+                          )}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-sm font-black font-mono text-slate-800">{kpis.totalPurchases}</span>
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Eventos</span>
+                          </div>
+                        </div>
+
+                        <div className="sm:col-span-7 space-y-1.5 overflow-y-auto max-h-48 pr-1">
+                          {estatusChartData.map((item) => (
+                            <div key={item.name} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs">
+                              <div className="flex items-center gap-2 min-w-0 pr-1">
+                                <span className="w-3 h-3 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: item.color }} />
+                                <span className="font-semibold text-slate-800 truncate" title={item.name}>{item.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-white border border-slate-200 text-slate-700">
+                                  {item.value} ({item.percentage}%)
+                                </span>
+                                <span className="font-bold font-mono text-slate-900 text-xs whitespace-nowrap">
+                                  {formatQuetzales(item.amount)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gráfica 2: Modalidades LCE */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
+                      <div className="border-b border-slate-100 pb-2.5 mb-3 flex items-center justify-between">
+                        <div>
+                          <h5 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide">
+                            2. Modalidades de Compra
+                          </h5>
+                          <p className="text-[11px] text-slate-400">Ley de Contrataciones del Estado</p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded bg-purple-50 text-purple-700 text-xs font-bold font-mono">
+                          LCE Art. 43
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                        <div className="sm:col-span-5 h-48 relative flex items-center justify-center">
+                          {modalidadChartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={modalidadChartData}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={46}
+                                  outerRadius={68}
+                                  paddingAngle={3}
+                                >
+                                  {modalidadChartData.map((entry, index) => (
+                                    <Cell key={`rep-mod-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip content={<CustomReportPieTooltip />} />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-xs text-slate-400">Sin datos</div>
+                          )}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-sm font-black font-mono text-slate-800">{modalidadChartData.length}</span>
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Tipos</span>
+                          </div>
+                        </div>
+
+                        <div className="sm:col-span-7 space-y-1.5 overflow-y-auto max-h-48 pr-1">
+                          {modalidadChartData.map((item) => (
+                            <div key={item.name} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs">
+                              <div className="flex items-center gap-2 min-w-0 pr-1">
+                                <span className="w-3 h-3 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: item.color }} />
+                                <span className="font-semibold text-slate-800 truncate" title={item.name}>{item.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-white border border-slate-200 text-slate-700">
+                                  {item.value} ({item.percentage}%)
+                                </span>
+                                <span className="font-bold font-mono text-slate-900 text-xs whitespace-nowrap">
+                                  {formatQuetzales(item.amount)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gráfica 3: Dictamen Técnico GIT */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
+                      <div className="border-b border-slate-100 pb-2.5 mb-3 flex items-center justify-between">
+                        <div>
+                          <h5 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide">
+                            3. Dictamen Técnico GIT
+                          </h5>
+                          <p className="text-[11px] text-slate-400">Fiscalización e Idoneidad Técnica</p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-bold font-mono">
+                          {kpis.dictamenRate.toFixed(0)}% Conforme
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                        <div className="sm:col-span-5 h-48 relative flex items-center justify-center">
+                          {dictamenChartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={dictamenChartData}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={46}
+                                  outerRadius={68}
+                                  paddingAngle={4}
+                                >
+                                  {dictamenChartData.map((entry, index) => (
+                                    <Cell key={`rep-git-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip content={<CustomReportPieTooltip />} />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-xs text-slate-400">Sin datos</div>
+                          )}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-sm font-black font-mono text-emerald-700">{kpis.dictamenRate.toFixed(0)}%</span>
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Cobertura</span>
+                          </div>
+                        </div>
+
+                        <div className="sm:col-span-7 space-y-1.5 overflow-y-auto max-h-48 pr-1">
+                          {dictamenChartData.map((item) => (
+                            <div key={item.name} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs">
+                              <div className="flex items-center gap-2 min-w-0 pr-1">
+                                <span className="w-3 h-3 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: item.color }} />
+                                <span className="font-semibold text-slate-800 truncate" title={item.name}>{item.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-white border border-slate-200 text-slate-700">
+                                  {item.value} ({item.percentage}%)
+                                </span>
+                                <span className="font-bold font-mono text-slate-900 text-xs whitespace-nowrap">
+                                  {formatQuetzales(item.amount)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gráfica 4: Inversión por Área */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
+                      <div className="border-b border-slate-100 pb-2.5 mb-3 flex items-center justify-between">
+                        <div>
+                          <h5 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide">
+                            4. Inversión por Área
+                          </h5>
+                          <p className="text-[11px] text-slate-400">Concentración por Dependencia</p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-bold font-mono">
+                          Top Áreas
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                        <div className="sm:col-span-5 h-48 relative flex items-center justify-center">
+                          {areaChartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={areaChartData}
+                                  dataKey="amount"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={46}
+                                  outerRadius={68}
+                                  paddingAngle={3}
+                                >
+                                  {areaChartData.map((entry, index) => (
+                                    <Cell key={`rep-area-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip content={<CustomReportPieTooltip />} />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-xs text-slate-400">Sin datos</div>
+                          )}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-xs font-black font-mono text-slate-800">{formatQuetzales(kpis.totalAmount).split('.')[0]}</span>
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Total GTQ</span>
+                          </div>
+                        </div>
+
+                        <div className="sm:col-span-7 space-y-1.5 overflow-y-auto max-h-48 pr-1">
+                          {areaChartData.map((item) => (
+                            <div key={item.name} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs">
+                              <div className="flex items-center gap-2 min-w-0 pr-1">
+                                <span className="w-3 h-3 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: item.color }} />
+                                <span className="font-semibold text-slate-800 truncate" title={item.name}>{item.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-white border border-slate-200 text-slate-700">
+                                  {item.value} ({item.percentage}%)
+                                </span>
+                                <span className="font-bold font-mono text-slate-900 text-xs whitespace-nowrap">
+                                  {formatQuetzales(item.amount)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Bloque de Recomendaciones y Decisiones de Compra */}
+                  {recommendations.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                      {recommendations.map((rec, rIdx) => (
+                        <div 
+                          key={`con-rec-${rIdx}`}
+                          className={`p-3 rounded-xl border text-xs space-y-1 ${
+                            rec.type === 'warning'
+                              ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                              : rec.type === 'success'
+                              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                              : 'bg-blue-50/70 border-blue-200 text-blue-900'
+                          }`}
+                        >
+                          <p className="font-bold flex items-center gap-1.5">
+                            {rec.type === 'warning' && <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                            {rec.type === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                            {rec.type === 'info' && <HelpCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                            {rec.title}
+                          </p>
+                          <p className="text-[11px] leading-relaxed text-slate-700">
+                            {rec.desc}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
+              )}
+
             </div>
 
             {/* Tabla Detallada */}

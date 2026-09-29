@@ -93,7 +93,7 @@ export const PurchaseFormModal: React.FC = () => {
   const [montoInput, setMontoInput] = useState<string>('');
   const [renglonPresupuestario, setRenglonPresupuestario] = useState<string>('158');
   const [estadoPago, setEstadoPago] = useState<'comprometido' | 'pagado'>('comprometido');
-  const [evaluadoGIT, setEvaluadoGIT] = useState<EvaluacionGIT>('Sí');
+  const [evaluadoGIT, setEvaluadoGIT] = useState<EvaluacionGIT>('No');
   const [fechaDictamenGIT, setFechaDictamenGIT] = useState<string>('');
   const [fechaElaboracionOficioGIT, setFechaElaboracionOficioGIT] = useState<string>('');
   const [showDocumentPreview, setShowDocumentPreview] = useState<boolean>(true);
@@ -196,7 +196,7 @@ export const PurchaseFormModal: React.FC = () => {
       setMontoInput(purchaseToEdit.monto !== undefined && purchaseToEdit.monto !== null && purchaseToEdit.monto !== '' ? formatMontoMask(purchaseToEdit.monto) : '');
       setRenglonPresupuestario(purchaseToEdit.renglonPresupuestario || (budgetAvailability[0]?.renglonPresupuestario || '158'));
       setEstadoPago(purchaseToEdit.estadoPago || 'comprometido');
-      setEvaluadoGIT(purchaseToEdit.evaluadoGIT || 'Sí');
+      setEvaluadoGIT(purchaseToEdit.evaluadoGIT || 'No');
       setFechaDictamenGIT(purchaseToEdit.fechaDictamenGIT || '');
       setFechaElaboracionOficioGIT(purchaseToEdit.fechaElaboracionOficioGIT || '');
       setShowDocumentPreview(true);
@@ -224,7 +224,7 @@ export const PurchaseFormModal: React.FC = () => {
       setMonto('');
       setRenglonPresupuestario(budgetAvailability[0]?.renglonPresupuestario || '158');
       setEstadoPago('comprometido');
-      setEvaluadoGIT('Sí');
+      setEvaluadoGIT('No');
       setFechaDictamenGIT('');
       setFechaElaboracionOficioGIT('');
       setShowDocumentPreview(true);
@@ -1306,8 +1306,8 @@ export const PurchaseFormModal: React.FC = () => {
                     }}
                     className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
-                    <option value="Sí">Sí - Con Dictamen Técnico</option>
                     <option value="No">No - Sin Dictamen Técnico</option>
+                    <option value="Sí">Sí - Con Dictamen Técnico</option>
                   </select>
                 </div>
 
