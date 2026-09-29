@@ -148,6 +148,8 @@ interface AppContextType {
   setIsGoogleAuthModalOpen: (open: boolean) => void;
   isFirestoreStatusModalOpen: boolean;
   setIsFirestoreStatusModalOpen: (open: boolean) => void;
+  recentlyImportedIds: string[];
+  clearRecentlyImported: () => void;
 
   // Temas y Personalización
   theme: SystemThemeId;
@@ -796,6 +798,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isGoogleAuthModalOpen, setIsGoogleAuthModalOpen] = useState<boolean>(false);
   const [isFirestoreStatusModalOpen, setIsFirestoreStatusModalOpen] = useState<boolean>(false);
+  const [recentlyImportedIds, setRecentlyImportedIds] = useState<string[]>(() => {
+    try {
+      const stored = safeGetLocalStorage('OJ_RECENTLY_IMPORTED_IDS');
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) return arr;
+      }
+    } catch {}
+    return [];
+  });
+
+  const clearRecentlyImported = useCallback(() => {
+    setRecentlyImportedIds([]);
+    try {
+      safeRemoveLocalStorage('OJ_RECENTLY_IMPORTED_IDS');
+    } catch {}
+  }, []);
 
   // Registro persistente de IDs de compras eliminadas para evitar resurrección por caché de Firestore
   const deletedPurchaseIdsRef = useRef<Set<string>>((() => {
@@ -902,7 +921,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const serverPurchases: PurchaseRecord[] = Array.isArray(data.purchases) ? data.purchases : [];
       const combinedPurchasesMap = new Map<string, PurchaseRecord>();
 
-      // 1. Agregar registros que vienen del servidor central
+      // 1. Cargar compras locales para preservar registros recién creados o importados
+      localPurchasesMap.forEach((lp, id) => {
+        if (!deletedPurchaseIdsRef.current.has(id)) {
+          combinedPurchasesMap.set(id, lp);
+        }
+      });
+
+      // 2. Incorporar y actualizar con registros autoritativos del servidor central
       serverPurchases.forEach(sp => {
         if (!deletedPurchaseIdsRef.current.has(sp.id)) {
           const localMatch = localPurchasesMap.get(sp.id);
@@ -2503,9 +2529,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Compras CRUD
   const addPurchase = (data: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>): PurchaseRecord => {
-    // Determinar ID único sin colisiones analizando todos los IDs existentes
+    // Validar unicidad de NOG: si es un NOG real (no cero, no vacío, no N/A), no debe existir en otro registro
+    const cleanNog = (data.nog || '').trim();
+    const isRealNog = cleanNog && cleanNog !== '0' && !/^0+$/.test(cleanNog) && cleanNog.toLowerCase() !== 'n/a';
+    if (isRealNog) {
+      const cleanNorm = cleanNog.replace(/\D/g, '');
+      const existing = purchases.find(p => {
+        const pNog = (p.nog || '').trim();
+        return pNog && pNog !== '0' && !/^0+$/.test(pNog) && pNog.toLowerCase() !== 'n/a' && pNog.replace(/\D/g, '') === cleanNorm;
+      });
+      if (existing) {
+        showToast({
+          type: 'error',
+          title: 'NOG Duplicado',
+          message: 'NOG Registrado o ya Existe en el sistema.',
+          duration: 4500
+        });
+        throw new Error('NOG Registrado o ya Existe');
+      }
+    }
+
+    // Determinar ID único sin colisiones analizando todos los IDs existentes y el historial de eliminados
     let maxNum = 0;
-    purchases.forEach(p => {
+    const allKnown = [...purchases, ...Array.from(deletedPurchaseIdsRef.current).map(id => ({ id }))];
+    allKnown.forEach(p => {
       const match = p.id.match(/^pur-(\d+)-(\d+)/);
       if (match) {
         const n = parseInt(match[2], 10);
@@ -2514,7 +2561,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     let seq = Math.max(maxNum + 1, purchases.length + 1);
     let candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
-    while (purchases.some(p => p.id === candidateId)) {
+    while (purchases.some(p => p.id === candidateId) || deletedPurchaseIdsRef.current.has(candidateId)) {
       seq++;
       candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
     }
@@ -2681,9 +2728,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
     const nowIso = new Date().toISOString();
 
+    if (replaceAll) {
+      deletedPurchaseIdsRef.current.clear();
+      try {
+        safeSetLocalStorage('OJ_DELETED_PURCHASES_IDS', JSON.stringify([]));
+      } catch {}
+    }
+
+    // Determinar secuencia máxima para IDs sin colisiones analizando registros y eliminados
     let maxNum = 0;
     const baseList = replaceAll ? [] : purchases;
-    baseList.forEach(p => {
+    const allKnown = [...baseList, ...Array.from(deletedPurchaseIdsRef.current).map(id => ({ id }))];
+    allKnown.forEach(p => {
       const match = p.id.match(/^pur-(\d+)-(\d+)/);
       if (match) {
         const n = parseInt(match[2], 10);
@@ -2697,11 +2753,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     records.forEach((rec, idx) => {
       let seq = maxNum + idx + 1;
       let candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
-      while (usedIds.has(candidateId)) {
+      while (usedIds.has(candidateId) || deletedPurchaseIdsRef.current.has(candidateId)) {
         seq++;
         candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
       }
       usedIds.add(candidateId);
+
+      // Desmarcar de eliminados si estuviera presente
+      deletedPurchaseIdsRef.current.delete(candidateId);
 
       newPurchases.push({
         ...rec,
@@ -2711,31 +2770,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     });
 
+    try {
+      safeSetLocalStorage('OJ_DELETED_PURCHASES_IDS', JSON.stringify(Array.from(deletedPurchaseIdsRef.current)));
+    } catch {}
+
     const updatedList = replaceAll ? newPurchases : [...newPurchases, ...purchases];
     setPurchases(updatedList);
     try {
       safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updatedList));
     } catch {}
 
-    // Guardar en servidor centralizado institucional por lote
-    fetch('/api/db/purchases/batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ purchases: newPurchases, replaceAll })
-    }).catch(err => {
-      console.warn("Aviso servidor central al importar compras:", err);
-    });
+    const newIds = newPurchases.map(p => p.id);
+    setRecentlyImportedIds(newIds);
+    try {
+      safeSetLocalStorage('OJ_RECENTLY_IMPORTED_IDS', JSON.stringify(newIds));
+    } catch {}
 
-    // Guardar en Firestore masivamente por lotes atómicos (optimizado para más de 100 registros)
-    saveBatchPurchasesToFirestore(newPurchases).then(res => {
+    // Asegurar que la pestaña activa sea compras para visualización inmediata
+    setActiveTab('compras');
+
+    // Guardar en servidor centralizado institucional por lote (esperar confirmación)
+    try {
+      const resp = await fetch('/api/db/purchases/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ purchases: newPurchases, replaceAll })
+      });
+      if (!resp.ok) {
+        console.warn("Aviso servidor central al importar compras:", await resp.text());
+      }
+    } catch (err) {
+      console.warn("Aviso de red al sincronizar lote con servidor central:", err);
+    }
+
+    // Guardar en Firestore masivamente por lotes atómicos (esperar confirmación)
+    try {
+      const res = await saveBatchPurchasesToFirestore(newPurchases);
       if (res.success) {
         console.log(`Carga masiva de ${res.count} registros completada en Firestore.`);
       } else {
         console.warn("Aviso al guardar lote en Firestore:", res.error);
       }
-    }).catch(err => {
+    } catch (err) {
       console.warn("Error guardando lote masivo importado en Firestore:", err);
-    });
+    }
 
     logAudit(
       'IMPORTAR_DATOS',
@@ -2763,6 +2841,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updatePurchase = (id: string, data: Partial<PurchaseRecord>) => {
     const prev = purchases.find(p => p.id === id);
     if (!prev) return;
+
+    // Validar duplicidad de NOG si se está modificando el NOG
+    if (data.nog !== undefined) {
+      const cleanNog = (data.nog || '').trim();
+      const isRealNog = cleanNog && cleanNog !== '0' && !/^0+$/.test(cleanNog) && cleanNog.toLowerCase() !== 'n/a';
+      if (isRealNog) {
+        const cleanNorm = cleanNog.replace(/\D/g, '');
+        const duplicate = purchases.some(p => {
+          if (p.id === id) return false;
+          const pNog = (p.nog || '').trim();
+          return pNog && pNog !== '0' && !/^0+$/.test(pNog) && pNog.toLowerCase() !== 'n/a' && pNog.replace(/\D/g, '') === cleanNorm;
+        });
+        if (duplicate) {
+          showToast({
+            type: 'error',
+            title: 'NOG Duplicado',
+            message: 'NOG Registrado o ya Existe en el sistema.',
+            duration: 4500
+          });
+          throw new Error('NOG Registrado o ya Existe');
+        }
+      }
+    }
 
     const creator = currentUser ? currentUser.nombreCompleto : 'Operador GIT';
     const now = new Date();
@@ -4606,6 +4707,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsGoogleAuthModalOpen,
         isFirestoreStatusModalOpen,
         setIsFirestoreStatusModalOpen,
+        recentlyImportedIds,
+        clearRecentlyImported,
         pending2FA,
         initiateLogin,
         verify2FACode,

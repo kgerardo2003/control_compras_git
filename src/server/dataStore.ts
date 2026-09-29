@@ -221,13 +221,17 @@ export function savePurchase(purchase: PurchaseRecord): PurchaseRecord {
 
 export function saveBatchPurchases(newPurchases: PurchaseRecord[], replaceAll = false): PurchaseRecord[] {
   const store = initDataStore();
-  const valid = newPurchases.filter(p => !store.deletedPurchaseIds?.includes(p.id));
   if (replaceAll) {
-    store.purchases = [...valid];
+    store.purchases = [...newPurchases];
+    store.deletedPurchaseIds = []; // Limpiar historial de eliminados al reemplazar todo el conjunto
   } else {
-    const existingMap = new Map(store.purchases.map(p => [p.id, p]));
-    valid.forEach(np => existingMap.set(np.id, np));
-    store.purchases = Array.from(existingMap.values());
+    // Si alguno de los registros que se están importando tenía un ID en el historial de eliminados, reactivarlo
+    const newIdSet = new Set(newPurchases.map(p => p.id));
+    if (store.deletedPurchaseIds && store.deletedPurchaseIds.length > 0) {
+      store.deletedPurchaseIds = store.deletedPurchaseIds.filter(id => !newIdSet.has(id));
+    }
+    const remaining = store.purchases.filter(p => !newIdSet.has(p.id));
+    store.purchases = [...newPurchases, ...remaining];
   }
   store.version = (store.version || 1) + 1;
   store.isPurchasesInitialized = true;

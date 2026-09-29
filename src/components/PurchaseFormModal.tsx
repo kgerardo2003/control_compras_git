@@ -67,7 +67,8 @@ export const PurchaseFormModal: React.FC = () => {
     updatePurchase, 
     catalogs,
     themeConfig,
-    budgetAvailability
+    budgetAvailability,
+    purchases
   } = useApp();
 
   // Estados del Formulario (Validaciones de longitud y tipos requeridos)
@@ -148,6 +149,27 @@ export const PurchaseFormModal: React.FC = () => {
   const modalityOptions = modalityCatalog?.items.filter(it => it.activo).map(it => it.valor) || [
     'Compra Directa', 'Cotización Pública', 'Licitación Pública', 'Contrato Abierto'
   ];
+
+  // Cálculo de modalidad y obligatoriedad de NOG
+  const modalidadInfo = getModalidadCompraByMonto(Number(monto) || 0);
+  const currentModalityName = modalidadCompra || modalidadInfo.nombre;
+  const isBajaCuantia = currentModalityName.toLowerCase().includes('baja cuant') || (Number(monto) > 0 && Number(monto) <= 25000);
+  const isMandatoryNog = !isBajaCuantia;
+
+  // Verificación reactiva en tiempo real si el NOG ya existe en otro registro
+  const duplicateNogError = useMemo(() => {
+    const clean = nog.trim();
+    if (!clean || clean === '0' || /^0+$/.test(clean) || clean.toLowerCase() === 'n/a') return null;
+    const cleanNorm = clean.replace(/\D/g, '');
+    if (!cleanNorm) return null;
+    const exists = purchases.some(p => {
+      if (purchaseToEdit && p.id === purchaseToEdit.id) return false;
+      const pNog = (p.nog || '').trim();
+      if (!pNog || pNog === '0' || /^0+$/.test(pNog) || pNog.toLowerCase() === 'n/a') return false;
+      return pNog.replace(/\D/g, '') === cleanNorm;
+    });
+    return exists ? 'NOG Registrado o ya Existe' : null;
+  }, [nog, purchases, purchaseToEdit]);
 
   // Cargar datos cuando se edita
   useEffect(() => {
@@ -427,12 +449,25 @@ export const PurchaseFormModal: React.FC = () => {
       newErrors.fechaSolicitud = 'La Fecha de Solicitud es obligatoria.';
     }
 
-    // 5. NOG: numérico de 8 dígitos
+    // 5. NOG según modalidad
+    // Requerimiento:
+    // - NOG no es obligatorio para eventos como Baja Cuantía.
+    // - Para Compra Directa, Cotización y Licitación es obligatorio, pero permite ingresar valores cero (0).
+    // - Validar que el NOG no exista ya en el sistema; si existe: "NOG Registrado o ya Existe".
     const cleanNog = nog.trim();
     if (!cleanNog) {
-      newErrors.nog = 'El NOG es obligatorio.';
-    } else if (!/^\d{8}$/.test(cleanNog)) {
-      newErrors.nog = 'El NOG debe tener exactamente 8 dígitos numéricos (ej. 21948201).';
+      if (isMandatoryNog) {
+        newErrors.nog = 'El NOG es obligatorio para Compra Directa, Cotización y Licitación (ingrese el NOG o 0 si no se cuenta con este dato).';
+      }
+    } else {
+      const isZero = cleanNog === '0' || /^0+$/.test(cleanNog);
+      if (!isZero) {
+        if (!/^\d{1,10}$/.test(cleanNog)) {
+          newErrors.nog = 'El NOG debe contener dígitos numéricos (ej. 32043597 o 0 si no se cuenta con el dato).';
+        } else if (duplicateNogError) {
+          newErrors.nog = 'NOG Registrado o ya Existe';
+        }
+      }
     }
 
     // 6. Monto: moneda en Quetzales con máscara 000,000,000.00
@@ -985,26 +1020,61 @@ export const PurchaseFormModal: React.FC = () => {
               <span className="text-[10px] text-slate-400">Portal Guatecompras</span>
             </div>
 
-            {/* 1. NOG (8 Dígitos) */}
+            {/* 1. NOG según modalidad */}
             <div>
-              <label htmlFor="input-purchase-nog" className="block text-xs font-bold text-slate-800 mb-1">
-                NOG (8 Dígitos) <span className="text-rose-600">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="input-purchase-nog" className="block text-xs font-bold text-slate-800">
+                  {isBajaCuantia ? (
+                    <span>NOG <span className="text-slate-500 font-normal">(Opcional en Baja Cuantía)</span></span>
+                  ) : (
+                    <span>NOG ({currentModalityName}) <span className="text-rose-600">*</span></span>
+                  )}
+                </label>
+                {nog.trim() === '0' && (
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Valor 0 permitido
+                  </span>
+                )}
+              </div>
               <input
                 id="input-purchase-nog"
                 type="text"
-                maxLength={8}
+                maxLength={10}
                 value={nog}
-                onChange={(e) => setNog(e.target.value.replace(/\D/g, ''))}
-                placeholder="21948201"
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setNog(val);
+                  if (errors.nog) {
+                    setErrors(prev => ({ ...prev, nog: '' }));
+                  }
+                }}
+                placeholder={isBajaCuantia ? "Opcional (o 0)" : "NOG Guatecompras o 0"}
                 className={`w-full p-2 text-xs font-mono font-bold tracking-wider border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                  errors.nog ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 text-slate-900'
+                  (errors.nog || duplicateNogError) ? 'border-rose-400 bg-rose-50/20 text-rose-900 ring-1 ring-rose-400' : 'border-slate-300 text-slate-900'
                 }`}
               />
-              {errors.nog ? (
-                <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.nog}</p>
+              {duplicateNogError ? (
+                <p className="text-[11px] text-rose-600 mt-1 font-bold flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  NOG Registrado o ya Existe
+                </p>
+              ) : errors.nog ? (
+                <p className="text-[11px] text-rose-600 mt-1 font-semibold flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  {errors.nog}
+                </p>
+              ) : nog.trim() === '0' ? (
+                <p className="text-[10px] text-emerald-700 mt-0.5 font-medium">
+                  ✓ Valor 0 registrado correctamente (se permite ingresar valores cero cuando no se cuenta con este dato).
+                </p>
+              ) : isBajaCuantia ? (
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  El número de NOG no es obligatorio para eventos de Baja Cuantía (puede quedar en blanco o 0).
+                </p>
               ) : (
-                <p className="text-[10px] text-slate-400 mt-0.5">8 dígitos exactos de Guatecompras</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Obligatorio para {currentModalityName}. Ingrese el NOG de Guatecompras o 0 si no se cuenta con este dato.
+                </p>
               )}
             </div>
 

@@ -39,8 +39,7 @@ export function getUserAssignedArea(user?: User | null): string {
  * - Los filtros por área o estatus se aplican de forma dinámica en la interfaz de usuario.
  */
 export function isPurchaseVisibleToUser(purchase: PurchaseRecord, user?: User | null): boolean {
-  if (!user) return false;
-  // Todo usuario institucional autenticado tiene acceso de lectura al inventario consolidado
+  // Todo usuario institucional tiene acceso de lectura al inventario consolidado de compras
   return true;
 }
 
@@ -48,9 +47,7 @@ export function isPurchaseVisibleToUser(purchase: PurchaseRecord, user?: User | 
  * Filtra el arreglo de adquisiciones retornando únicamente las visibles para el usuario.
  */
 export function getVisiblePurchasesForUser(purchases: PurchaseRecord[], user?: User | null): PurchaseRecord[] {
-  if (!user) return [];
-  if (isUserGlobalAdmin(user)) return purchases;
-  return purchases.filter(p => isPurchaseVisibleToUser(p, user));
+  return purchases;
 }
 
 /**

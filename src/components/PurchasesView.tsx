@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Search, 
@@ -61,7 +61,9 @@ export const PurchasesView: React.FC = () => {
     showToast,
     firestoreStatus,
     refreshPurchases,
-    setIsImportModalOpen
+    setIsImportModalOpen,
+    recentlyImportedIds,
+    clearRecentlyImported
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,8 +71,9 @@ export const PurchasesView: React.FC = () => {
   const [filterGIT, setFilterGIT] = useState('todos');
   const [filterCategory, setFilterCategory] = useState('todos');
   const [filterArea, setFilterArea] = useState('todos');
-  const [sortBy, setSortBy] = useState<'fecha' | 'monto' | 'nog'>('fecha');
+  const [sortBy, setSortBy] = useState<'fecha' | 'monto' | 'nog' | 'recientes'>('recientes');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [showOnlyImported, setShowOnlyImported] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<PurchaseRecord | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [pdfToast, setPdfToast] = useState<string | null>(null);
@@ -109,6 +112,23 @@ export const PurchasesView: React.FC = () => {
     setLastSyncTime(new Date());
   }, [purchases]);
 
+  // Al completarse una importación, reiniciar automáticamente filtros y mostrar los registros recién importados al inicio
+  const prevImportCountRef = useRef(recentlyImportedIds.length);
+  useEffect(() => {
+    if (recentlyImportedIds.length > 0 && recentlyImportedIds.length !== prevImportCountRef.current) {
+      setSearchTerm('');
+      setFilterEstatus('todos');
+      setFilterGIT('todos');
+      setFilterCategory('todos');
+      setFilterArea('todos');
+      setSortBy('recientes');
+      setSortOrder('desc');
+      setShowOnlyImported(false);
+      setCurrentPage(1);
+      prevImportCountRef.current = recentlyImportedIds.length;
+    }
+  }, [recentlyImportedIds]);
+
   // Forzar sincronización directa omitiendo cualquier caché de navegador
   const handleForceSync = async () => {
     setIsSyncing(true);
@@ -144,12 +164,13 @@ export const PurchasesView: React.FC = () => {
   const filteredPurchases = useMemo(() => {
     return currentPurchases
       .filter(p => {
+        if (showOnlyImported && !recentlyImportedIds.includes(p.id)) return false;
         if (searchTerm.trim()) {
           const query = searchTerm.toLowerCase();
-          const matchDesc = p.descripcion.toLowerCase().includes(query);
-          const matchNOG = p.nog.includes(query);
-          const matchF56e = p.f56e.toLowerCase().includes(query);
-          const matchF56 = p.f56.toLowerCase().includes(query);
+          const matchDesc = (p.descripcion || '').toLowerCase().includes(query);
+          const matchNOG = (p.nog || '').includes(query);
+          const matchF56e = (p.f56e || '').toLowerCase().includes(query);
+          const matchF56 = (p.f56 || '').toLowerCase().includes(query);
           const matchProv = (p.proveedorAdjudicado || '').toLowerCase().includes(query);
           if (!matchDesc && !matchNOG && !matchF56e && !matchF56 && !matchProv) return false;
         }
@@ -160,16 +181,18 @@ export const PurchasesView: React.FC = () => {
       })
       .sort((a, b) => {
         let comparison = 0;
-        if (sortBy === 'fecha') {
+        if (sortBy === 'recientes') {
+          comparison = (a.fechaCreacion || '').localeCompare(b.fechaCreacion || '');
+        } else if (sortBy === 'fecha') {
           comparison = (a.fechaSolicitud || '').localeCompare(b.fechaSolicitud || '');
         } else if (sortBy === 'monto') {
           comparison = (a.monto || 0) - (b.monto || 0);
         } else if (sortBy === 'nog') {
-          comparison = a.nog.localeCompare(b.nog);
+          comparison = (a.nog || '').localeCompare(b.nog || '');
         }
         return sortOrder === 'asc' ? comparison : -comparison;
       });
-  }, [currentPurchases, searchTerm, filterEstatus, filterGIT, filterCategory, sortBy, sortOrder]);
+  }, [currentPurchases, showOnlyImported, recentlyImportedIds, searchTerm, filterEstatus, filterGIT, filterCategory, sortBy, sortOrder]);
 
   const totalFilteredMonto = useMemo(() => {
     return filteredPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -255,7 +278,7 @@ export const PurchasesView: React.FC = () => {
   // Reiniciar a página 1 al cambiar términos de búsqueda o filtros
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterEstatus, filterGIT, filterCategory, sortBy, sortOrder]);
+  }, [searchTerm, filterEstatus, filterGIT, filterCategory, filterArea, sortBy, sortOrder, showOnlyImported]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPurchases.length / ITEMS_PER_PAGE));
 
@@ -526,6 +549,54 @@ export const PurchasesView: React.FC = () => {
         </button>
       </div>
 
+      {/* Banner de Carga Masiva Reciente */}
+      {recentlyImportedIds.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-300 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+                <span>Carga Masiva Exitosa</span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-200 text-emerald-900 border border-emerald-300">
+                  {recentlyImportedIds.length} adquisiciones integradas
+                </span>
+              </h4>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                Los registros recién importados se han ubicado al inicio de la lista con la etiqueta <strong className="font-bold text-emerald-900">"Nuevo"</strong>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setShowOnlyImported(!showOnlyImported);
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                showOnlyImported
+                  ? 'bg-emerald-700 text-white shadow-xs hover:bg-emerald-800'
+                  : 'bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-100'
+              }`}
+            >
+              {showOnlyImported ? '✓ Mostrando solo recién importados' : 'Filtrar solo recién importados'}
+            </button>
+            <button
+              type="button"
+              onClick={clearRecentlyImported}
+              className="px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-emerald-100/50 rounded-xl transition-colors cursor-pointer flex items-center gap-1"
+              title="Ocultar aviso de importación reciente"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Ocultar aviso</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Barra Destacada de Acciones Masivas (cuando hay elementos seleccionados) */}
       {selectedIds.length > 0 && (
         <div className="bg-slate-900 text-white p-3.5 sm:p-4 rounded-xl shadow-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -713,6 +784,7 @@ export const PurchasesView: React.FC = () => {
               onChange={(e) => setSortBy(e.target.value as any)}
               className="bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs font-medium cursor-pointer"
             >
+              <option value="recientes">Recién Creados / Importados</option>
               <option value="fecha">Fecha de Solicitud</option>
               <option value="monto">Monto (Q)</option>
               <option value="nog">Número NOG</option>
@@ -801,12 +873,17 @@ export const PurchasesView: React.FC = () => {
               ) : (
                 paginatedPurchases.map((p) => {
                   const isSelected = selectedIds.includes(p.id);
+                  const isRecentlyImported = recentlyImportedIds.includes(p.id);
                   const badgeClass = STATUS_BADGE_CLASSES[p.estatusEvento] || 'bg-slate-100 text-slate-700';
                   return (
                     <tr 
                       key={p.id} 
                       className={`transition-colors ${
-                        isSelected ? 'bg-rose-50/70 hover:bg-rose-100/60' : 'hover:bg-slate-50'
+                        isSelected 
+                          ? 'bg-rose-50/70 hover:bg-rose-100/60' 
+                          : isRecentlyImported 
+                          ? 'bg-emerald-50/35 hover:bg-emerald-50/70' 
+                          : 'hover:bg-slate-50'
                       }`}
                     >
                       {/* Checkbox Selección */}
@@ -824,7 +901,14 @@ export const PurchasesView: React.FC = () => {
                       
                       {/* NOG */}
                       <td className="px-4 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                        {p.nog}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{p.nog}</span>
+                          {isRecentlyImported && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              Nuevo
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* F56-e y F56 */}
@@ -1028,7 +1112,14 @@ export const PurchasesView: React.FC = () => {
                   )}
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold block">NOG</span>
-                    <span className="font-mono font-bold text-slate-900">{p.nog}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono font-bold text-slate-900">{p.nog}</span>
+                      {recentlyImportedIds.includes(p.id) && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          Nuevo
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
