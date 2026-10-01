@@ -196,10 +196,9 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
         className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Cabecera del Modal con Logotipo Institucional */}
+        {/* Cabecera del Modal con Cintilla Azul Oscuro Institucional */}
         <div 
-          className="text-white px-5 py-4 border-b border-indigo-900 flex items-center justify-between shrink-0 relative overflow-hidden shadow-xs"
-          style={{ backgroundColor: '#0A0A69' }}
+          className="text-white px-5 py-4 border-b border-blue-900 flex items-center justify-between shrink-0 relative overflow-hidden shadow-sm bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-white p-1 flex items-center justify-center border border-white/20 shrink-0 shadow-xs">

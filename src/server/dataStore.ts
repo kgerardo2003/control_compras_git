@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { 
   PurchaseRecord, 
   User, 
@@ -48,8 +49,11 @@ export interface DataStoreState {
 // Cuentas institucionales esenciales que NUNCA deben perderse (Lic. Kevin Gerardo López de León)
 export const ESSENTIAL_USER_USERNAMES = ['admin', 'kglopezd'];
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+// Detección de entorno Vercel Serverless (donde solo /tmp es escribible)
+const isServerless = process.env.VERCEL === '1' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+const DATA_DIR = isServerless ? path.join(os.tmpdir(), 'control-compras-data') : path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
+const SEED_FILE = path.join(process.cwd(), 'data', 'store.json');
 
 let storeMemory: DataStoreState | null = null;
 
@@ -79,9 +83,10 @@ export function initDataStore(): DataStoreState {
 
   ensureDataDir();
 
-  if (fs.existsSync(DATA_FILE)) {
+  const fileToRead = fs.existsSync(DATA_FILE) ? DATA_FILE : (fs.existsSync(SEED_FILE) ? SEED_FILE : null);
+  if (fileToRead) {
     try {
-      const raw = fs.readFileSync(DATA_FILE, 'utf8');
+      const raw = fs.readFileSync(fileToRead, 'utf8');
       const parsed = JSON.parse(raw) as Partial<DataStoreState>;
       
       const isPurchasesInitialized = parsed.isPurchasesInitialized !== undefined 

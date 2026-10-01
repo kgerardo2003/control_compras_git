@@ -15,8 +15,21 @@ import {
   ShoppingBag, 
   Check, 
   Clock,
-  FileCheck
+  FileCheck,
+  ShieldCheck,
+  TrendingUp,
+  PieChart as PieChartIcon,
+  Sparkles,
+  Percent,
+  ArrowUpRight
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip
+} from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -194,6 +207,307 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
     }
   }, [activeVariant, dataMatriz, dataAlertas, dataGastoGrupoRenglon, dataCompras, dataComprometido, dataPagado]);
 
+  // Estadísticas analíticas por grupo presupuestario para la Matriz Consolidada
+  const matrizGroupStats = useMemo(() => {
+    const groups = [
+      { id: '100', name: 'Grupo 100 - Servicios No Personales', short: 'G-100 Servicios' },
+      { id: '200', name: 'Grupo 200 - Materiales y Suministros', short: 'G-200 Materiales' },
+      { id: '300', name: 'Grupo 300 - Propiedad, Planta, Equipo e Intangibles', short: 'G-300 Activos/Equipo' }
+    ];
+
+    return groups.map(g => {
+      const lines = dataMatriz.filter(l => l.grupoPresupuestario.includes(g.id) || l.renglonPresupuestario.startsWith(g.id[0]));
+      const vigente = lines.reduce((sum, l) => sum + (l.presupuestoVigente || 0), 0);
+      const pagado = lines.reduce((sum, l) => sum + (l.pagadoQueRebaja || 0), 0);
+      const comprometido = lines.reduce((sum, l) => sum + (l.comprometidoPendiente || 0), 0);
+      const totalGasto = pagado + comprometido;
+      const disponible = lines.reduce((sum, l) => sum + (l.disponibleProyectado || 0), 0);
+      const pct = vigente > 0 ? Math.round((totalGasto / vigente) * 1000) / 10 : 0;
+      return {
+        ...g,
+        count: lines.length,
+        vigente,
+        pagado,
+        comprometido,
+        totalGasto,
+        disponible,
+        pct
+      };
+    });
+  }, [dataMatriz]);
+
+  // Semáforo de salud de partidas para la Matriz Consolidada
+  const matrizHealthStats = useMemo(() => {
+    const saludable = dataMatriz.filter(l => l.disponibleProyectado > (l.presupuestoVigente * 0.15)).length;
+    const alerta = dataMatriz.filter(l => l.disponibleProyectado <= (l.presupuestoVigente * 0.15) && l.disponibleProyectado > 0).length;
+    const deficit = dataMatriz.filter(l => l.disponibleProyectado <= 0).length;
+    return { saludable, alerta, deficit, total: dataMatriz.length };
+  }, [dataMatriz]);
+
+  // 1. Matriz Consolidada - Datos de Gráficas de Círculo
+  const matrizTechoChartData = useMemo(() => {
+    if (!('vigente' in variantTotals) || variantTotals.vigente <= 0) return [];
+    return [
+      { name: 'Pagado Devengado', value: variantTotals.pagado, color: '#2563eb' },
+      { name: 'Comprometido Trámite', value: variantTotals.comprometido, color: '#f59e0b' },
+      { name: 'Saldo Disponible', value: Math.max(0, variantTotals.disponibleProyectado), color: '#10b981' }
+    ].filter(d => d.value > 0);
+  }, [variantTotals]);
+
+  const matrizGruposChartData = useMemo(() => {
+    return matrizGroupStats.map(g => ({
+      name: g.short,
+      value: g.vigente,
+      color: g.id === '100' ? '#3b82f6' : g.id === '200' ? '#8b5cf6' : '#ec4899'
+    })).filter(d => d.value > 0);
+  }, [matrizGroupStats]);
+
+  const matrizSaludChartData = useMemo(() => {
+    return [
+      { name: 'Con Disponibilidad (>15%)', value: matrizHealthStats.saludable, color: '#10b981' },
+      { name: 'Alerta Preventiva (≤15%)', value: matrizHealthStats.alerta, color: '#f59e0b' },
+      { name: 'En Déficit / Sin Saldo', value: matrizHealthStats.deficit, color: '#ef4444' }
+    ].filter(d => d.value > 0);
+  }, [matrizHealthStats]);
+
+  // 2. Compras Vinculadas por Renglón - Estadísticas y Gráficas de Círculo
+  const comprasKPIs = useMemo(() => {
+    const totalMonto = dataCompras.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+    const pagadas = dataCompras.filter(p => p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada');
+    const comprometidas = dataCompras.filter(p => p.estadoPago !== 'pagado' && p.estatusEvento !== 'Pagada');
+    const pagadasMonto = pagadas.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+    const comprometidasMonto = comprometidas.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+    const uniqueRenglones = new Set(dataCompras.map(p => p.renglonPresupuestario).filter(Boolean));
+    return {
+      totalMonto,
+      totalCount: dataCompras.length,
+      pagadasMonto,
+      pagadasCount: pagadas.length,
+      comprometidasMonto,
+      comprometidasCount: comprometidas.length,
+      renglonesAfectados: uniqueRenglones.size
+    };
+  }, [dataCompras]);
+
+  const comprasEstadoChartData = useMemo(() => {
+    return [
+      { name: 'Pagado que Rebaja', value: comprasKPIs.pagadasMonto, color: '#2563eb' },
+      { name: 'Comprometido en Trámite', value: comprasKPIs.comprometidasMonto, color: '#f59e0b' }
+    ].filter(d => d.value > 0);
+  }, [comprasKPIs]);
+
+  const comprasTopRenglonesChartData = useMemo(() => {
+    const map: Record<string, number> = {};
+    dataCompras.forEach(p => {
+      const r = p.renglonPresupuestario ? `R-${p.renglonPresupuestario}` : 'Sin Renglón';
+      map[r] = (map[r] || 0) + (Number(p.monto) || 0);
+    });
+    const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
+    const top5 = sorted.slice(0, 5);
+    const others = sorted.slice(5).reduce((sum, item) => sum + item[1], 0);
+    const palette = ['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#10b981'];
+    const result = top5.map((item, idx) => ({
+      name: item[0],
+      value: item[1],
+      color: palette[idx % palette.length]
+    }));
+    if (others > 0) {
+      result.push({ name: 'Otros Renglones', value: others, color: '#94a3b8' });
+    }
+    return result;
+  }, [dataCompras]);
+
+  const comprasModalidadChartData = useMemo(() => {
+    const map: Record<string, number> = {};
+    dataCompras.forEach(p => {
+      const m = p.modalidadCompra || p.tipoCompra || 'Compra Directa';
+      map[m] = (map[m] || 0) + 1;
+    });
+    const palette = ['#6366f1', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6'];
+    return Object.entries(map).map(([name, value], idx) => ({
+      name,
+      value,
+      color: palette[idx % palette.length]
+    }));
+  }, [dataCompras]);
+
+  // 3. Comprometido en Trámite
+  const comprometidoKPIs = useMemo(() => {
+    const totalMonto = dataComprometido.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+    const totalCount = dataComprometido.length;
+    const promedio = totalCount > 0 ? totalMonto / totalCount : 0;
+    const mayorMonto = totalCount > 0 ? Math.max(...dataComprometido.map(p => Number(p.monto) || 0)) : 0;
+    const uniqueRenglones = new Set(dataComprometido.map(p => p.renglonPresupuestario).filter(Boolean));
+    return {
+      totalMonto,
+      totalCount,
+      promedio,
+      mayorMonto,
+      renglonesAfectados: uniqueRenglones.size
+    };
+  }, [dataComprometido]);
+
+  const comprometidoGrupoChartData = useMemo(() => {
+    const groups: Record<string, number> = { 'G-100 Servicios': 0, 'G-200 Materiales': 0, 'G-300 Activos': 0 };
+    dataComprometido.forEach(p => {
+      const r = String(p.renglonPresupuestario || '');
+      if (r.startsWith('1')) groups['G-100 Servicios'] += Number(p.monto) || 0;
+      else if (r.startsWith('2')) groups['G-200 Materiales'] += Number(p.monto) || 0;
+      else if (r.startsWith('3')) groups['G-300 Activos'] += Number(p.monto) || 0;
+    });
+    const colors = { 'G-100 Servicios': '#3b82f6', 'G-200 Materiales': '#8b5cf6', 'G-300 Activos': '#ec4899' };
+    return Object.entries(groups).map(([name, value]) => ({
+      name,
+      value,
+      color: colors[name as keyof typeof colors]
+    })).filter(d => d.value > 0);
+  }, [dataComprometido]);
+
+  const comprometidoTopRenglonesChartData = useMemo(() => {
+    const map: Record<string, number> = {};
+    dataComprometido.forEach(p => {
+      const r = p.renglonPresupuestario ? `R-${p.renglonPresupuestario}` : 'Sin Renglón';
+      map[r] = (map[r] || 0) + (Number(p.monto) || 0);
+    });
+    const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const palette = ['#f59e0b', '#f97316', '#eab308', '#84cc16', '#06b6d4'];
+    return sorted.map(([name, value], idx) => ({
+      name,
+      value,
+      color: palette[idx % palette.length]
+    }));
+  }, [dataComprometido]);
+
+  // 4. Pagado / Devengado
+  const pagadoKPIs = useMemo(() => {
+    const totalMonto = dataPagado.reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
+    const totalCount = dataPagado.length;
+    const promedio = totalCount > 0 ? totalMonto / totalCount : 0;
+    const mayorPago = totalCount > 0 ? Math.max(...dataPagado.map(p => Number(p.monto) || 0)) : 0;
+    const uniqueRenglones = new Set(dataPagado.map(p => p.renglonPresupuestario).filter(Boolean));
+    return {
+      totalMonto,
+      totalCount,
+      promedio,
+      mayorPago,
+      renglonesAfectados: uniqueRenglones.size
+    };
+  }, [dataPagado]);
+
+  const pagadoGrupoChartData = useMemo(() => {
+    const groups: Record<string, number> = { 'G-100 Servicios': 0, 'G-200 Materiales': 0, 'G-300 Activos': 0 };
+    dataPagado.forEach(p => {
+      const r = String(p.renglonPresupuestario || '');
+      if (r.startsWith('1')) groups['G-100 Servicios'] += Number(p.monto) || 0;
+      else if (r.startsWith('2')) groups['G-200 Materiales'] += Number(p.monto) || 0;
+      else if (r.startsWith('3')) groups['G-300 Activos'] += Number(p.monto) || 0;
+    });
+    const colors = { 'G-100 Servicios': '#2563eb', 'G-200 Materiales': '#7c3aed', 'G-300 Activos': '#db2777' };
+    return Object.entries(groups).map(([name, value]) => ({
+      name,
+      value,
+      color: colors[name as keyof typeof colors]
+    })).filter(d => d.value > 0);
+  }, [dataPagado]);
+
+  const pagadoTopRenglonesChartData = useMemo(() => {
+    const map: Record<string, number> = {};
+    dataPagado.forEach(p => {
+      const r = p.renglonPresupuestario ? `R-${p.renglonPresupuestario}` : 'Sin Renglón';
+      map[r] = (map[r] || 0) + (Number(p.monto) || 0);
+    });
+    const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const palette = ['#2563eb', '#3b82f6', '#0284c7', '#0891b2', '#0d9488'];
+    return sorted.map(([name, value], idx) => ({
+      name,
+      value,
+      color: palette[idx % palette.length]
+    }));
+  }, [dataPagado]);
+
+  // 5. Alertas y Déficit
+  const alertasKPIs = useMemo(() => {
+    const totalAlertas = dataAlertas.length;
+    const deficitCount = dataAlertas.filter(l => (l.disponibleProyectado || 0) <= 0).length;
+    const preventivaCount = dataAlertas.filter(l => (l.disponibleProyectado || 0) > 0 && (l.disponibleProyectado || 0) <= (l.presupuestoVigente * 0.15)).length;
+    const deficitMonto = dataAlertas.filter(l => (l.disponibleProyectado || 0) < 0).reduce((sum, l) => sum + Math.abs(l.disponibleProyectado), 0);
+    const techoAfectado = dataAlertas.reduce((sum, l) => sum + (l.presupuestoVigente || 0), 0);
+    return {
+      totalAlertas,
+      deficitCount,
+      preventivaCount,
+      deficitMonto,
+      techoAfectado
+    };
+  }, [dataAlertas]);
+
+  const alertasSeveridadChartData = useMemo(() => {
+    const totalAll = budgetAvailability.length;
+    const normales = Math.max(0, totalAll - alertasKPIs.totalAlertas);
+    return [
+      { name: 'Déficit Crítico (≤ Q 0)', value: alertasKPIs.deficitCount, color: '#ef4444' },
+      { name: 'Alerta Preventiva (≤ 15%)', value: alertasKPIs.preventivaCount, color: '#f59e0b' },
+      { name: 'Disponibilidad Normal', value: normales, color: '#10b981' }
+    ].filter(d => d.value > 0);
+  }, [alertasKPIs, budgetAvailability]);
+
+  const alertasGrupoChartData = useMemo(() => {
+    const map: Record<string, number> = { 'G-100 Servicios': 0, 'G-200 Materiales': 0, 'G-300 Activos': 0 };
+    dataAlertas.forEach(l => {
+      const r = String(l.renglonPresupuestario || '');
+      if (r.startsWith('1')) map['G-100 Servicios'] += 1;
+      else if (r.startsWith('2')) map['G-200 Materiales'] += 1;
+      else if (r.startsWith('3')) map['G-300 Activos'] += 1;
+    });
+    const colors = { 'G-100 Servicios': '#f43f5e', 'G-200 Materiales': '#e11d48', 'G-300 Activos': '#be123c' };
+    return Object.entries(map).map(([name, value]) => ({
+      name,
+      value,
+      color: colors[name as keyof typeof colors]
+    })).filter(d => d.value > 0);
+  }, [dataAlertas]);
+
+  // 6. Gasto Consolidado por Grupo y Renglón
+  const gastoGrupoKPIs = useMemo(() => {
+    const totalVigente = dataGastoGrupoRenglon.reduce((sum, g) => sum + g.presupuestoVigente, 0);
+    const totalGasto = dataGastoGrupoRenglon.reduce((sum, g) => sum + g.gastoTotal, 0);
+    const totalDisponible = dataGastoGrupoRenglon.reduce((sum, g) => sum + g.disponibleProyectado, 0);
+    const ejecucionPct = totalVigente > 0 ? (totalGasto / totalVigente) * 100 : 0;
+    return {
+      totalVigente,
+      totalGasto,
+      totalDisponible,
+      ejecucionPct
+    };
+  }, [dataGastoGrupoRenglon]);
+
+  const gastoGrupoVigenteChartData = useMemo(() => {
+    const palette = ['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'];
+    return dataGastoGrupoRenglon.map((g, idx) => ({
+      name: g.grupo.replace('Grupo ', 'G-'),
+      value: g.presupuestoVigente,
+      color: palette[idx % palette.length]
+    })).filter(d => d.value > 0);
+  }, [dataGastoGrupoRenglon]);
+
+  const gastoGrupoRealChartData = useMemo(() => {
+    const palette = ['#2563eb', '#7c3aed', '#db2777', '#0891b2'];
+    return dataGastoGrupoRenglon.map((g, idx) => ({
+      name: g.grupo.replace('Grupo ', 'G-'),
+      value: g.gastoTotal,
+      color: palette[idx % palette.length]
+    })).filter(d => d.value > 0);
+  }, [dataGastoGrupoRenglon]);
+
+  const gastoGrupoDisponibleChartData = useMemo(() => {
+    const palette = ['#10b981', '#059669', '#047857', '#065f46'];
+    return dataGastoGrupoRenglon.map((g, idx) => ({
+      name: g.grupo.replace('Grupo ', 'G-'),
+      value: Math.max(0, g.disponibleProyectado),
+      color: palette[idx % palette.length]
+    })).filter(d => d.value > 0);
+  }, [dataGastoGrupoRenglon]);
+
   // EXPORTAR A EXCEL SEGÚN VARIANTE
   const handleExportExcel = () => {
     let wsData: any[] = [];
@@ -339,10 +653,11 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
 
     // Encabezado Institucional con Logo Oficial del Organismo Judicial
     try {
-      doc.setFillColor(15, 23, 42); // slate-900 institucional
+      // Cintilla Azul Oscuro Institucional
+      doc.setFillColor(15, 23, 42); // slate-900 institucional (#0f172a)
       doc.rect(14, 6, 251, 23, 'F');
-      doc.setFillColor(217, 119, 6); // amber-600
-      doc.rect(14, 6, 3, 23, 'F');
+      doc.setFillColor(30, 64, 175); // blue-800 (#1e40af) acento azul institucional
+      doc.rect(14, 6, 3.5, 23, 'F');
 
       doc.setFillColor(255, 255, 255);
       doc.roundedRect(20, 7.5, 19, 19, 2, 2, 'F');
@@ -355,12 +670,12 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
 
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(203, 213, 225);
+      doc.setTextColor(226, 232, 240);
       doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • DEPARTAMENTO ADMINISTRATIVO FINANCIERO', 43, 17);
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      doc.setTextColor(253, 224, 71); // amber-300
+      doc.setTextColor(255, 255, 255);
       doc.text(titleMap[activeVariant], 43, 23);
 
       doc.setFont('helvetica', 'normal');
@@ -370,6 +685,8 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
       doc.text(`Filtro: ${filterRenglon === 'todos' ? 'Todos los Renglones' : `Renglón ${filterRenglon}`}`, 260, 17, { align: 'right' });
     } catch (e) {
       console.warn('Error al incrustar logo en reporte presupuestario', e);
+      doc.setFillColor(15, 23, 42);
+      doc.rect(14, 6, 251, 23, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 14, 12);
@@ -530,16 +847,104 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
       }
     }
 
+    let startMainTableY = 33;
+
+    // Resumen Ejecutivo de KPIs para el informe PDF según la variante seleccionada
+    let kpiHead: string[][] = [];
+    let kpiBody: string[][] = [];
+
+    if (activeVariant === 'matriz_consolidada' && 'vigente' in variantTotals) {
+      kpiHead = [['P. VIGENTE INSTITUCIONAL', 'PAGADO DEVENGADO (% EJEC)', 'COMPROMETIDO EN TRÁMITE', 'GASTO TOTAL ACUMULADO', 'DISPONIBLE PROYECTADO']];
+      kpiBody = [[
+        `Q ${variantTotals.vigente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${variantTotals.pagado.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${variantTotals.vigente > 0 ? ((variantTotals.pagado / variantTotals.vigente) * 100).toFixed(1) : 0}%)`,
+        `Q ${variantTotals.comprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${variantTotals.vigente > 0 ? ((variantTotals.comprometido / variantTotals.vigente) * 100).toFixed(1) : 0}%)`,
+        `Q ${(variantTotals.pagado + variantTotals.comprometido).toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${variantTotals.vigente > 0 ? (((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(1) : 0}%)`,
+        `Q ${variantTotals.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`
+      ]];
+    } else if (activeVariant === 'compras_por_renglon') {
+      kpiHead = [['TOTAL ADJUDICADO (Q)', 'TOTAL DE COMPRAS', 'PAGADO QUE REBAJA (Q)', 'COMPROMETIDO EN TRÁMITE (Q)', 'RENGLONES AFECTADOS']];
+      kpiBody = [[
+        `Q ${comprasKPIs.totalMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `${comprasKPIs.totalCount} trámites F56`,
+        `Q ${comprasKPIs.pagadasMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${comprasKPIs.pagadasCount})`,
+        `Q ${comprasKPIs.comprometidasMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${comprasKPIs.comprometidasCount})`,
+        `${comprasKPIs.renglonesAfectados} renglones`
+      ]];
+    } else if (activeVariant === 'comprometido_pendiente') {
+      kpiHead = [['TOTAL COMPROMETIDO (Q)', 'COMPRAS EN TRÁMITE', 'PROMEDIO POR COMPRA', 'MAYOR SOLICITUD EN CURSO', 'RENGLONES EN PROCESO']];
+      kpiBody = [[
+        `Q ${comprometidoKPIs.totalMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `${comprometidoKPIs.totalCount} trámites`,
+        `Q ${comprometidoKPIs.promedio.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${comprometidoKPIs.mayorMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `${comprometidoKPIs.renglonesAfectados} renglones`
+      ]];
+    } else if (activeVariant === 'pagado_devengado') {
+      kpiHead = [['TOTAL PAGADO DEVENGADO (Q)', 'COMPRAS PAGADAS', 'MAYOR DESEMBOLSO', 'PROMEDIO POR PAGO', 'RENGLONES EJECUTADOS']];
+      kpiBody = [[
+        `Q ${pagadoKPIs.totalMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `${pagadoKPIs.totalCount} facturas/pagos`,
+        `Q ${pagadoKPIs.mayorPago.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${pagadoKPIs.promedio.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `${pagadoKPIs.renglonesAfectados} renglones`
+      ]];
+    } else if (activeVariant === 'alertas_deficit' && 'vigente' in variantTotals) {
+      kpiHead = [['TOTAL PARTIDAS EN ALERTA', 'EN DÉFICIT CRÍTICO (≤ Q0)', 'EN ALERTA PREVENTIVA (≤ 15%)', 'DÉFICIT TOTAL ACUMULADO (Q)', 'TECHO VIGENTE EN RIESGO (Q)']];
+      kpiBody = [[
+        `${alertasKPIs.totalAlertas} partidas`,
+        `${alertasKPIs.deficitCount} renglones`,
+        `${alertasKPIs.preventivaCount} renglones`,
+        `Q ${alertasKPIs.deficitMonto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${alertasKPIs.techoAfectado.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`
+      ]];
+    } else if (activeVariant === 'gasto_grupo_renglon' && 'vigente' in variantTotals) {
+      kpiHead = [['P. VIGENTE TOTAL (Q)', 'GASTO TOTAL REAL (Q)', 'SALDO DISPONIBLE TOTAL (Q)', '% EJECUCIÓN GLOBAL', 'GRUPOS ANALIZADOS']];
+      kpiBody = [[
+        `Q ${gastoGrupoKPIs.totalVigente.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${gastoGrupoKPIs.totalGasto.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${gastoGrupoKPIs.totalDisponible.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `${gastoGrupoKPIs.ejecucionPct.toFixed(1)}%`,
+        `${dataGastoGrupoRenglon.length} grupos presupuestarios`
+      ]];
+    }
+
+    if (kpiHead.length > 0) {
+      autoTable(doc, {
+        startY: 32,
+        head: kpiHead,
+        body: kpiBody,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [15, 23, 42], // Azul oscuro institucional
+          textColor: [255, 255, 255],
+          fontSize: 7.5,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 7.5,
+          fontStyle: 'bold',
+          halign: 'center',
+          fillColor: [248, 250, 252],
+          textColor: [15, 23, 42]
+        },
+        margin: { left: 14, right: 14 }
+      });
+
+      startMainTableY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 3.5 : 44;
+    }
+
     autoTable(doc, {
-      startY: 33,
+      startY: startMainTableY,
       head,
       body,
       foot,
       theme: 'grid',
       headStyles: {
-        fillColor: [30, 41, 59],
+        fillColor: [15, 23, 42], // Azul oscuro institucional
         textColor: [255, 255, 255],
-        fontSize: 7.5,
+        fontSize: activeVariant === 'matriz_consolidada' ? 6.8 : 7.5,
         fontStyle: 'bold'
       },
       footStyles: {
@@ -549,8 +954,8 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
         fontStyle: 'bold'
       },
       styles: {
-        fontSize: 7,
-        cellPadding: 1.5
+        fontSize: activeVariant === 'matriz_consolidada' ? 6.5 : 7,
+        cellPadding: 1.2
       },
       alternateRowStyles: {
         fillColor: [248, 250, 252]
@@ -748,6 +1153,1044 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
         </div>
       </div>
 
+      {/* PANEL ANALÍTICO Y KPI PARA MATRIZ CONSOLIDADA (Reporte_Presupuesto_OJ_matriz_consolidada) */}
+      {activeVariant === 'matriz_consolidada' && 'vigente' in variantTotals && (
+        <div className="space-y-4 animate-in fade-in" id="analitico-kpi-matriz-consolidada">
+          
+          {/* Cintilla del Encabezado en Azul Oscuro */}
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-blue-800/40 text-blue-200 border border-blue-700/50">
+                  <Sparkles className="w-5 h-5 text-blue-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  Panel Analítico y KPI — Reporte de Matriz Consolidada OJ
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-800/60 text-blue-100 border border-blue-600/50">
+                  12 Columnas Oficiales
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-3xl">
+                Monitoreo consolidado del techo vigente, ejecución devengada que rebaja saldo real, adquisiciones comprometidas en trámite y saldo financiero disponible proyectado.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/20 text-xs font-semibold self-start sm:self-auto text-white">
+              <Calendar className="w-3.5 h-3.5 text-blue-300" />
+              <span>Ejercicio Fiscal 2026</span>
+            </div>
+          </div>
+
+          {/* Tarjetas KPI de Ejecución de la Matriz Consolidada */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+            {/* KPI 1: Techo Vigente */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <span>Presupuesto Vigente</span>
+                <span className="p-1 rounded-md bg-sky-50 text-sky-600">
+                  <DollarSign className="w-3.5 h-3.5" />
+                </span>
+              </div>
+              <div className="text-xl font-black font-mono text-slate-900">
+                {formatQuetzales(variantTotals.vigente)}
+              </div>
+              <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-100">
+                <span>Inicial: {formatQuetzales(variantTotals.inicial)}</span>
+                <span className={variantTotals.modificaciones >= 0 ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                  {variantTotals.modificaciones >= 0 ? '+' : ''}{formatQuetzales(variantTotals.modificaciones)}
+                </span>
+              </div>
+            </div>
+
+            {/* KPI 2: Pagado Devengado */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <span>Pagado Devengado</span>
+                <span className="p-1 rounded-md bg-blue-50 text-blue-600">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </span>
+              </div>
+              <div className="text-xl font-black font-mono text-blue-900">
+                {formatQuetzales(variantTotals.pagado)}
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                <span>Rebaja Saldo Real</span>
+                <span className="px-1.5 py-0.2 rounded font-mono font-bold bg-blue-100 text-blue-800">
+                  {variantTotals.vigente > 0 ? ((variantTotals.pagado / variantTotals.vigente) * 100).toFixed(1) : 0}% Ejec.
+                </span>
+              </div>
+            </div>
+
+            {/* KPI 3: Comprometido Pendiente */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <span>Comprometido Trámite</span>
+                <span className="p-1 rounded-md bg-amber-50 text-amber-600">
+                  <Clock className="w-3.5 h-3.5" />
+                </span>
+              </div>
+              <div className="text-xl font-black font-mono text-amber-900">
+                {formatQuetzales(variantTotals.comprometido)}
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                <span>Afecta Proyectado</span>
+                <span className="px-1.5 py-0.2 rounded font-mono font-bold bg-amber-100 text-amber-800">
+                  {variantTotals.vigente > 0 ? ((variantTotals.comprometido / variantTotals.vigente) * 100).toFixed(1) : 0}%
+                </span>
+              </div>
+            </div>
+
+            {/* KPI 4: Total Gasto */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <span>Total Afectación</span>
+                <span className="p-1 rounded-md bg-purple-50 text-purple-600">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                </span>
+              </div>
+              <div className="text-xl font-black font-mono text-purple-950">
+                {formatQuetzales(variantTotals.totalGasto)}
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                <span>Comprometido + Pagado</span>
+                <span className="px-1.5 py-0.2 rounded font-mono font-bold bg-purple-100 text-purple-800">
+                  {variantTotals.vigente > 0 ? (((variantTotals.pagado + variantTotals.comprometido) / variantTotals.vigente) * 100).toFixed(1) : 0}%
+                </span>
+              </div>
+            </div>
+
+            {/* KPI 5: Disponible Proyectado */}
+            <div className={`p-4 rounded-xl border shadow-2xs space-y-1 ${
+              variantTotals.disponibleProyectado >= 0 ? 'bg-emerald-50/60 border-emerald-200' : 'bg-rose-50/60 border-rose-200'
+            }`}>
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <span className={variantTotals.disponibleProyectado >= 0 ? 'text-emerald-900' : 'text-rose-900'}>Disponible Proyectado</span>
+                <span className={`p-1 rounded-md ${variantTotals.disponibleProyectado >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                </span>
+              </div>
+              <div className={`text-xl font-black font-mono ${variantTotals.disponibleProyectado >= 0 ? 'text-emerald-950' : 'text-rose-950'}`}>
+                {formatQuetzales(variantTotals.disponibleProyectado)}
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-600 pt-1 border-t border-slate-200/60">
+                <span>Saldo Real: {formatQuetzales(variantTotals.disponibleReal)}</span>
+                <span className={`px-1.5 py-0.2 rounded font-bold text-[9px] ${
+                  variantTotals.disponibleProyectado >= 0 ? 'bg-emerald-200/80 text-emerald-900' : 'bg-rose-200/80 text-rose-900'
+                }`}>
+                  {variantTotals.disponibleProyectado >= 0 ? 'Superávit' : 'Déficit'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Gráficas de Círculo para la Matriz Consolidada */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            {/* Gráfica 1: Distribución del Techo Presupuestario */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                  Distribución del Techo Vigente
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                  {formatQuetzales(variantTotals.vigente)}
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {matrizTechoChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={matrizTechoChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={30}
+                        outerRadius={50}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {matrizTechoChartData.map((entry, index) => (
+                          <Cell key={`techo-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any) => [formatQuetzales(Number(val)), 'Monto']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span className="text-xs text-slate-400">Sin datos vigentes</span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {matrizTechoChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[80px]" title={d.name}>{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {variantTotals.vigente > 0 ? ((d.value / variantTotals.vigente) * 100).toFixed(0) : 0}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Gráfica 2: Asignación por Grupo */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-purple-600" />
+                  Presupuesto por Grupos (100, 200, 300)
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">
+                  3 Grupos
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {matrizGruposChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={matrizGruposChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={30}
+                        outerRadius={50}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {matrizGruposChartData.map((entry, index) => (
+                          <Cell key={`grp-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any) => [formatQuetzales(Number(val)), 'Techo Vigente']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span className="text-xs text-slate-400">Sin datos de grupos</span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {matrizGruposChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[80px]" title={d.name}>{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatQuetzales(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Gráfica 3: Semáforo de Salud de Partidas */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-emerald-600" />
+                  Salud y Disponibilidad de Partidas
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800">
+                  {matrizHealthStats.total} Renglones
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {matrizSaludChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={matrizSaludChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={30}
+                        outerRadius={50}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {matrizSaludChartData.map((entry, index) => (
+                          <Cell key={`salud-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any) => [`${val} Renglones`, 'Partidas']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span className="text-xs text-slate-400">Sin datos</span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {matrizSaludChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[80px]" title={d.name}>{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Desglose Analítico por Grupos Presupuestarios (100, 200, 300) y Semáforo de Renglones */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3.5">
+            {matrizGroupStats.map((grp) => (
+              <div key={grp.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                    <span className="text-xs font-bold text-slate-900 truncate" title={grp.name}>
+                      {grp.short}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                    {grp.count} Renglones
+                  </span>
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between text-slate-500">
+                    <span>Vigente:</span>
+                    <span className="font-mono font-bold text-slate-900">{formatQuetzales(grp.vigente)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-500">
+                    <span>Gasto Total:</span>
+                    <span className="font-mono font-semibold text-purple-950">{formatQuetzales(grp.totalGasto)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-500">
+                    <span>Disponible:</span>
+                    <span className={`font-mono font-bold ${grp.disponible >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {formatQuetzales(grp.disponible)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Barra de Progreso */}
+                <div className="space-y-1 pt-1 border-t border-slate-100">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-600">
+                    <span>Ejecución Presupuestaria</span>
+                    <span className="font-mono text-blue-700">{grp.pct}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        grp.pct > 85 ? 'bg-amber-500' : 'bg-blue-600'
+                      }`}
+                      style={{ width: `${Math.min(100, grp.pct)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Semáforo de Renglones */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Salud de Partidas ({matrizHealthStats.total})
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Estatus</span>
+              </div>
+
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center justify-between p-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <span className="text-emerald-900 font-medium text-[11px]">Con Disponibilidad (&gt;15%)</span>
+                  <span className="font-mono font-black text-emerald-950 px-1.5 rounded bg-emerald-100">
+                    {matrizHealthStats.saludable}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-1.5 rounded-lg bg-amber-50 border border-amber-200">
+                  <span className="text-amber-900 font-medium text-[11px]">Alerta Preventiva (≤15%)</span>
+                  <span className="font-mono font-black text-amber-950 px-1.5 rounded bg-amber-100">
+                    {matrizHealthStats.alerta}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-1.5 rounded-lg bg-rose-50 border border-rose-200">
+                  <span className="text-rose-900 font-medium text-[11px]">En Déficit / Sin Saldo</span>
+                  <span className="font-mono font-black text-rose-950 px-1.5 rounded bg-rose-100">
+                    {matrizHealthStats.deficit}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* PANEL ANALÍTICO Y KPI: VARIANTE 2 - COMPRAS VINCULADAS POR RENGLÓN */}
+      {activeVariant === 'compras_por_renglon' && (
+        <div className="space-y-4 animate-in fade-in" id="analitico-kpi-compras-renglon">
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-blue-800/40 text-blue-200 border border-blue-700/50">
+                  <ShoppingBag className="w-5 h-5 text-blue-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  Panel Analítico y KPI — Compras Vinculadas por Renglón Presupuestario
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-800/60 text-blue-100 border border-blue-600/50">
+                  Cruce F56-e y NOG
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-3xl">
+                Monitoreo detallado de procesos de compra institucionales asociados directamente a partidas presupuestarias, discriminando entre compromisos y pagos definitivos.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/20 text-xs font-semibold self-start sm:self-auto text-white">
+              <Calendar className="w-3.5 h-3.5 text-blue-300" />
+              <span>{comprasKPIs.totalCount} Procesos F56-e</span>
+            </div>
+          </div>
+
+          {/* Tarjetas KPI de Compras */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Monto Total Adjudicado</div>
+              <div className="text-xl font-black font-mono text-slate-950">{formatQuetzales(comprasKPIs.totalMonto)}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">{comprasKPIs.totalCount} solicitudes registradas</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">Pagado que Rebaja</div>
+              <div className="text-xl font-black font-mono text-blue-900">{formatQuetzales(comprasKPIs.pagadasMonto)}</div>
+              <div className="text-[10px] text-blue-700 pt-1 border-t border-blue-100 font-semibold">{comprasKPIs.pagadasCount} compras pagadas ({comprasKPIs.totalMonto > 0 ? ((comprasKPIs.pagadasMonto / comprasKPIs.totalMonto) * 100).toFixed(1) : 0}%)</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Comprometido en Trámite</div>
+              <div className="text-xl font-black font-mono text-amber-900">{formatQuetzales(comprasKPIs.comprometidasMonto)}</div>
+              <div className="text-[10px] text-amber-700 pt-1 border-t border-amber-100 font-semibold">{comprasKPIs.comprometidasCount} en proceso ({comprasKPIs.totalMonto > 0 ? ((comprasKPIs.comprometidasMonto / comprasKPIs.totalMonto) * 100).toFixed(1) : 0}%)</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Renglones Vinculados</div>
+              <div className="text-xl font-black font-mono text-slate-900">{comprasKPIs.renglonesAfectados}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Partidas con asignación</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-purple-200 bg-purple-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-purple-800">Promedio por Solicitud</div>
+              <div className="text-xl font-black font-mono text-purple-950">
+                {formatQuetzales(comprasKPIs.totalCount > 0 ? comprasKPIs.totalMonto / comprasKPIs.totalCount : 0)}
+              </div>
+              <div className="text-[10px] text-purple-700 pt-1 border-t border-purple-100 font-semibold">Costo medio por trámite</div>
+            </div>
+          </div>
+
+          {/* Gráficas de Círculo para Compras */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                  Estado del Gasto de Compras
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {comprasEstadoChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={comprasEstadoChartData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={3} dataKey="value">
+                        {comprasEstadoChartData.map((entry, index) => (
+                          <Cell key={`comp-est-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Monto']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin datos de compras</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {comprasEstadoChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[100px]">{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatQuetzales(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-purple-600" />
+                  Top Renglones por Monto
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {comprasTopRenglonesChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={comprasTopRenglonesChartData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={3} dataKey="value">
+                        {comprasTopRenglonesChartData.map((entry, index) => (
+                          <Cell key={`comp-top-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Monto']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin compras asignadas</span>}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {comprasTopRenglonesChartData.slice(0, 4).map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600">{d.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-emerald-600" />
+                  Modalidades de Compra
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {comprasModalidadChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={comprasModalidadChartData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={3} dataKey="value">
+                        {comprasModalidadChartData.map((entry, index) => (
+                          <Cell key={`comp-mod-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [`${val} Compras`, 'Cantidad']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin datos</span>}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {comprasModalidadChartData.slice(0, 3).map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600">{d.name} ({d.value})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL ANALÍTICO Y KPI: VARIANTE 3 - COMPROMETIDO EN TRÁMITE */}
+      {activeVariant === 'comprometido_pendiente' && (
+        <div className="space-y-4 animate-in fade-in" id="analitico-kpi-comprometido">
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-amber-800/40 text-amber-200 border border-amber-700/50">
+                  <Clock className="w-5 h-5 text-amber-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  Panel Analítico y KPI — Adquisiciones Comprometidas en Trámite
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-800/60 text-amber-100 border border-amber-600/50">
+                  Afecta Saldo Proyectado
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-3xl">
+                Auditoría preventiva de montos reservados temporalmente que reducen el disponible proyectado previo al desembolso definitivo.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/20 text-xs font-semibold self-start sm:self-auto text-white">
+              <Calendar className="w-3.5 h-3.5 text-amber-300" />
+              <span>{comprometidoKPIs.totalCount} Compras en Trámite</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Total Comprometido</div>
+              <div className="text-xl font-black font-mono text-amber-950">{formatQuetzales(comprometidoKPIs.totalMonto)}</div>
+              <div className="text-[10px] text-amber-700 pt-1 border-t border-amber-100 font-semibold">{comprometidoKPIs.totalCount} trámites en curso</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Promedio por Solicitud</div>
+              <div className="text-xl font-black font-mono text-slate-900">{formatQuetzales(comprometidoKPIs.promedio)}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Reserva promedio</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Mayor Compromiso Individual</div>
+              <div className="text-xl font-black font-mono text-purple-950">{formatQuetzales(comprometidoKPIs.mayorMonto)}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Trámite más cuantioso</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Renglones Afectados</div>
+              <div className="text-xl font-black font-mono text-blue-900">{comprometidoKPIs.renglonesAfectados}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Partidas con reserva activa</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-amber-600" />
+                  Compromisos por Grupo Presupuestario
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {comprometidoGrupoChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={comprometidoGrupoChartData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
+                        {comprometidoGrupoChartData.map((entry, index) => (
+                          <Cell key={`comp-grp-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Comprometido']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin compromisos pendientes</span>}
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {comprometidoGrupoChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[90px]">{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatQuetzales(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-orange-600" />
+                  Top Renglones con Mayor Compromiso
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {comprometidoTopRenglonesChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={comprometidoTopRenglonesChartData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
+                        {comprometidoTopRenglonesChartData.map((entry, index) => (
+                          <Cell key={`comp-topr-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Comprometido']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin compromisos</span>}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {comprometidoTopRenglonesChartData.map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 font-mono font-semibold">{d.name}: {formatQuetzales(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL ANALÍTICO Y KPI: VARIANTE 4 - PAGADO / DEVENGADO */}
+      {activeVariant === 'pagado_devengado' && (
+        <div className="space-y-4 animate-in fade-in" id="analitico-kpi-pagado">
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-emerald-800/40 text-emerald-200 border border-emerald-700/50">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  Panel Analítico y KPI — Gasto Pagado y Devengado
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-800/60 text-emerald-100 border border-emerald-600/50">
+                  Rebaja Saldo Real
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-3xl">
+                Auditoría financiera de pagos liquidados que impactan y disminuyen de manera irreversible el saldo real disponible institucional.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/20 text-xs font-semibold self-start sm:self-auto text-white">
+              <Calendar className="w-3.5 h-3.5 text-emerald-300" />
+              <span>{pagadoKPIs.totalCount} Pagos Realizados</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Total Pagado Devengado</div>
+              <div className="text-xl font-black font-mono text-emerald-950">{formatQuetzales(pagadoKPIs.totalMonto)}</div>
+              <div className="text-[10px] text-emerald-700 pt-1 border-t border-emerald-100 font-semibold">{pagadoKPIs.totalCount} facturas canceladas</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Promedio de Pago</div>
+              <div className="text-xl font-black font-mono text-slate-900">{formatQuetzales(pagadoKPIs.promedio)}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Desembolso promedio</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Mayor Pago Registrado</div>
+              <div className="text-xl font-black font-mono text-blue-950">{formatQuetzales(pagadoKPIs.mayorPago)}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Mayor erogación</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Renglones Ejecutados</div>
+              <div className="text-xl font-black font-mono text-slate-900">{pagadoKPIs.renglonesAfectados}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Partidas con pago firme</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                  Pagos por Grupo Presupuestario
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {pagadoGrupoChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={pagadoGrupoChartData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
+                        {pagadoGrupoChartData.map((entry, index) => (
+                          <Cell key={`pag-grp-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Pagado Devengado']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin pagos registrados</span>}
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {pagadoGrupoChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[90px]">{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatQuetzales(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-emerald-600" />
+                  Top Renglones con Mayor Desembolso
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {pagadoTopRenglonesChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={pagadoTopRenglonesChartData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
+                        {pagadoTopRenglonesChartData.map((entry, index) => (
+                          <Cell key={`pag-topr-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Pagado Devengado']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin pagos</span>}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {pagadoTopRenglonesChartData.map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 font-mono font-semibold">{d.name}: {formatQuetzales(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL ANALÍTICO Y KPI: VARIANTE 5 - ALERTAS Y DÉFICIT */}
+      {activeVariant === 'alertas_deficit' && (
+        <div className="space-y-4 animate-in fade-in" id="analitico-kpi-alertas">
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-rose-800/40 text-rose-200 border border-rose-700/50">
+                  <AlertTriangle className="w-5 h-5 text-rose-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  Panel Analítico y KPI — Alertas Presupuestarias y Déficit
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-800/60 text-rose-100 border border-rose-600/50">
+                  Sobregiro Proyectado
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-3xl">
+                Detección oportuna de renglones en saldo rojo o con disponibilidad preventiva inferior al 15% que requieren modificaciones presupuestarias.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/20 text-xs font-semibold self-start sm:self-auto text-white">
+              <Calendar className="w-3.5 h-3.5 text-rose-300" />
+              <span>{alertasKPIs.totalAlertas} Renglones en Alerta</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-rose-200 bg-rose-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-rose-800">Partidas en Déficit Crítico</div>
+              <div className="text-xl font-black font-mono text-rose-950">{alertasKPIs.deficitCount} renglones</div>
+              <div className="text-[10px] text-rose-700 pt-1 border-t border-rose-100 font-semibold">Saldo disponible proyectado ≤ Q 0</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Alerta Preventiva (≤ 15%)</div>
+              <div className="text-xl font-black font-mono text-amber-950">{alertasKPIs.preventivaCount} renglones</div>
+              <div className="text-[10px] text-amber-700 pt-1 border-t border-amber-100 font-semibold">Riesgo inminente de agotamiento</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-rose-300 bg-rose-50/40 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-rose-900">Monto Déficit Total</div>
+              <div className="text-xl font-black font-mono text-rose-950">{formatQuetzales(alertasKPIs.deficitMonto)}</div>
+              <div className="text-[10px] text-rose-700 pt-1 border-t border-rose-200 font-semibold">Brecha presupuestaria acumulada</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Techo Total en Riesgo</div>
+              <div className="text-xl font-black font-mono text-slate-900">{formatQuetzales(alertasKPIs.techoAfectado)}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Presupuesto de partidas en alerta</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-rose-600" />
+                  Severidad de la Disponibilidad
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {alertasSeveridadChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={alertasSeveridadChartData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
+                        {alertasSeveridadChartData.map((entry, index) => (
+                          <Cell key={`alt-sev-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [`${val} Partidas`, 'Cantidad']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin datos</span>}
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {alertasSeveridadChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[90px]">{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-amber-600" />
+                  Alertas por Grupo Presupuestario
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {alertasGrupoChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={alertasGrupoChartData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
+                        {alertasGrupoChartData.map((entry, index) => (
+                          <Cell key={`alt-grp-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [`${val} Renglones en Alerta`, 'Alertas']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin alertas por grupo</span>}
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {alertasGrupoChartData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[90px]">{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{d.value} alertas</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL ANALÍTICO Y KPI: VARIANTE 6 - GASTO POR GRUPO Y RENGLÓN */}
+      {activeVariant === 'gasto_grupo_renglon' && (
+        <div className="space-y-4 animate-in fade-in" id="analitico-kpi-gasto-grupo">
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-blue-800/40 text-blue-200 border border-blue-700/50">
+                  <Layers className="w-5 h-5 text-blue-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  Panel Analítico y KPI — Gasto Consolidado por Grupo y Renglón
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-800/60 text-blue-100 border border-blue-600/50">
+                  Estructura Jerárquica
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-3xl">
+                Consolidación presupuestaria por objeto del gasto (Grupos 100, 200 y 300) con desglose de renglones y ratios de ejecución global.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/20 text-xs font-semibold self-start sm:self-auto text-white">
+              <Calendar className="w-3.5 h-3.5 text-blue-300" />
+              <span>{dataGastoGrupoRenglon.length} Grupos Institucionales</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">P. Vigente Consolidado</div>
+              <div className="text-xl font-black font-mono text-slate-950">{formatQuetzales(gastoGrupoKPIs.totalVigente)}</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">Suma total de techos</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-purple-200 bg-purple-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-purple-800">Gasto Total Real</div>
+              <div className="text-xl font-black font-mono text-purple-950">{formatQuetzales(gastoGrupoKPIs.totalGasto)}</div>
+              <div className="text-[10px] text-purple-700 pt-1 border-t border-purple-100 font-semibold">{gastoGrupoKPIs.ejecucionPct.toFixed(1)}% ejecutado global</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Saldo Disponible Consolidado</div>
+              <div className="text-xl font-black font-mono text-emerald-950">{formatQuetzales(gastoGrupoKPIs.totalDisponible)}</div>
+              <div className="text-[10px] text-emerald-700 pt-1 border-t border-emerald-100 font-semibold">Remanente presupuestario</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Grupos Analizados</div>
+              <div className="text-xl font-black font-mono text-blue-900">{dataGastoGrupoRenglon.length} Grupos</div>
+              <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">100 Servicios, 200 Mat., 300 Activos</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                  Presupuesto Vigente por Grupo
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {gastoGrupoVigenteChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={gastoGrupoVigenteChartData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={3} dataKey="value">
+                        {gastoGrupoVigenteChartData.map((entry, index) => (
+                          <Cell key={`gg-vig-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Vigente']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin datos</span>}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {gastoGrupoVigenteChartData.map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600">{d.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-purple-600" />
+                  Gasto Real por Grupo
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {gastoGrupoRealChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={gastoGrupoRealChartData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={3} dataKey="value">
+                        {gastoGrupoRealChartData.map((entry, index) => (
+                          <Cell key={`gg-real-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Gasto Total']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin gasto</span>}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {gastoGrupoRealChartData.map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600">{d.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-emerald-600" />
+                  Saldo Disponible por Grupo
+                </span>
+              </div>
+              <div className="h-36 relative flex items-center justify-center">
+                {gastoGrupoDisponibleChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie data={gastoGrupoDisponibleChartData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={3} dataKey="value">
+                        {gastoGrupoDisponibleChartData.map((entry, index) => (
+                          <Cell key={`gg-disp-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(val: any) => [formatQuetzales(Number(val)), 'Disponible']} contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : <span className="text-xs text-slate-400">Sin saldo disponible</span>}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {gastoGrupoDisponibleChartData.map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600">{d.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabla de Datos de la Variante */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -915,7 +2358,11 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
             </table>
           ) : activeVariant === 'matriz_consolidada' || activeVariant === 'alertas_deficit' ? (
             <table className="w-full text-xs text-left border-collapse">
-              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+              <thead className={
+                activeVariant === 'matriz_consolidada'
+                  ? 'bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white border-b-2 border-blue-800 text-[10px] font-black uppercase tracking-wider shadow-xs'
+                  : 'bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider'
+              }>
                 <tr>
                   <th className="px-3 py-2.5">Renglón</th>
                   <th className="px-3 py-2.5 min-w-[200px]">Nombre del Renglón</th>

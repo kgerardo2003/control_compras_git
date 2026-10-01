@@ -39,10 +39,9 @@ export const BoletaJudicaturasModal: React.FC<BoletaJudicaturasModalProps> = ({ 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto">
       <div className="relative w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden my-4 flex flex-col max-h-[92vh]">
         
-        {/* Barra de Acciones Superior (No Imprimible) */}
+        {/* Barra de Acciones Superior (No Imprimible) con Cintilla Azul Oscuro */}
         <div 
-          className="p-3 sm:p-4 text-white flex items-center justify-between print:hidden border-b border-indigo-950 shadow-xs"
-          style={{ backgroundColor: '#0A0A69' }}
+          className="p-3 sm:p-4 text-white flex items-center justify-between print:hidden border-b border-blue-900 shadow-sm bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900"
         >
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-white" />

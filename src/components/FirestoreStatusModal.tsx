@@ -13,7 +13,9 @@ import {
   Zap,
   Users,
   ShoppingBag,
-  BookOpen
+  BookOpen,
+  Download,
+  Upload
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -55,6 +57,8 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({ isOp
     judicaturas,
     syncWithCentralServer,
     forceSyncToProductionDatabase,
+    exportDatabaseBackup,
+    importDatabaseBackup,
     showToast 
   } = useApp();
 
@@ -62,6 +66,24 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({ isOp
   const [syncing, setSyncing] = useState(false);
   const [data, setData] = useState<FirestoreStatusData | null>(null);
   const [lastCheckTime, setLastCheckTime] = useState<string>('');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const content = evt.target?.result as string;
+      if (content) {
+        await importDatabaseBackup(content);
+        await fetchStatus();
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const fetchStatus = async () => {
     setLoading(true);
@@ -280,6 +302,45 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({ isOp
                 </p>
                 <span className="text-[10px] text-slate-400">Parametrizados</span>
               </div>
+            </div>
+          </div>
+
+          {/* Herramientas de Respaldo y Transferencia de Base de Datos */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-blue-600" />
+                Respaldo y Transferencia de Base de Datos
+              </span>
+              <span className="text-[10px] text-slate-500">Formato .json oficial</span>
+            </div>
+            <p className="text-[11px] text-slate-600 mb-3 leading-relaxed">
+              Descargue una copia completa de la base de datos o cargue un archivo JSON para sincronizar de inmediato todas las compras, judicaturas y configuraciones entre diferentes equipos o navegadores.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={exportDatabaseBackup}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-blue-600" />
+                Descargar Copia Completa (.json)
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                Cargar / Unificar Base de Datos (.json)
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handleImportFile}
+              />
             </div>
           </div>
 

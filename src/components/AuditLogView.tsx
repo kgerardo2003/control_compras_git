@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { AuditLogEntry } from '../types';
 import { formatDateTime, exportToCSV } from '../utils/formatters';
-import { subscribeToAuditLogs, forceFetchAuditLogsFromServer } from '../lib/firebase';
+import { forceFetchAuditLogsFromServer } from '../lib/firebase';
 
 const ACTION_COLORS: Record<string, { bg: string; text: string }> = {
   'LOGIN': { bg: 'bg-blue-100', text: 'text-blue-800' },
@@ -47,29 +47,10 @@ export const AuditLogView: React.FC = () => {
   useEffect(() => {
     if (auditLogs && auditLogs.length > 0) {
       setLiveLogs(auditLogs);
+      setSyncStatus('live');
+      setLastSyncTime(new Date());
     }
   }, [auditLogs]);
-
-  // Listener dedicado en tiempo real a la colección de auditoría
-  useEffect(() => {
-    const unsubscribe = subscribeToAuditLogs(
-      (items, isFromCache) => {
-        if (items && items.length > 0) {
-          setLiveLogs(items);
-        }
-        setSyncStatus(isFromCache ? 'cache' : 'live');
-        setLastSyncTime(new Date());
-      },
-      (error) => {
-        console.warn("AuditLogView Firestore listener error:", error);
-        setSyncStatus('offline');
-      }
-    );
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
 
   // Forzar consulta al servidor evitando cualquier caché local
   const handleForceSync = async () => {

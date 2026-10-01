@@ -144,10 +144,9 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto">
       <div className="relative w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-4 max-h-[94vh]">
         
-        {/* Encabezado del Modal con Estilo Institucional #0A0A69 */}
+        {/* Encabezado del Modal con Cintilla Azul Oscuro Institucional */}
         <div 
-          className="p-4 text-white flex items-center justify-between border-b border-indigo-900 shadow-xs shrink-0"
-          style={{ backgroundColor: '#0A0A69' }}
+          className="p-4 text-white flex items-center justify-between border-b border-blue-900 shadow-sm shrink-0 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900"
         >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-white/15 text-white border border-white/20 shadow-inner">

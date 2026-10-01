@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useApp } from '../../context/AppContext';
 import { 
   OFFICIAL_BUDGET_GROUPS, 
@@ -10,6 +11,7 @@ import {
 } from '../../data/budgetStandardCatalog';
 import { BudgetLineItem } from '../../types';
 import { formatQuetzales } from '../../utils/formatters';
+import { ImportOfficialCatalogModal } from './ImportOfficialCatalogModal';
 import { 
   BookOpen, 
   Layers, 
@@ -26,7 +28,10 @@ import {
   ChevronRight,
   Plus,
   Zap,
-  Building2
+  Building2,
+  Download,
+  UploadCloud,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface BudgetOfficialCatalogViewProps {
@@ -46,6 +51,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
   const [searchTerm, setSearchTerm] = useState('');
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [bulkSuccessMsg, setBulkSuccessMsg] = useState<string | null>(null);
+  const [isImportCatalogModalOpen, setIsImportCatalogModalOpen] = useState(false);
 
   // Map of currently registered budget lines by renglon code
   const registeredLinesMap = new Map<string, BudgetLineItem>();
@@ -75,6 +81,83 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
     ...OFFICIAL_RENGLONES.map(r => ({ ...r, isOfficial: true })),
     ...customLines
   ];
+
+  // Exportar Catálogo Oficial a Excel
+  const handleExportCatalogExcel = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const exportData = combinedCatalog.map(item => {
+      const line = registeredLinesMap.get(item.renglon);
+      return {
+        'Grupo Presupuestario': getGrupoFullName(item.grupo),
+        'Código Renglón': item.renglon,
+        'Nombre del Renglón': item.nombreRenglon,
+        'Descripción / Uso Institucional': item.descripcionDefecto || 'Renglón institucional',
+        'Tipo Catálogo': item.isOfficial ? 'Oficial Estándar GIT (39)' : 'Institucional Registrado',
+        'Estado en Matriz': line ? 'Activo en Matriz Presupuestaria' : 'Pendiente de Activar',
+        'Presupuesto Inicial (Q)': line ? line.presupuestoInicial : 0,
+        'Modificaciones (+/-) (Q)': line ? line.modificacionesAprobadas : 0,
+        'Presupuesto Vigente (Q)': line ? line.presupuestoVigente : 0,
+        'Pagado que Rebaja (Q)': line ? line.pagadoQueRebaja : 0,
+        'Disponible Real (Q)': line ? line.disponibleReal : 0,
+        'Comprometido Pendiente (Q)': line ? line.comprometidoPendiente : 0,
+        'Disponible Proyectado (Q)': line ? line.disponibleProyectado : 0,
+        '% Usado/Comprometido': line ? `${line.porcentajeUsadoComprometido}%` : '0%',
+        'Estatus Disponibilidad': line ? line.estatusDisponibilidad : 'Sin Presupuesto'
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Catálogo Oficial');
+    XLSX.writeFile(wb, `Catalogo_Renglones_Oficiales_GIT_OJ_${today}.xlsx`);
+
+    setBulkSuccessMsg('Catálogo de renglones oficiales exportado exitosamente a Excel.');
+    setTimeout(() => setBulkSuccessMsg(null), 3500);
+  };
+
+  // Exportar Catálogo Oficial a CSV
+  const handleExportCatalogCSV = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const headers = [
+      'Grupo Presupuestario',
+      'Código Renglón',
+      'Nombre del Renglón',
+      'Descripción / Uso Institucional',
+      'Tipo Catálogo',
+      'Estado en Matriz',
+      'Presupuesto Vigente',
+      'Disponible Proyectado',
+      'Estatus'
+    ];
+
+    const rows = combinedCatalog.map(item => {
+      const line = registeredLinesMap.get(item.renglon);
+      return [
+        `"${getGrupoFullName(item.grupo)}"`,
+        `"${item.renglon}"`,
+        `"${item.nombreRenglon.replace(/"/g, '""')}"`,
+        `"${(item.descripcionDefecto || '').replace(/"/g, '""')}"`,
+        `"${item.isOfficial ? 'Oficial 39' : 'Institucional'}"`,
+        `"${line ? 'Activo en Matriz' : 'Pendiente'}"`,
+        line ? line.presupuestoVigente : 0,
+        line ? line.disponibleProyectado : 0,
+        `"${line ? line.estatusDisponibilidad : 'Sin Presupuesto'}"`
+      ].join(',');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Catalogo_Renglones_Oficiales_GIT_OJ_${today}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setBulkSuccessMsg('Catálogo exportado exitosamente en formato CSV.');
+    setTimeout(() => setBulkSuccessMsg(null), 3500);
+  };
 
   // Filter renglones
   const filteredRenglones = combinedCatalog.filter(item => {
@@ -183,7 +266,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
               id="btn-agregar-renglon-catalogo-banner"
               type="button"
               onClick={() => onOpenLineModal(null, undefined)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
               title="Registrar manualmente un nuevo renglón presupuestario en la matriz y el catálogo"
             >
               <PlusCircle className="w-4 h-4 text-emerald-100" />
@@ -193,13 +276,51 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
 
           {canEditBudget && (
             <button
+              id="btn-importar-catalogo-renglones"
+              type="button"
+              onClick={() => setIsImportCatalogModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+              title="Importar catálogo de renglones desde archivo Excel (.xlsx) o CSV"
+            >
+              <UploadCloud className="w-4 h-4 text-purple-200" />
+              <span>Importar Catálogo</span>
+            </button>
+          )}
+
+          {/* Exportar Catálogo Oficial */}
+          <div className="flex items-center gap-1">
+            <button
+              id="btn-exportar-catalogo-excel"
+              type="button"
+              onClick={handleExportCatalogExcel}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+              title="Descargar catálogo oficial de renglones en Microsoft Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+              <span>Exportar Excel</span>
+            </button>
+
+            <button
+              id="btn-exportar-catalogo-csv"
+              type="button"
+              onClick={handleExportCatalogCSV}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer"
+              title="Descargar catálogo oficial en formato CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-400" />
+              <span>CSV</span>
+            </button>
+          </div>
+
+          {canEditBudget && (
+            <button
               type="button"
               onClick={handleBulkAddAllMissing}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
               title="Asegura que todos los renglones del catálogo oficial aparezcan en la Matriz Presupuestaria"
             >
               <Sparkles className="w-4 h-4 text-blue-200" />
-              <span>Cargar 39 Renglones a Matriz</span>
+              <span>Cargar 39 Renglones</span>
             </button>
           )}
 
@@ -209,7 +330,7 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer"
           >
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>{showRulesModal ? 'Ocultar Normativa' : 'Ver Normas y Modalidades'}</span>
+            <span>{showRulesModal ? 'Ocultar Normas' : 'Normas Institucionales'}</span>
           </button>
         </div>
       </div>
@@ -591,6 +712,16 @@ export const BudgetOfficialCatalogView: React.FC<BudgetOfficialCatalogViewProps>
           </div>
         )}
       </div>
+
+      {/* Modal de Importación de Catálogo Oficial */}
+      <ImportOfficialCatalogModal
+        isOpen={isImportCatalogModalOpen}
+        onClose={() => setIsImportCatalogModalOpen(false)}
+        onSuccess={(count) => {
+          setBulkSuccessMsg(`Se importaron exitosamente ${count} renglones al catálogo y matriz presupuestaria.`);
+          setTimeout(() => setBulkSuccessMsg(null), 4000);
+        }}
+      />
     </div>
   );
 };

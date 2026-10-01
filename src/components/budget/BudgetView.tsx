@@ -14,6 +14,10 @@ import { BudgetLineModal } from './BudgetLineModal';
 import { BudgetOfficialCatalogView } from './BudgetOfficialCatalogView';
 import { BudgetStatsCharts } from './BudgetStatsCharts';
 import { BudgetReportsView } from './BudgetReportsView';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { OJ_LOGO_DATA_URI } from '../../utils/ojLogoAsset';
+import { formatDateTime } from '../../utils/formatters';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -29,7 +33,7 @@ import {
   AlertTriangle, 
   XCircle, 
   Layers, 
-  PieChart, 
+  PieChart as PieChartIcon, 
   ShoppingBag, 
   Edit, 
   Trash2, 
@@ -41,8 +45,16 @@ import {
   Eye,
   RefreshCw,
   BookOpen,
-  Calculator
+  Calculator,
+  Columns
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip
+} from 'recharts';
 
 type BudgetSubTab = 'matriz' | 'catalogoOficial' | 'modificaciones' | 'estadisticas' | 'compras' | 'reportes';
 
@@ -174,6 +186,216 @@ export const BudgetView: React.FC = () => {
       totalComprometido
     };
   }, [purchases]);
+
+  // Datos de Gráficas de Círculo para Adquisiciones Vinculadas (F56-e)
+  const comprasEstadoDonutData = useMemo(() => {
+    return [
+      { name: 'Pagado que Rebaja', value: purchaseStats.totalPagado, color: '#2563eb' },
+      { name: 'Comprometido en Trámite', value: purchaseStats.totalComprometido, color: '#f59e0b' }
+    ].filter(d => d.value > 0);
+  }, [purchaseStats]);
+
+  const comprasRenglonesDonutData = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredPurchases.forEach(p => {
+      const r = p.renglonPresupuestario ? `R-${p.renglonPresupuestario}` : 'Sin Renglón';
+      map[r] = (map[r] || 0) + (Number(p.monto) || 0);
+    });
+    const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
+    const top4 = sorted.slice(0, 4);
+    const others = sorted.slice(4).reduce((sum, item) => sum + item[1], 0);
+    const palette = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981'];
+    const result = top4.map((item, idx) => ({
+      name: item[0],
+      value: item[1],
+      color: palette[idx % palette.length]
+    }));
+    if (others > 0) {
+      result.push({ name: 'Otros', value: others, color: '#94a3b8' });
+    }
+    return result;
+  }, [filteredPurchases]);
+
+  // Modo de visualización de columnas para Adquisiciones Vinculadas (F56-e)
+  // 'ajustado': columnas compactas y optimizadas para visión completa sin scroll horizontal excesivo
+  // 'amplio': columnas expandidas tradicionales
+  const [comprasColumnMode, setComprasColumnMode] = useState<'ajustado' | 'amplio'>('ajustado');
+
+  // Generador oficial de reporte PDF para Adquisiciones Vinculadas (F56-e) con cintilla azul oscuro institucional
+  const handleExportAdquisicionesPDF = () => {
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'letter'
+    });
+
+    const now = new Date();
+    const fechaEmision = formatDateTime(now.toISOString());
+
+    try {
+      // Cintilla del encabezado de color azul oscuro institucional (#0f172a / RGB 15, 23, 42)
+      doc.setFillColor(15, 23, 42);
+      doc.rect(14, 6, 251, 23, 'F');
+      doc.setFillColor(30, 64, 175); // Borde azul institucional más destacado (#1e40af)
+      doc.rect(14, 6, 3.5, 23, 'F');
+
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(20, 7.5, 19, 19, 2, 2, 'F');
+      doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 21, 8.5, 17, 17);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 43, 12);
+
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(226, 232, 240);
+      doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • CONTROL PRESUPUESTARIO', 43, 17);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      doc.text('REPORTE OFICIAL DE ADQUISICIONES INSTITUCIONALES VINCULADAS (F56-E Y NOG)', 43, 23);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(226, 232, 240);
+      doc.text(`Fecha Emisión: ${fechaEmision} | Ejercicio: 2026`, 260, 12, { align: 'right' });
+      doc.text(`Total: ${filteredPurchases.length} Adquisiciones | Filtro: ${purchaseFilterRenglon === 'todos' ? 'Todos los Renglones' : `R-${purchaseFilterRenglon}`}`, 260, 17, { align: 'right' });
+    } catch (e) {
+      console.warn('Error al generar membrete PDF', e);
+      doc.setFillColor(15, 23, 42);
+      doc.rect(14, 6, 251, 23, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 14, 12);
+      doc.setFontSize(9);
+      doc.text('REPORTE DE ADQUISICIONES VINCULADAS AL PRESUPUESTO (F56-E)', 14, 20);
+    }
+
+    // Resumen Ejecutivo de Totales
+    const totalMontoCalc = filteredPurchases.reduce((s, p) => s + (Number(p.monto) || 0), 0);
+    autoTable(doc, {
+      startY: 32,
+      head: [['TOTAL ADQUISICIONES', 'MONTO TOTAL (Q)', 'COMPROMETIDO EN TRÁMITE', 'PAGADO QUE REBAJA SALDO REAL']],
+      body: [[
+        `${filteredPurchases.length} trámites F56`,
+        `Q ${totalMontoCalc.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${purchaseStats.totalComprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${purchaseStats.comprometidasCount} compras)`,
+        `Q ${purchaseStats.totalPagado.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${purchaseStats.pagadasCount} compras)`
+      ]],
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 23, 42], // Azul oscuro institucional
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center',
+        fillColor: [248, 250, 252],
+        textColor: [15, 23, 42]
+      },
+      margin: { left: 14, right: 14 }
+    });
+
+    const startTableY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 3.5 : 44;
+
+    const head = [[
+      'No. Solicitud F56',
+      'NOG Guatecompras',
+      'Descripción de la Adquisición',
+      'Renglón',
+      'Monto Estimado (Q)',
+      'Estado del Gasto',
+      'Impacto en Matriz',
+      'Proveedor Adjudicado'
+    ]];
+
+    const body = filteredPurchases.map(p => {
+      const isPaid = p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada';
+      return [
+        p.f56e || p.f56 || p.numeroSolicitud || 'S/N',
+        p.nog || p.nogGuatecompras || 'S/N',
+        (p.descripcion || '').slice(0, 48),
+        `R-${p.renglonPresupuestario || '158'}`,
+        Number(p.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        isPaid ? 'Pagado que Rebaja' : 'Comprometido en Trámite',
+        isPaid ? 'Resta Disponible Real' : 'Resta Proyectado',
+        (p.proveedorAdjudicado || 'No Adjudicado').slice(0, 28)
+      ];
+    });
+
+    const foot = [[
+      'TOTAL GENERAL',
+      `${filteredPurchases.length} Compras`,
+      'Consolidado institucional F56-e',
+      '-',
+      totalMontoCalc.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+      '-',
+      '-',
+      '-'
+    ]];
+
+    autoTable(doc, {
+      startY: startTableY,
+      head,
+      body,
+      foot,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 23, 42], // Azul oscuro institucional
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold'
+      },
+      footStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [15, 23, 42],
+        fontSize: 7.5,
+        fontStyle: 'bold'
+      },
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.2
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      }
+    });
+
+    // Firmas Institucionales de Responsabilidad
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(100);
+      doc.text(`Página ${i} de ${pageCount} • Sistema Integrado de Control de Adquisiciones y Presupuesto GIT - Organismo Judicial`, 14, 205);
+
+      if (i === pageCount) {
+        doc.line(20, 185, 80, 185);
+        doc.text('Elaborado: Analista Financiero GIT', 20, 189);
+
+        doc.line(110, 185, 170, 185);
+        doc.text('Revisado: Encargado de Compras IT', 110, 189);
+
+        doc.line(200, 185, 260, 185);
+        doc.text('Autorizado: Gerente de Informática', 200, 189);
+      }
+    }
+
+    doc.save(`Reporte_Adquisiciones_Vinculadas_F56_OJ_${now.toISOString().slice(0, 10)}.pdf`);
+    showToast({
+      title: 'Reporte PDF Generado',
+      message: 'Se descargó exitosamente el reporte oficial de adquisiciones vinculadas en PDF con cintilla azul oscuro institucional.',
+      type: 'success'
+    });
+  };
 
   // Totales consolidados de la matriz institucional completa (excluyendo renglones referenciales de Gerencia Administrativa)
   const totals = useMemo(() => {
@@ -510,7 +732,7 @@ export const BudgetView: React.FC = () => {
               : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <PieChart className="w-4 h-4" />
+          <PieChartIcon className="w-4 h-4" />
           <span>Resumen y Estadísticas por Renglón</span>
         </button>
 
@@ -1550,33 +1772,49 @@ export const BudgetView: React.FC = () => {
       {subTab === 'compras' && (
         <div className="space-y-5">
           
-          {/* Encabezado y Accesos Directos */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+          {/* Encabezado y Accesos Directos con Cintilla Azul Oscuro */}
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-5 rounded-2xl border border-blue-900 shadow-sm flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-slate-900">
+                <span className="p-1.5 rounded-lg bg-blue-800/40 text-blue-200 border border-blue-700/50">
+                  <ShoppingBag className="w-5 h-5 text-blue-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
                   Adquisiciones Institucionales F56-e y Control Presupuestario
                 </h3>
-                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 font-bold text-xs">
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-800/60 text-blue-100 border border-blue-600/50 font-bold text-xs">
                   {purchases.length} Registros
                 </span>
               </div>
-              <p className="text-xs text-slate-600 mt-1 max-w-3xl">
+              <p className="text-xs text-slate-300 mt-1 max-w-3xl">
                 En esta sección puede asignar <strong>manualmente</strong> el renglón presupuestario a cada adquisición. 
                 Los montos asignados afectan inmediatamente la <strong>Matriz de Disponibilidad</strong> como <strong>Comprometido Pendiente</strong> y disminuyen el <strong>Disponible Proyectado</strong>. 
                 Al presionar <strong>"Marcar como Pagado"</strong>, el monto se traslada a <strong>"Pagado que Rebaja"</strong>, restándose del <strong>Disponible Real</strong>.
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('compras')}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-            >
-              <ShoppingBag className="w-4 h-4 text-blue-300" />
-              <span>Ir al Panel de Adquisiciones</span>
-              <ArrowUpRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-generar-pdf-adquisiciones-banner"
+                type="button"
+                onClick={handleExportAdquisicionesPDF}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+                title="Generar dictamen oficial en PDF de adquisiciones vinculadas con membrete y firmas institucionales"
+              >
+                <FileText className="w-4 h-4 text-blue-900" />
+                <span>Generar Reporte PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('compras')}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-900/80 hover:bg-blue-900 text-white text-xs font-bold transition-all shadow-xs cursor-pointer border border-blue-700/50"
+              >
+                <ShoppingBag className="w-4 h-4 text-blue-200" />
+                <span>Ir al Panel de Adquisiciones</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Tarjetas de Resumen de Impacto de Adquisiciones */}
@@ -1621,18 +1859,116 @@ export const BudgetView: React.FC = () => {
             </div>
           </div>
 
-          {/* Filtros de Adquisiciones */}
+          {/* Gráficas de Círculo para Adquisiciones Vinculadas (F56-e) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                  Proporción del Gasto (Pagado vs Comprometido)
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                  {formatCurrency(purchaseStats.totalPagado + purchaseStats.totalComprometido)}
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {comprasEstadoDonutData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={comprasEstadoDonutData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={35}
+                        outerRadius={55}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {comprasEstadoDonutData.map((entry, index) => (
+                          <Cell key={`donut-est-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any) => [formatCurrency(Number(val)), 'Monto']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span className="text-xs text-slate-400">Sin datos de compras</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {comprasEstadoDonutData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[120px]">{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatCurrency(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-purple-600" />
+                  Concentración de Compras por Renglón
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                  {filteredPurchases.length} Adquisiciones
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {comprasRenglonesDonutData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={comprasRenglonesDonutData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={35}
+                        outerRadius={55}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {comprasRenglonesDonutData.map((entry, index) => (
+                          <Cell key={`donut-reng-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any) => [formatCurrency(Number(val)), 'Monto']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span className="text-xs text-slate-400">Sin compras asignadas</span>
+                )}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {comprasRenglonesDonutData.map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600">{d.name} ({formatCurrency(d.value)})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros de Adquisiciones y Acciones de Visualización */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
               {/* Buscador de compras */}
-              <div className="relative flex-1 min-w-[240px]">
+              <div className="relative flex-1 min-w-[220px]">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Buscar por F56, NOG Guatecompras, descripción o proveedor..."
                   value={purchaseSearchTerm}
                   onChange={(e) => setPurchaseSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:bg-white focus:outline-none"
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none"
                 />
               </div>
 
@@ -1642,7 +1978,7 @@ export const BudgetView: React.FC = () => {
                 <select
                   value={purchaseFilterRenglon}
                   onChange={(e) => setPurchaseFilterRenglon(e.target.value)}
-                  className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 focus:bg-white focus:outline-none"
+                  className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none cursor-pointer"
                 >
                   <option value="todos">Todos los Renglones</option>
                   {budgetAvailability.map((line) => (
@@ -1657,7 +1993,7 @@ export const BudgetView: React.FC = () => {
               <select
                 value={purchaseFilterEstado}
                 onChange={(e) => setPurchaseFilterEstado(e.target.value as any)}
-                className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 focus:bg-white focus:outline-none"
+                className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none cursor-pointer"
               >
                 <option value="todos">Todos los Estados</option>
                 <option value="comprometido">Solo Comprometido Pendiente</option>
@@ -1665,31 +2001,67 @@ export const BudgetView: React.FC = () => {
               </select>
             </div>
 
-            <div className="text-xs text-slate-500 font-medium">
-              Mostrando <strong>{filteredPurchases.length}</strong> de {purchases.length} adquisiciones
+            {/* Selector de Modo de Columnas y Generación de PDF */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setComprasColumnMode(comprasColumnMode === 'ajustado' ? 'amplio' : 'ajustado')}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-300 transition-colors cursor-pointer"
+                title={comprasColumnMode === 'ajustado' ? 'Cambiar a Columnas Amplias tradicionales' : 'Ajustar columnas para visión completa en pantalla sin scroll excesivo'}
+              >
+                <Columns className="w-3.5 h-3.5 text-sky-600" />
+                <span>{comprasColumnMode === 'ajustado' ? 'Visión Completa Ajustada' : 'Columnas Amplias'}</span>
+              </button>
+
+              <button
+                id="btn-generar-pdf-adquisiciones-toolbar"
+                type="button"
+                onClick={handleExportAdquisicionesPDF}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                title="Descargar reporte oficial de adquisiciones vinculadas en PDF con membrete institucional"
+              >
+                <FileText className="w-3.5 h-3.5 text-sky-100" />
+                <span>Generar PDF</span>
+              </button>
+
+              <div className="text-xs text-slate-500 font-medium hidden sm:block pl-1">
+                <strong>{filteredPurchases.length}</strong> de {purchases.length}
+              </div>
             </div>
           </div>
 
-          {/* Tabla de Adquisiciones con Asignación Manual */}
+          {/* Tabla de Adquisiciones con Asignación Manual y Cintilla Azul Oscuro */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-800 text-white font-bold border-b border-slate-700 uppercase text-[10px] tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3.5 whitespace-nowrap">No. Solicitud F56</th>
-                    <th className="px-3 py-3.5 whitespace-nowrap">NOG Guatecompras</th>
-                    <th className="px-4 py-3.5 min-w-[220px]">Descripción de la Adquisición</th>
-                    <th className="px-3 py-3.5 min-w-[240px]">Renglón Asignado (Manual)</th>
-                    <th className="px-3 py-3.5 text-right whitespace-nowrap">Monto Estimado</th>
-                    <th className="px-3 py-3.5 text-center whitespace-nowrap">Estado del Gasto</th>
-                    <th className="px-3 py-3.5 text-center min-w-[190px]">Impacto en Matriz</th>
-                    <th className="px-3 py-3.5 text-center whitespace-nowrap">Acción Presupuestaria</th>
-                  </tr>
+                {/* Cintilla del Encabezado en Color Azul Oscuro */}
+                <thead className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-blue-800 shadow-xs">
+                  {comprasColumnMode === 'ajustado' ? (
+                    <tr>
+                      <th className="px-3.5 py-3 w-40 whitespace-nowrap">No. F56-e / NOG</th>
+                      <th className="px-3.5 py-3 min-w-[180px]">Descripción de la Adquisición</th>
+                      <th className="px-3 py-3 w-56">Renglón Asignado</th>
+                      <th className="px-3 py-3 text-right w-28 whitespace-nowrap">Monto Estimado</th>
+                      <th className="px-3 py-3 text-center w-44 whitespace-nowrap">Estado / Impacto en Matriz</th>
+                      <th className="px-3 py-3 text-center w-36 whitespace-nowrap">Acción Presupuestaria</th>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th className="px-4 py-3.5 whitespace-nowrap">No. Solicitud F56</th>
+                      <th className="px-3 py-3.5 whitespace-nowrap">NOG Guatecompras</th>
+                      <th className="px-4 py-3.5 min-w-[220px]">Descripción de la Adquisición</th>
+                      <th className="px-3 py-3.5 min-w-[240px]">Renglón Asignado (Manual)</th>
+                      <th className="px-3 py-3.5 text-right whitespace-nowrap">Monto Estimado</th>
+                      <th className="px-3 py-3.5 text-center whitespace-nowrap">Estado del Gasto</th>
+                      <th className="px-3 py-3.5 text-center min-w-[190px]">Impacto en Matriz</th>
+                      <th className="px-3 py-3.5 text-center whitespace-nowrap">Acción Presupuestaria</th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredPurchases.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
+                      <td colSpan={comprasColumnMode === 'ajustado' ? 6 : 8} className="px-6 py-12 text-center text-slate-400">
                         <ShoppingBag className="w-10 h-10 mx-auto mb-2 text-slate-300 stroke-1" />
                         <p className="font-semibold text-slate-600">No se encontraron adquisiciones con los filtros aplicados</p>
                         <p className="text-xs mt-1">Intente cambiar el término de búsqueda o seleccione otro renglón.</p>
@@ -1703,17 +2075,143 @@ export const BudgetView: React.FC = () => {
                       const currentRenglon = purchase.renglonPresupuestario || '';
                       const matchingLine = budgetAvailability.find(l => l.renglonPresupuestario === currentRenglon);
 
+                      if (comprasColumnMode === 'ajustado') {
+                        // Modo Ajustado para Visión Completa en Pantalla
+                        return (
+                          <tr key={purchase.id} className="hover:bg-sky-50/30 transition-colors">
+                            {/* Col 1: No. F56-e y NOG juntos sin perder legibilidad */}
+                            <td className="px-3.5 py-2.5 whitespace-nowrap align-top">
+                              <div className="space-y-1">
+                                <div className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block text-[11px]">
+                                  {f56Num}
+                                </div>
+                                <div>
+                                  {nogNum !== 'S/N' && nogNum !== 'N/A' ? (
+                                    <span className="font-mono text-purple-900 bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200 text-[10px] inline-block font-semibold">
+                                      NOG: {nogNum}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 italic text-[10px]">Sin NOG</span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Col 2: Descripción y Proveedor */}
+                            <td className="px-3.5 py-2.5 align-top">
+                              <div className="font-medium text-slate-900 line-clamp-2 text-xs" title={purchase.descripcion}>
+                                {purchase.descripcion}
+                              </div>
+                              {purchase.proveedorAdjudicado && (
+                                <div className="text-[10px] text-slate-500 mt-0.5 truncate" title={purchase.proveedorAdjudicado}>
+                                  Prov: <span className="font-semibold text-slate-700">{purchase.proveedorAdjudicado}</span>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Col 3: Asignación de Renglón */}
+                            <td className="px-3 py-2.5 align-top">
+                              <div className="space-y-1">
+                                <select
+                                  id={`select-renglon-adq-${purchase.id}`}
+                                  value={currentRenglon}
+                                  onChange={(e) => handleAssignRenglon(purchase.id, e.target.value)}
+                                  className={`w-full text-xs font-semibold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:outline-none focus:ring-2 ${
+                                    currentRenglon 
+                                      ? 'bg-blue-50/70 border-blue-300 text-blue-950 focus:ring-blue-500' 
+                                      : 'bg-red-50 border-red-300 text-red-900 focus:ring-red-500'
+                                  }`}
+                                >
+                                  <option value="">-- Asignar Renglón --</option>
+                                  {budgetAvailability.map((line) => (
+                                    <option key={line.id} value={line.renglonPresupuestario}>
+                                      R-{line.renglonPresupuestario} • {line.nombreRenglon.slice(0, 32)}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                {matchingLine ? (
+                                  <div className="text-[10px] text-slate-500 flex items-center justify-between px-0.5">
+                                    <span>Saldo Proy:</span>
+                                    <strong className={`font-mono ${matchingLine.disponibleProyectado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                      {formatCurrency(matchingLine.disponibleProyectado)}
+                                    </strong>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-red-500 font-semibold px-0.5">
+                                    ⚠️ Sin renglón
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Col 4: Monto Estimado */}
+                            <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap align-top">
+                              {formatCurrency(purchase.monto)}
+                            </td>
+
+                            {/* Col 5: Estado del Gasto e Impacto en Matriz combinados para legibilidad */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap align-top">
+                              <div className="space-y-1">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isPaid 
+                                    ? 'bg-blue-100 text-blue-900 border border-blue-200' 
+                                    : 'bg-amber-100 text-amber-900 border border-amber-200'
+                                }`}>
+                                  {isPaid ? <CheckCircle2 className="w-3 h-3 text-blue-700" /> : <AlertTriangle className="w-3 h-3 text-amber-700" />}
+                                  <span>{isPaid ? 'Pagado que Rebaja' : 'Comprometido Trámite'}</span>
+                                </span>
+                                <div>
+                                  <span className={`inline-block text-[9px] font-semibold px-2 py-0.5 rounded ${
+                                    isPaid ? 'bg-blue-50 text-blue-700 border border-blue-200/60' : 'bg-amber-50 text-amber-700 border border-amber-200/60'
+                                  }`}>
+                                    {isPaid ? 'Resta Disponible Real' : 'Resta Proyectado'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Col 6: Acción Presupuestaria */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap align-top">
+                              <button
+                                type="button"
+                                id={`btn-toggle-payment-${purchase.id}`}
+                                onClick={() => togglePurchasePaymentState(purchase.id)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                                  isPaid 
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300' 
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                }`}
+                              >
+                                {isPaid ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    <span>Revertir</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Marcar Pagado</span>
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      // Modo Amplio Tradicional (8 Columnas)
                       return (
                         <tr key={purchase.id} className="hover:bg-blue-50/30 transition-colors">
                           
-                          {/* No. Solicitud F56 extraído del panel de control de adquisiciones */}
+                          {/* No. Solicitud F56 */}
                           <td className="px-4 py-3 font-mono font-bold text-blue-950 whitespace-nowrap">
                             <span className="px-2 py-1 bg-slate-100 rounded border border-slate-200">
                               {f56Num}
                             </span>
                           </td>
 
-                          {/* NOG Guatecompras extraído del panel de control de adquisiciones */}
+                          {/* NOG Guatecompras */}
                           <td className="px-3 py-3 font-mono text-slate-900 font-semibold whitespace-nowrap">
                             {nogNum !== 'S/N' && nogNum !== 'N/A' ? (
                               <span className="px-2 py-1 bg-purple-50 text-purple-900 rounded border border-purple-200">
@@ -1736,7 +2234,7 @@ export const BudgetView: React.FC = () => {
                             )}
                           </td>
 
-                          {/* Asignación Manual de Renglón con Lista Desplegable */}
+                          {/* Asignación Manual de Renglón */}
                           <td className="px-3 py-3">
                             <div className="space-y-1">
                               <select
@@ -1813,7 +2311,7 @@ export const BudgetView: React.FC = () => {
                             )}
                           </td>
 
-                          {/* Alternar Estado: Marcar como Pagado / Pasar a Comprometido */}
+                          {/* Alternar Estado */}
                           <td className="px-3 py-3 text-center whitespace-nowrap">
                             <button
                               type="button"

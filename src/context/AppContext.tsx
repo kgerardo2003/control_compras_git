@@ -242,8 +242,10 @@ interface AppContextType {
   addToast: (toast: Omit<ToastItem, 'id'>) => string;
   dismissToast: (id: string) => void;
 
-  // Reseteo
+  // Reseteo y Respaldo de Base de Datos
   resetToDemoData: () => void;
+  exportDatabaseBackup: () => void;
+  importDatabaseBackup: (jsonContent: string) => Promise<{ success: boolean; message: string }>;
 
   // Configuración de Correo Electrónico (Gmail)
   gmailConfig: GmailConfig;
@@ -1027,12 +1029,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // Referencia a canal broadcast para sincronización inmediata entre pestañas
+  const stationBroadcastRef = useRef<BroadcastChannel | null>(null);
+  const notifyStationMutation = useCallback(() => {
+    try {
+      if (stationBroadcastRef.current) {
+        stationBroadcastRef.current.postMessage({ type: 'station_mutation', timestamp: Date.now() });
+      }
+    } catch (_) {}
+  }, []);
+
   // Sincronización reactiva multi-estación:
-  // 1. Canal reactivo SSE para notificación instantánea (<50ms) entre navegadores/dispositivos
-  // 2. Sondeo de contingencia cada 3s y reconciliación al recuperar foco
+  // 1. Canal BroadcastChannel para sincronización instantánea (<5ms) entre pestañas
+  // 2. Canal reactivo SSE para notificación instantánea (<50ms) entre navegadores/dispositivos
+  // 3. Sondeo de contingencia cada 3s y reconciliación al recuperar foco
   useEffect(() => {
     let isMounted = true;
     syncWithCentralServer(true);
+
+    // Canal BroadcastChannel
+    let broadcastChan: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        broadcastChan = new BroadcastChannel('oj_control_compras_station_sync');
+        broadcastChan.onmessage = (event) => {
+          if (event.data?.type === 'station_mutation' && isMounted) {
+            syncWithCentralServer(true);
+          }
+        };
+        stationBroadcastRef.current = broadcastChan;
+      }
+    } catch (_) {}
 
     // Conexión Server-Sent Events para reactividad instantánea
     let eventSource: EventSource | null = null;
@@ -1086,6 +1113,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => {
       isMounted = false;
+      if (broadcastChan) {
+        try { broadcastChan.close(); } catch (_) {}
+      }
       if (eventSource) {
         try {
           eventSource.close();
@@ -1107,7 +1137,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setFirestoreStatus('conectado');
       })
       .catch((err) => {
-        console.warn("Conexión Firestore:", err);
+        console.warn("Aviso Firestore (modo respaldo activo):", err?.message || err);
       });
 
     // Suscripción reactiva a Adquisiciones (Purchases)
@@ -1344,7 +1374,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (unsubJudicaturas) unsubJudicaturas();
       if (unsubServicios) unsubServicios();
     };
-  }, [syncWithCentralServer]);
+  }, []);
 
   useEffect(() => {
     safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(judicaturas));
@@ -4651,6 +4681,142 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const exportDatabaseBackup = useCallback(() => {
+    try {
+      const backupData = {
+        meta: {
+          app: 'OJ Control de Compras',
+          version: serverVersionRef.current,
+          exportDate: new Date().toISOString(),
+          exportedBy: currentUser?.nombreCompleto || 'Operador'
+        },
+        purchases,
+        judicaturas,
+        servicios,
+        users,
+        catalogs,
+        budgetLines,
+        budgetModifications,
+        auditLogs
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `OJ_BaseDatos_ControlCompras_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      showToast({
+        type: 'success',
+        title: 'Copia de Seguridad Descargada',
+        message: 'Archivo JSON generado con todas las adquisiciones, judicaturas y catálogo.',
+        duration: 4000
+      });
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Error al Exportar',
+        message: err?.message || 'No se pudo generar el archivo de respaldo',
+        duration: 4000
+      });
+    }
+  }, [purchases, judicaturas, servicios, users, catalogs, budgetLines, budgetModifications, auditLogs, currentUser, showToast]);
+
+  const importDatabaseBackup = useCallback(async (jsonContent: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const parsed = JSON.parse(jsonContent);
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('El archivo no contiene un formato JSON válido.');
+      }
+
+      const importedPurchases = Array.isArray(parsed.purchases) ? parsed.purchases : [];
+      const importedJudicaturas = Array.isArray(parsed.judicaturas) ? parsed.judicaturas : [];
+      const importedServicios = Array.isArray(parsed.servicios) ? parsed.servicios : [];
+      const importedUsers = Array.isArray(parsed.users) ? parsed.users : [];
+      const importedCatalogs = Array.isArray(parsed.catalogs) ? parsed.catalogs : [];
+      const importedBudgetLines = Array.isArray(parsed.budgetLines) ? parsed.budgetLines : [];
+      const importedBudgetMods = Array.isArray(parsed.budgetModifications) ? parsed.budgetModifications : [];
+      const importedAuditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [];
+
+      if (importedPurchases.length > 0) {
+        setPurchases(importedPurchases);
+        safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(importedPurchases));
+        fetch('/api/db/purchases/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(importedPurchases)
+        }).catch(() => {});
+      }
+
+      if (importedJudicaturas.length > 0) {
+        setJudicaturas(importedJudicaturas);
+        safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(importedJudicaturas));
+        fetch('/api/db/judicaturas/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(importedJudicaturas)
+        }).catch(() => {});
+      }
+
+      if (importedServicios.length > 0) {
+        setServicios(importedServicios);
+        safeSetLocalStorage(STORAGE_KEYS.SERVICIOS, JSON.stringify(importedServicios));
+        fetch('/api/db/servicios/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(importedServicios)
+        }).catch(() => {});
+      }
+
+      if (importedUsers.length > 0) {
+        setUsers(importedUsers);
+        safeSetLocalStorage(STORAGE_KEYS.USERS, JSON.stringify(importedUsers));
+      }
+
+      if (importedCatalogs.length > 0) {
+        setCatalogs(importedCatalogs);
+        safeSetLocalStorage(STORAGE_KEYS.CATALOGS, JSON.stringify(importedCatalogs));
+      }
+
+      if (importedBudgetLines.length > 0) {
+        setBudgetLines(importedBudgetLines);
+        safeSetLocalStorage(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(importedBudgetLines));
+      }
+
+      if (importedBudgetMods.length > 0) {
+        setBudgetModifications(importedBudgetMods);
+        safeSetLocalStorage(STORAGE_KEYS.BUDGET_MODIFICATIONS, JSON.stringify(importedBudgetMods));
+      }
+
+      if (importedAuditLogs.length > 0) {
+        setAuditLogs(importedAuditLogs);
+        safeSetLocalStorage(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(importedAuditLogs));
+      }
+
+      notifyStationMutation();
+
+      showToast({
+        type: 'success',
+        title: 'Base de Datos Sincronizada',
+        message: `Se importaron ${importedPurchases.length} compras y ${importedJudicaturas.length} judicaturas exitosamente.`,
+        duration: 5000
+      });
+
+      return { success: true, message: 'Importación exitosa' };
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Error de Importación',
+        message: err?.message || 'Archivo incompatible',
+        duration: 5000
+      });
+      return { success: false, message: err?.message || 'Error importando base de datos' };
+    }
+  }, [showToast, notifyStationMutation]);
+
   const resetToDemoData = () => {
     setUsers(INITIAL_USERS);
     setPurchases(INITIAL_PURCHASES);
@@ -4752,6 +4918,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addToast,
         dismissToast,
         resetToDemoData,
+        exportDatabaseBackup,
+        importDatabaseBackup,
         theme,
         setTheme,
         themeConfig,
