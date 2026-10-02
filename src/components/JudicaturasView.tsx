@@ -145,7 +145,7 @@ export const JudicaturasView: React.FC = () => {
 
   // Lista dinámica de Estatus obtenida desde Catálogos (ESTATUS_JUDICATURA)
   const estatusOptions = useMemo(() => {
-    const defaultList = ['Pendiente Fecha', 'Reprogramado', 'Inaugurado', 'Finalizado', 'Traslado'];
+    const defaultList = ['Programado', 'Reprogramado', 'Inaugurado', 'Pendiente Fecha', 'Traslado', 'Finalizado'];
     const cat = (catalogs || []).find(c => c.codigo === 'ESTATUS_JUDICATURA');
     if (!cat || !cat.items || cat.items.length === 0) {
       return defaultList;
@@ -224,8 +224,11 @@ export const JudicaturasView: React.FC = () => {
         (equipamientoFilter === 'Pendiente' && !isCompleto);
 
       // Filtro Estatus de Inauguración
-      const currentEstatus = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
-      const matchEstatus = estatusInauguracionFilter === 'Todos' || currentEstatus === estatusInauguracionFilter;
+      const currentEstatus = j.estadoInauguracion || (j.fechaInauguracion ? 'Programado' : 'Pendiente Fecha');
+      const matchEstatus =
+        estatusInauguracionFilter === 'Todos' ||
+        currentEstatus.trim().toLowerCase() === estatusInauguracionFilter.trim().toLowerCase() ||
+        (j.estadoInauguracion && j.estadoInauguracion.trim().toLowerCase() === estatusInauguracionFilter.trim().toLowerCase());
 
       // Filtro por Plazo de Ejecución (Dashboard de Rendimiento)
       let matchDuration = true;
@@ -254,6 +257,7 @@ export const JudicaturasView: React.FC = () => {
     const civil = judicaturas.filter(j => j.tipoRamo === 'Civil').length;
     const amparos = judicaturas.filter(j => j.tipoRamo === 'Amparos').length;
 
+    let programadosCount = 0;
     let inauguradosCount = 0;
     let pendienteFechaCount = 0;
     let reprogramadosCount = 0;
@@ -261,11 +265,13 @@ export const JudicaturasView: React.FC = () => {
     let trasladosCount = 0;
 
     judicaturas.forEach(j => {
-      const st = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
-      if (st === 'Inaugurado') inauguradosCount++;
-      else if (st === 'Finalizado') finalizadosCount++;
-      else if (st === 'Traslado') trasladosCount++;
-      else if (st === 'Reprogramado') reprogramadosCount++;
+      const st = j.estadoInauguracion || (j.fechaInauguracion ? 'Programado' : 'Pendiente Fecha');
+      const stLower = st.trim().toLowerCase();
+      if (stLower === 'programado') programadosCount++;
+      else if (stLower === 'inaugurado') inauguradosCount++;
+      else if (stLower === 'finalizado') finalizadosCount++;
+      else if (stLower === 'traslado') trasladosCount++;
+      else if (stLower === 'reprogramado') reprogramadosCount++;
       else pendienteFechaCount++;
     });
 
@@ -324,6 +330,7 @@ export const JudicaturasView: React.FC = () => {
       penal,
       civil,
       amparos,
+      programadosCount,
       inauguradosCount,
       pendienteFechaCount,
       reprogramadosCount,
@@ -341,16 +348,22 @@ export const JudicaturasView: React.FC = () => {
 
   // Métricas avanzadas ejecutivas para Tarjetas y Gráficos Recharts (Total por Estatus y Desglose por Ramo)
   const statusExecutiveMetrics = useMemo(() => {
-    const defaultStatuses = ['Inaugurado', 'Pendiente Fecha', 'Reprogramado', 'Finalizado', 'Traslado'];
+    const defaultStatuses = ['Programado', 'Reprogramado', 'Inaugurado', 'Pendiente Fecha', 'Traslado', 'Finalizado'];
     const cat = (catalogs || []).find(c => c.codigo === 'ESTATUS_JUDICATURA');
     const dynamicStatuses = cat?.items?.filter(i => i.activo).map(i => i.valor) || [];
     const allStatuses = Array.from(new Set([...defaultStatuses, ...dynamicStatuses]));
 
     const total = judicaturas.length;
     const getStatus = (j: JudicaturaRecord) =>
-      j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+      j.estadoInauguracion || (j.fechaInauguracion ? 'Programado' : 'Pendiente Fecha');
 
     const statusStyleMap: Record<string, { color: string; badge: string; border: string; bg: string }> = {
+      'Programado': {
+        color: '#0284c7',
+        badge: 'bg-sky-50 text-sky-800 border-sky-300',
+        border: 'border-sky-200',
+        bg: 'hover:bg-sky-50/50'
+      },
       'Inaugurado': {
         color: '#059669',
         badge: 'bg-emerald-50 text-emerald-800 border-emerald-300',
@@ -454,7 +467,7 @@ export const JudicaturasView: React.FC = () => {
   // Segmentación reactiva de judicaturas por Ramo (Penal, Civil y Amparos) para análisis visual y reportes
   const judicaturasByRamo = useMemo(() => {
     const getStatus = (j: JudicaturaRecord) =>
-      j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+      j.estadoInauguracion || (j.fechaInauguracion ? 'Programado' : 'Pendiente Fecha');
 
     const penalList = filteredJudicaturas.filter(j => j.tipoRamo === 'Penal');
     const civilList = filteredJudicaturas.filter(j => j.tipoRamo === 'Civil');
@@ -462,6 +475,7 @@ export const JudicaturasView: React.FC = () => {
 
     const calculateRamoStats = (list: JudicaturaRecord[]) => ({
       total: list.length,
+      programados: list.filter(j => getStatus(j) === 'Programado').length,
       inaugurados: list.filter(j => getStatus(j) === 'Inaugurado').length,
       pendientes: list.filter(j => getStatus(j) === 'Pendiente Fecha').length,
       reprogramados: list.filter(j => getStatus(j) === 'Reprogramado').length,
@@ -2531,11 +2545,12 @@ export const JudicaturasView: React.FC = () => {
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold flex-wrap">
             {[
               { id: 'Todos', label: 'Todos los Estatus' },
-              { id: 'Pendiente Fecha', label: 'Pendiente Fecha' },
+              { id: 'Programado', label: 'Programado' },
               { id: 'Reprogramado', label: 'Reprogramado' },
               { id: 'Inaugurado', label: 'Inaugurado' },
-              { id: 'Finalizado', label: 'Finalizado' },
+              { id: 'Pendiente Fecha', label: 'Pendiente Fecha' },
               { id: 'Traslado', label: 'Traslado' },
+              { id: 'Finalizado', label: 'Finalizado' },
             ].map((st) => (
               <button
                 key={st.id}
@@ -2553,6 +2568,18 @@ export const JudicaturasView: React.FC = () => {
                 {st.label}
               </button>
             ))}
+
+            {estatusInauguracionFilter !== 'Todos' && (
+              <button
+                type="button"
+                onClick={() => handleOpenStatusReportModal(estatusInauguracionFilter)}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1 shadow-xs transition-all cursor-pointer animate-in fade-in ml-1"
+                title={`Generar informe oficial en PDF para estatus "${estatusInauguracionFilter}"`}
+              >
+                <FileText className="w-3.5 h-3.5 text-amber-200" />
+                <span>Informe PDF: {estatusInauguracionFilter}</span>
+              </button>
+            )}
           </div>
 
           {/* Cámara Asignada */}

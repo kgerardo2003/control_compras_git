@@ -385,7 +385,7 @@ export interface ServicioCalculos {
 
 export type TipoRamoJudicatura = 'Penal' | 'Civil' | 'Amparos';
 export type OpcionSiNo = 'Si' | 'No';
-export type EstadoInauguracionJudicatura = 'Pendiente Fecha' | 'Reprogramado' | 'Inaugurado' | 'Finalizado' | 'Traslado' | string;
+export type EstadoInauguracionJudicatura = 'Programado' | 'Reprogramado' | 'Inaugurado' | 'Pendiente Fecha' | 'Finalizado' | 'Traslado' | string;
 
 export interface JudicaturaObservacion {
   id: string;

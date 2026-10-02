@@ -333,18 +333,19 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
     // Helper para estatus estandarizado
     const getJudEstatus = (j: JudicaturaRecord) =>
-      j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+      j.estadoInauguracion || (j.fechaInauguracion ? 'Programado' : 'Pendiente Fecha');
 
     // Desglose detallado por Cámara y Estatus
     const penalJudicaturas = judicaturas.filter((j) => j.tipoRamo === 'Penal');
     const civilJudicaturas = judicaturas.filter((j) => j.tipoRamo === 'Civil');
     const amparosJudicaturas = judicaturas.filter((j) => j.tipoRamo === 'Amparos');
 
+    const penalProg = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Programado').length;
+    const penalReprog = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length;
     const penalInaug = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length;
     const penalPend = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Pendiente Fecha').length;
-    const penalReprog = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length;
-    const penalFin = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length;
     const penalTras = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Traslado').length;
+    const penalFin = penalJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length;
     const penalEquip100 = penalJudicaturas.filter(
       (j) =>
         j.equipoComputo === 'Si' &&
@@ -353,11 +354,12 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         j.enlaceDatos === 'Si'
     ).length;
 
+    const civilProg = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Programado').length;
+    const civilReprog = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length;
     const civilInaug = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length;
     const civilPend = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Pendiente Fecha').length;
-    const civilReprog = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length;
-    const civilFin = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length;
     const civilTras = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Traslado').length;
+    const civilFin = civilJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length;
     const civilEquip100 = civilJudicaturas.filter(
       (j) =>
         j.equipoComputo === 'Si' &&
@@ -366,11 +368,12 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         j.enlaceDatos === 'Si'
     ).length;
 
+    const amparosProg = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Programado').length;
+    const amparosReprog = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length;
     const amparosInaug = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length;
     const amparosPend = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Pendiente Fecha').length;
-    const amparosReprog = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length;
-    const amparosFin = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length;
     const amparosTras = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Traslado').length;
+    const amparosFin = amparosJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length;
     const amparosEquip100 = amparosJudicaturas.filter(
       (j) =>
         j.equipoComputo === 'Si' &&
@@ -379,20 +382,21 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         j.enlaceDatos === 'Si'
     ).length;
 
+    const totalProg = penalProg + civilProg + amparosProg;
+    const totalReprog = penalReprog + civilReprog + amparosReprog;
     const totalInaug = penalInaug + civilInaug + amparosInaug;
     const totalPend = penalPend + civilPend + amparosPend;
-    const totalReprog = penalReprog + civilReprog + amparosReprog;
-    const totalFin = penalFin + civilFin + amparosFin;
     const totalTras = penalTras + civilTras + amparosTras;
+    const totalFin = penalFin + civilFin + amparosFin;
     const totalEquip100 = penalEquip100 + civilEquip100 + amparosEquip100;
 
     // Tarjetas de Métricas Resumen
     const summaryCards = [
       { label: 'TOTAL JUDICATURAS', val: `${judicaturas.length}`, color: [15, 23, 42] },
+      { label: 'PROGRAMADOS', val: `${totalProg}`, color: [2, 132, 199] },
+      { label: 'REPROGRAMADOS', val: `${totalReprog}`, color: [225, 29, 72] },
       { label: 'INAUGURADOS', val: `${totalInaug}`, color: [4, 120, 87] },
       { label: 'PENDIENTE FECHA', val: `${totalPend}`, color: [217, 119, 6] },
-      { label: 'REPROGRAMADOS', val: `${totalReprog}`, color: [225, 29, 72] },
-      { label: 'FINALIZADOS', val: `${totalFin}`, color: [29, 78, 216] },
       { label: 'TRASLADO', val: `${totalTras}`, color: [109, 40, 217] },
       { label: 'TIC 100% LISTO', val: `${totalEquip100}`, color: [13, 148, 136] },
     ];
@@ -430,10 +434,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         [
           'Ramo Jurisdiccional',
           'Total Sedes',
+          'Programadas',
+          'Reprogramadas',
           'Inauguradas',
           'Pendiente Fecha',
-          'Reprogramadas',
-          'Finalizadas',
           'Traslado',
           'TIC 100% Listo',
           '% Cumplimiento TIC',
@@ -443,10 +447,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         [
           'CÁMARA PENAL',
           String(penalJudicaturas.length),
+          String(penalProg),
+          String(penalReprog),
           String(penalInaug),
           String(penalPend),
-          String(penalReprog),
-          String(penalFin),
           String(penalTras),
           String(penalEquip100),
           `${penalJudicaturas.length > 0 ? Math.round((penalEquip100 / penalJudicaturas.length) * 100) : 0}%`,
@@ -454,10 +458,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         [
           'CÁMARA CIVIL',
           String(civilJudicaturas.length),
+          String(civilProg),
+          String(civilReprog),
           String(civilInaug),
           String(civilPend),
-          String(civilReprog),
-          String(civilFin),
           String(civilTras),
           String(civilEquip100),
           `${civilJudicaturas.length > 0 ? Math.round((civilEquip100 / civilJudicaturas.length) * 100) : 0}%`,
@@ -465,10 +469,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         [
           'CÁMARA AMPAROS',
           String(amparosJudicaturas.length),
+          String(amparosProg),
+          String(amparosReprog),
           String(amparosInaug),
           String(amparosPend),
-          String(amparosReprog),
-          String(amparosFin),
           String(amparosTras),
           String(amparosEquip100),
           `${amparosJudicaturas.length > 0 ? Math.round((amparosEquip100 / amparosJudicaturas.length) * 100) : 0}%`,
@@ -476,10 +480,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         [
           'TOTAL CONSOLIDADO',
           String(judicaturas.length),
+          String(totalProg),
+          String(totalReprog),
           String(totalInaug),
           String(totalPend),
-          String(totalReprog),
-          String(totalFin),
           String(totalTras),
           String(totalEquip100),
           `${judicaturas.length > 0 ? Math.round((totalEquip100 / judicaturas.length) * 100) : 0}%`,
@@ -666,6 +670,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             data.cell.styles.fontStyle = 'bold';
             if (val === 'Inaugurado') {
               data.cell.styles.textColor = [4, 120, 87];
+            } else if (val === 'Programado') {
+              data.cell.styles.textColor = [2, 132, 199];
             } else if (val === 'Finalizado') {
               data.cell.styles.textColor = [29, 78, 216];
             } else if (val === 'Traslado') {
@@ -687,7 +693,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       if (penalJudicaturas.length > 0) {
         renderRamoJudicaturasTable(
           'SECCIÓN 1: CÁMARA PENAL',
-          `${penalJudicaturas.length} Judicaturas • Inauguradas: ${penalInaug} | Pendiente: ${penalPend} | Reprog: ${penalReprog} | Finalizadas: ${penalFin} | Traslado: ${penalTras}`,
+          `${penalJudicaturas.length} Judicaturas • Programadas: ${penalProg} | Reprog: ${penalReprog} | Inauguradas: ${penalInaug} | Pendiente: ${penalPend} | Traslado: ${penalTras}`,
           penalJudicaturas,
           [88, 28, 135] // Purple-900
         );
@@ -697,7 +703,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       if (civilJudicaturas.length > 0) {
         renderRamoJudicaturasTable(
           'SECCIÓN 2: CÁMARA CIVIL',
-          `${civilJudicaturas.length} Judicaturas • Inauguradas: ${civilInaug} | Pendiente: ${civilPend} | Reprog: ${civilReprog} | Finalizadas: ${civilFin} | Traslado: ${civilTras}`,
+          `${civilJudicaturas.length} Judicaturas • Programadas: ${civilProg} | Reprog: ${civilReprog} | Inauguradas: ${civilInaug} | Pendiente: ${civilPend} | Traslado: ${civilTras}`,
           civilJudicaturas,
           [30, 58, 138] // Blue-900
         );
@@ -707,7 +713,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       if (amparosJudicaturas.length > 0) {
         renderRamoJudicaturasTable(
           'SECCIÓN 3: CÁMARA AMPAROS',
-          `${amparosJudicaturas.length} Judicaturas • Inauguradas: ${amparosInaug} | Pendiente: ${amparosPend} | Reprog: ${amparosReprog} | Finalizadas: ${amparosFin} | Traslado: ${amparosTras}`,
+          `${amparosJudicaturas.length} Judicaturas • Programadas: ${amparosProg} | Reprog: ${amparosReprog} | Inauguradas: ${amparosInaug} | Pendiente: ${amparosPend} | Traslado: ${amparosTras}`,
           amparosJudicaturas,
           [6, 78, 59] // Emerald-900
         );
@@ -812,6 +818,54 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         },
         alternateRowStyles: {
           fillColor: [248, 250, 252],
+        },
+        didParseCell: (data) => {
+          // Cámara (Columna 2)
+          if (data.section === 'body' && data.column.index === 2) {
+            const val = String(data.cell.raw);
+            data.cell.styles.fontStyle = 'bold';
+            if (val.includes('Penal')) data.cell.styles.textColor = [109, 40, 217];
+            else if (val.includes('Civil')) data.cell.styles.textColor = [29, 78, 216];
+            else if (val.includes('Amparos')) data.cell.styles.textColor = [5, 150, 105];
+          }
+          // Componentes TIC (Columnas 4, 5, 6, 7)
+          if (data.section === 'body' && [4, 5, 6, 7].includes(data.column.index)) {
+            const val = String(data.cell.raw);
+            data.cell.styles.fontStyle = 'bold';
+            if (val === 'Si') {
+              data.cell.styles.textColor = [4, 120, 87];
+            } else {
+              data.cell.styles.textColor = [225, 29, 72];
+            }
+          }
+          // Estado TIC (Columna 8)
+          if (data.section === 'body' && data.column.index === 8) {
+            const val = String(data.cell.raw);
+            data.cell.styles.fontStyle = 'bold';
+            if (val.includes('100%')) {
+              data.cell.styles.textColor = [4, 120, 87];
+            } else {
+              data.cell.styles.textColor = [180, 83, 9];
+            }
+          }
+          // Estatus (Columna 9)
+          if (data.section === 'body' && data.column.index === 9) {
+            const val = String(data.cell.raw);
+            data.cell.styles.fontStyle = 'bold';
+            if (val === 'Inaugurado') {
+              data.cell.styles.textColor = [4, 120, 87];
+            } else if (val === 'Programado') {
+              data.cell.styles.textColor = [2, 132, 199];
+            } else if (val === 'Finalizado') {
+              data.cell.styles.textColor = [29, 78, 216];
+            } else if (val === 'Traslado') {
+              data.cell.styles.textColor = [109, 40, 217];
+            } else if (val === 'Reprogramado') {
+              data.cell.styles.textColor = [225, 29, 72];
+            } else {
+              data.cell.styles.textColor = [180, 83, 9];
+            }
+          }
         },
       });
     }
@@ -1204,6 +1258,24 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           const val = String(data.cell.raw);
           if (val === '100%') {
             data.cell.styles.textColor = [4, 120, 87];
+          } else {
+            data.cell.styles.textColor = [180, 83, 9];
+          }
+        }
+        // Apertura / Estatus (Columna 8)
+        if (data.section === 'body' && data.column.index === 8) {
+          const val = String(data.cell.raw);
+          data.cell.styles.fontStyle = 'bold';
+          if (val.includes('Inaugurado')) {
+            data.cell.styles.textColor = [4, 120, 87];
+          } else if (val.includes('Programado')) {
+            data.cell.styles.textColor = [2, 132, 199];
+          } else if (val.includes('Finalizado')) {
+            data.cell.styles.textColor = [29, 78, 216];
+          } else if (val.includes('Traslado')) {
+            data.cell.styles.textColor = [109, 40, 217];
+          } else if (val.includes('Reprogramado')) {
+            data.cell.styles.textColor = [225, 29, 72];
           } else {
             data.cell.styles.textColor = [180, 83, 9];
           }

@@ -55,7 +55,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
 
   // Helper para estatus de una judicatura
   const getJudEstatus = (j: JudicaturaRecord) =>
-    j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+    j.estadoInauguracion || (j.fechaInauguracion ? 'Programado' : 'Pendiente Fecha');
 
   // Tipo de reporte: Consolidado con cámaras separadas, por estatus o específico por cámara
   const [reportType, setReportType] = useState<'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos'>(() => {
@@ -103,13 +103,14 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
   const amparosCount = baseJudicaturas.filter((j) => j.tipoRamo === 'Amparos').length;
 
   // Conteo dinámico por estatus sobre el universo base
-  const statusCounts = {
+  const statusCounts: Record<string, number> = {
     'Todos': baseJudicaturas.length,
-    'Pendiente Fecha': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Pendiente Fecha').length,
-    'Reprogramado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length,
-    'Inaugurado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length,
-    'Finalizado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length,
-    'Traslado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Traslado').length,
+    'Programado': baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === 'programado').length,
+    'Reprogramado': baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === 'reprogramado').length,
+    'Inaugurado': baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === 'inaugurado').length,
+    'Pendiente Fecha': baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === 'pendiente fecha').length,
+    'Traslado': baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === 'traslado').length,
+    'Finalizado': baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === 'finalizado').length,
   };
 
   const targetJudicaturas =
@@ -120,7 +121,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
       : reportType === 'amparos'
       ? baseJudicaturas.filter((j) => j.tipoRamo === 'Amparos')
       : reportType === 'estatus' && selectedStatus !== 'Todos'
-      ? baseJudicaturas.filter((j) => getJudEstatus(j) === selectedStatus)
+      ? baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === selectedStatus.toLowerCase())
       : baseJudicaturas;
 
   const equip100Count = targetJudicaturas.filter(
@@ -198,7 +199,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
       prefix = 'Reporte_Judicaturas_Camara_Amparos';
     } else if (selectedType === 'estatus') {
       if (selectedStatus !== 'Todos') {
-        listToExport = baseJudicaturas.filter((j) => getJudEstatus(j) === selectedStatus);
+        listToExport = baseJudicaturas.filter((j) => getJudEstatus(j).toLowerCase() === selectedStatus.toLowerCase());
         titleToUse = documentTitle.trim() || `REPORTE OFICIAL DE JUDICATURAS: ESTATUS ${selectedStatus.toUpperCase()}`;
         subtitleToUse = documentSubtitle.trim() || `Gerencia de Informática • Órganos Jurisdiccionales con Estatus: ${selectedStatus}`;
         prefix = `Reporte_Judicaturas_Estatus_${selectedStatus.replace(/\s+/g, '_')}`;
@@ -568,14 +569,15 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
                 {[
                   { id: 'Todos', label: 'Todos', color: '#1e293b', count: statusCounts['Todos'] },
-                  { id: 'Pendiente Fecha', label: 'Pendiente Fecha', color: '#d97706', count: statusCounts['Pendiente Fecha'] },
+                  { id: 'Programado', label: 'Programado', color: '#0284c7', count: statusCounts['Programado'] },
                   { id: 'Reprogramado', label: 'Reprogramado', color: '#e11d48', count: statusCounts['Reprogramado'] },
                   { id: 'Inaugurado', label: 'Inaugurado', color: '#059669', count: statusCounts['Inaugurado'] },
-                  { id: 'Finalizado', label: 'Finalizado', color: '#2563eb', count: statusCounts['Finalizado'] },
+                  { id: 'Pendiente Fecha', label: 'Pendiente Fecha', color: '#d97706', count: statusCounts['Pendiente Fecha'] },
                   { id: 'Traslado', label: 'Traslado', color: '#7c3aed', count: statusCounts['Traslado'] },
+                  { id: 'Finalizado', label: 'Finalizado', color: '#2563eb', count: statusCounts['Finalizado'] },
                 ].map((st) => {
                   const isCur = selectedStatus === st.id;
                   return (
