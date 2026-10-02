@@ -29,14 +29,23 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import firebaseConfigFile from '../../firebase-applet-config.json';
 
+export const SHARED_FIRESTORE_DATABASE_ID = 'ai-studio-controlcomprasgi-02a1a92c-61ef-4fa8-b38d-a9532c263771';
+export const SHARED_FIREBASE_PROJECT_ID = 'gen-lang-client-0584258501';
+export const SHARED_FIRESTORE_DATABASE_URL = `https://firestore.googleapis.com/v1/projects/${SHARED_FIREBASE_PROJECT_ID}/databases/${SHARED_FIRESTORE_DATABASE_ID}/documents`;
+export const SHARED_FIRESTORE_CONSOLE_URL = `https://console.firebase.google.com/project/${SHARED_FIREBASE_PROJECT_ID}/firestore/databases/${SHARED_FIRESTORE_DATABASE_ID}/data`;
+
 // Inicializar almacén en memoria / /tmp
 initDataStore();
 
-// Inicializar Firebase para persistencia en la nube
+// Inicializar Firebase para persistencia en la nube compartida
 let db: any = null;
 try {
-  const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfigFile, 'vercel-api-sync');
-  db = getFirestore(app, firebaseConfigFile.firestoreDatabaseId);
+  const { firestoreDatabaseId: _unused, ...coreOptions } = firebaseConfigFile;
+  const app = getApps().length > 0 ? getApp() : initializeApp({
+    ...coreOptions,
+    projectId: SHARED_FIREBASE_PROJECT_ID
+  }, 'vercel-api-sync');
+  db = getFirestore(app, SHARED_FIRESTORE_DATABASE_ID);
 } catch (e) {
   console.warn('[Vercel-API] Firestore init note:', e);
 }
@@ -114,8 +123,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         success: true,
         firestore: {
           connected: Boolean(db),
-          projectId: firebaseConfigFile.projectId,
-          firestoreDatabaseId: firebaseConfigFile.firestoreDatabaseId,
+          projectId: SHARED_FIREBASE_PROJECT_ID,
+          firestoreDatabaseId: SHARED_FIRESTORE_DATABASE_ID,
+          databaseUrl: SHARED_FIRESTORE_DATABASE_URL,
+          consoleUrl: SHARED_FIRESTORE_CONSOLE_URL,
           version: state.version,
           totalPurchases: state.purchases?.length || 0,
           totalJudicaturas: state.judicaturas?.length || 0,
