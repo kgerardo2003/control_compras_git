@@ -8,15 +8,11 @@ service cloud.firestore {
     }
 
     function isValidPurchase(data) {
-      return data.id is string
-        && data.nog is string
-        && data.descripcion is string;
+      return data.id is string;
     }
 
     function isValidAuditLog(data) {
-      return data.id is string
-        && data.fecha is string
-        && data.usuario is string;
+      return data.id is string;
     }
 
     // Regla para prueba de conexión
@@ -63,6 +59,11 @@ service cloud.firestore {
     // Reglas para Judicaturas por Inaugurar
     match /judicaturas/{judicaturaId} {
       allow read, write: if isValidId(judicaturaId);
+
+      // Subcolección para adjuntos y expedientes de judicaturas
+      match /attachments/{attachmentId} {
+        allow read, write: if true;
+      }
     }
 
     // Reglas para Servicios Contratados de la Gerencia de Informática

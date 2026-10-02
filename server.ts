@@ -31,7 +31,12 @@ import {
   saveJudicatura,
   saveBulkJudicaturas,
   deleteJudicatura,
-  addJudicaturaObservation
+  addJudicaturaObservation,
+  saveServicio,
+  saveBulkServicios,
+  deleteServicio,
+  deleteBulkServicios,
+  clearAllServicios
 } from './src/server/dataStore';
 import { syncFirestoreData, forcePushToFirestore } from './src/server/firestoreSync';
 
@@ -223,9 +228,9 @@ app.get('/api/db/firestore-status', async (req, res) => {
     } catch (_) {}
   }
   const projectId = cfg.projectId || 'gen-lang-client-0584258501';
-  const firestoreDatabaseId = cfg.firestoreDatabaseId || 'ai-studio-sistemadecontrol-5592e35a-812a-481c-bad9-b7ae12134a41';
+  const firestoreDatabaseId = cfg.firestoreDatabaseId || 'ai-studio-controlcomprasgi-02a1a92c-61ef-4fa8-b38d-a9532c263771';
   const apiKey = cfg.apiKey || '';
-  const consoleUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${firestoreDatabaseId}/data?openUpgradeDialog=true`;
+  const consoleUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${firestoreDatabaseId}/data`;
 
   const startTime = Date.now();
   let firestoreStatus: 'conectado' | 'quota_exceeded' | 'error' = 'conectado';
@@ -366,10 +371,28 @@ app.post('/api/db/purchases', (req, res) => {
 });
 
 // Eliminar adquisición / compra individualmente (definitivo y permanente)
-app.delete('/api/db/purchases/:id', (req, res) => {
+app.delete('/api/db/purchases/:id', async (req, res) => {
   try {
-    const deleted = deletePurchase(req.params.id);
-    notifyChange('purchase_deleted', { id: req.params.id });
+    const id = req.params.id;
+    const deleted = deletePurchase(id);
+    notifyChange('purchase_deleted', { id });
+
+    // Eliminar también en Firestore en segundo plano
+    try {
+      const fs = await import('fs');
+      if (fs.existsSync('./firebase-applet-config.json')) {
+        const { initializeApp, deleteApp } = await import('firebase/app');
+        const { getFirestore, doc, deleteDoc } = await import('firebase/firestore');
+        const cfg = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+        const tempApp = initializeApp(cfg, `del-pur-${Date.now()}`);
+        const db = getFirestore(tempApp, cfg.firestoreDatabaseId);
+        await deleteDoc(doc(db, 'purchases', id));
+        await deleteApp(tempApp);
+      }
+    } catch (e) {
+      console.warn("Aviso Firestore al eliminar compra individual en backend:", e);
+    }
+
     res.json({ success: true, deleted });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error eliminando compra.' });
@@ -377,7 +400,7 @@ app.delete('/api/db/purchases/:id', (req, res) => {
 });
 
 // Eliminar adquisiciones en lote (definitivo y permanente)
-app.post('/api/db/purchases/batch-delete', (req, res) => {
+app.post('/api/db/purchases/batch-delete', async (req, res) => {
   try {
     const ids: string[] = req.body?.ids || [];
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -385,6 +408,30 @@ app.post('/api/db/purchases/batch-delete', (req, res) => {
     }
     const count = batchDeletePurchases(ids);
     notifyChange('purchases_batch_deleted', { count, ids });
+
+    // Eliminar también en Firestore en segundo plano
+    try {
+      const fs = await import('fs');
+      if (fs.existsSync('./firebase-applet-config.json')) {
+        const { initializeApp, deleteApp } = await import('firebase/app');
+        const { getFirestore, writeBatch, doc } = await import('firebase/firestore');
+        const cfg = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+        const tempApp = initializeApp(cfg, `bdel-pur-${Date.now()}`);
+        const db = getFirestore(tempApp, cfg.firestoreDatabaseId);
+        const CHUNK = 400;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const batch = writeBatch(db);
+          ids.slice(i, i + CHUNK).forEach(id => {
+            batch.delete(doc(db, 'purchases', id));
+          });
+          await batch.commit();
+        }
+        await deleteApp(tempApp);
+      }
+    } catch (e) {
+      console.warn("Aviso Firestore al eliminar compras en lote en backend:", e);
+    }
+
     res.json({ success: true, count });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error en eliminación en lote.' });
@@ -408,10 +455,38 @@ app.post('/api/db/purchases/batch', (req, res) => {
 });
 
 // Vaciar todas las compras del sistema centralizado (definitivo)
-app.post('/api/db/purchases/clear-all', (req, res) => {
+app.post('/api/db/purchases/clear-all', async (req, res) => {
   try {
+    const store = getStoreState();
+    const purchaseIds = store.purchases.map(p => p.id);
     const count = clearAllPurchases();
-    notifyChange('purchases_cleared', { count });
+    notifyChange('purchases_cleared', { count, ids: purchaseIds });
+
+    // Vaciar también en Firestore en segundo plano
+    try {
+      const fs = await import('fs');
+      if (fs.existsSync('./firebase-applet-config.json')) {
+        const { initializeApp, deleteApp } = await import('firebase/app');
+        const { getFirestore, writeBatch, doc } = await import('firebase/firestore');
+        const cfg = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+        const tempApp = initializeApp(cfg, `clear-pur-${Date.now()}`);
+        const db = getFirestore(tempApp, cfg.firestoreDatabaseId);
+        if (purchaseIds.length > 0) {
+          const CHUNK = 400;
+          for (let i = 0; i < purchaseIds.length; i += CHUNK) {
+            const batch = writeBatch(db);
+            purchaseIds.slice(i, i + CHUNK).forEach(id => {
+              batch.delete(doc(db, 'purchases', id));
+            });
+            await batch.commit();
+          }
+        }
+        await deleteApp(tempApp);
+      }
+    } catch (e) {
+      console.warn("Aviso Firestore al vaciar compras en backend:", e);
+    }
+
     res.json({ success: true, count });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error vaciando compras.' });
@@ -565,6 +640,91 @@ app.post('/api/db/judicaturas/:id/observaciones', (req, res) => {
     res.status(500).json({ success: false, message: err?.message || 'Error agregando observación.' });
   }
 });
+
+// ==========================================
+// ENDPOINTS DE SERVICIOS CONTRATADOS (GIT)
+// ==========================================
+
+// Obtener todos los servicios contratados
+app.get('/api/db/servicios', (req, res) => {
+  try {
+    const state = getStoreState();
+    res.json({ success: true, servicios: state.servicios || [] });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error obteniendo servicios contratados.' });
+  }
+});
+
+// Guardar o actualizar servicio contratado
+app.post('/api/db/servicios', (req, res) => {
+  try {
+    const saved = saveServicio(req.body);
+    notifyChange('servicio_saved', { id: saved.id, codigo: saved.codigo });
+    res.json({ success: true, servicio: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error guardando servicio contratado.' });
+  }
+});
+
+// Guardar lote o importar masivamente servicios contratados
+app.post('/api/db/servicios/bulk', (req, res) => {
+  try {
+    const { servicios: items, replaceAll } = req.body;
+    if (Array.isArray(items)) {
+      const saved = saveBulkServicios(items, Boolean(replaceAll));
+      notifyChange('servicios_bulk_saved', { count: items.length });
+      res.json({ success: true, count: items.length, total: saved.length });
+    } else {
+      res.status(400).json({ success: false, message: 'Se esperaba un arreglo de servicios.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error importando lote de servicios.' });
+  }
+});
+
+// Eliminar servicio contratado
+app.delete('/api/db/servicios/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const ok = deleteServicio(id);
+    if (ok) {
+      notifyChange('servicio_deleted', { id });
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ success: false, message: 'Servicio no encontrado.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando servicio.' });
+  }
+});
+
+// Eliminar servicios contratados en lote
+app.post('/api/db/servicios/batch-delete', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (Array.isArray(ids)) {
+      const count = deleteBulkServicios(ids);
+      notifyChange('servicios_batch_deleted', { count, ids });
+      res.json({ success: true, count });
+    } else {
+      res.status(400).json({ success: false, message: 'Se esperaba un arreglo de IDs.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando lote de servicios.' });
+  }
+});
+
+// Vaciar todos los servicios contratados
+app.post('/api/db/servicios/clear-all', (req, res) => {
+  try {
+    const count = clearAllServicios();
+    notifyChange('servicios_cleared', { count });
+    res.json({ success: true, count });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error vaciando servicios.' });
+  }
+});
+
 
 // 2. Verificar credenciales con el servidor SMTP de Gmail
 app.post('/api/email/verify', async (req, res) => {
