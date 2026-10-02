@@ -20,6 +20,7 @@ import {
   Building2,
   FolderTree,
   Landmark,
+  Flag,
 } from 'lucide-react';
 
 interface ConsolidatedJudicaturasPdfModalProps {
@@ -34,6 +35,8 @@ interface ConsolidatedJudicaturasPdfModalProps {
     equipamiento?: string;
     estadoInauguracion?: string;
   };
+  initialReportType?: 'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos';
+  initialStatus?: string;
   onSuccess?: (filename: string) => void;
 }
 
@@ -44,24 +47,50 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
   filteredJudicaturas,
   currentUser,
   filterInfo,
+  initialReportType,
+  initialStatus,
   onSuccess,
 }) => {
   const { showToast } = useApp();
 
-  // Tipo de reporte: Consolidado con cámaras separadas o específico por cámara
-  const [reportType, setReportType] = useState<'consolidado' | 'penal' | 'civil' | 'amparos'>('consolidado');
+  // Helper para estatus de una judicatura
+  const getJudEstatus = (j: JudicaturaRecord) =>
+    j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+
+  // Tipo de reporte: Consolidado con cámaras separadas, por estatus o específico por cámara
+  const [reportType, setReportType] = useState<'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos'>(() => {
+    if (initialReportType) return initialReportType;
+    if (filterInfo?.estadoInauguracion && filterInfo.estadoInauguracion !== 'Todos') return 'estatus';
+    return 'consolidado';
+  });
+
+  const [selectedStatus, setSelectedStatus] = useState<string>(() => {
+    if (initialStatus) return initialStatus;
+    if (filterInfo?.estadoInauguracion && filterInfo.estadoInauguracion !== 'Todos') return filterInfo.estadoInauguracion;
+    return 'Todos';
+  });
+
   const [scope, setScope] = useState<'filtered' | 'all'>('filtered');
   const [includeTable, setIncludeTable] = useState(true);
   const [includeGantt, setIncludeGantt] = useState(true);
   const [includeStatusMatrix, setIncludeStatusMatrix] = useState(true);
   const [groupByRamo, setGroupByRamo] = useState(true);
 
-  const [documentTitle, setDocumentTitle] = useState(
-    'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR'
-  );
-  const [documentSubtitle, setDocumentSubtitle] = useState(
-    'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional'
-  );
+  const [documentTitle, setDocumentTitle] = useState(() => {
+    if ((initialReportType === 'estatus' || (filterInfo?.estadoInauguracion && filterInfo.estadoInauguracion !== 'Todos'))) {
+      const st = initialStatus || filterInfo?.estadoInauguracion || 'TODOS';
+      return `REPORTE OFICIAL DE JUDICATURAS: ESTATUS ${st.toUpperCase()}`;
+    }
+    return 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR';
+  });
+
+  const [documentSubtitle, setDocumentSubtitle] = useState(() => {
+    if ((initialReportType === 'estatus' || (filterInfo?.estadoInauguracion && filterInfo.estadoInauguracion !== 'Todos'))) {
+      const st = initialStatus || filterInfo?.estadoInauguracion || 'TODOS';
+      return `Gerencia de Informática • Órganos Jurisdiccionales con Estatus de Inauguración: ${st}`;
+    }
+    return 'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional';
+  });
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
@@ -73,6 +102,16 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
   const civilCount = baseJudicaturas.filter((j) => j.tipoRamo === 'Civil').length;
   const amparosCount = baseJudicaturas.filter((j) => j.tipoRamo === 'Amparos').length;
 
+  // Conteo dinámico por estatus sobre el universo base
+  const statusCounts = {
+    'Todos': baseJudicaturas.length,
+    'Pendiente Fecha': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Pendiente Fecha').length,
+    'Reprogramado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Reprogramado').length,
+    'Inaugurado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length,
+    'Finalizado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Finalizado').length,
+    'Traslado': baseJudicaturas.filter((j) => getJudEstatus(j) === 'Traslado').length,
+  };
+
   const targetJudicaturas =
     reportType === 'penal'
       ? baseJudicaturas.filter((j) => j.tipoRamo === 'Penal')
@@ -80,6 +119,8 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
       ? baseJudicaturas.filter((j) => j.tipoRamo === 'Civil')
       : reportType === 'amparos'
       ? baseJudicaturas.filter((j) => j.tipoRamo === 'Amparos')
+      : reportType === 'estatus' && selectedStatus !== 'Todos'
+      ? baseJudicaturas.filter((j) => getJudEstatus(j) === selectedStatus)
       : baseJudicaturas;
 
   const equip100Count = targetJudicaturas.filter(
@@ -89,15 +130,53 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
       j.cableadoEstructurado === 'Si' &&
       j.enlaceDatos === 'Si'
   ).length;
-  const inauguradasCount = targetJudicaturas.filter((j) => j.estadoInauguracion === 'Inaugurado').length;
+  const inauguradasCount = targetJudicaturas.filter((j) => getJudEstatus(j) === 'Inaugurado').length;
 
-  const handleGenerate = (targetTypeOverride?: 'consolidado' | 'penal' | 'civil' | 'amparos') => {
+  const handleSelectReportType = (type: 'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos') => {
+    setReportType(type);
+    if (type === 'penal') {
+      setDocumentTitle('REPORTE OFICIAL DE JUDICATURAS: CÁMARA PENAL');
+      setDocumentSubtitle('Gerencia de Informática • Órganos Jurisdiccionales del Ramo Penal en Adecuación y Apertura');
+      setGroupByRamo(false);
+    } else if (type === 'civil') {
+      setDocumentTitle('REPORTE OFICIAL DE JUDICATURAS: CÁMARA CIVIL');
+      setDocumentSubtitle('Gerencia de Informática • Órganos Jurisdiccionales del Ramo Civil en Adecuación y Apertura');
+      setGroupByRamo(false);
+    } else if (type === 'amparos') {
+      setDocumentTitle('REPORTE OFICIAL DE JUDICATURAS: CÁMARA AMPAROS');
+      setDocumentSubtitle('Gerencia de Informática • Órganos Jurisdiccionales de Cámara de Amparos en Adecuación y Apertura');
+      setGroupByRamo(false);
+    } else if (type === 'estatus') {
+      const st = selectedStatus !== 'Todos' ? selectedStatus : 'TODOS';
+      setDocumentTitle(selectedStatus !== 'Todos' ? `REPORTE OFICIAL DE JUDICATURAS: ESTATUS ${st.toUpperCase()}` : 'REPORTE OFICIAL DE JUDICATURAS: CONTROL POR ESTATUS');
+      setDocumentSubtitle(selectedStatus !== 'Todos' ? `Gerencia de Informática • Órganos Jurisdiccionales con Estatus de Inauguración: ${st}` : 'Gerencia de Informática • Monitoreo Integral de Estatus de Inauguración');
+      setGroupByRamo(true);
+    } else {
+      setDocumentTitle('REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR');
+      setDocumentSubtitle('Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional');
+      setGroupByRamo(true);
+    }
+  };
+
+  const handleSelectStatus = (status: string) => {
+    setSelectedStatus(status);
+    if (status === 'Todos') {
+      setDocumentTitle('REPORTE OFICIAL DE JUDICATURAS: CONTROL POR ESTATUS');
+      setDocumentSubtitle('Gerencia de Informática • Monitoreo Integral de Estatus de Inauguración');
+    } else {
+      setDocumentTitle(`REPORTE OFICIAL DE JUDICATURAS: ESTATUS ${status.toUpperCase()}`);
+      setDocumentSubtitle(`Gerencia de Informática • Órganos Jurisdiccionales con Estatus de Inauguración: ${status}`);
+    }
+  };
+
+  const handleGenerate = (targetTypeOverride?: 'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos') => {
     const selectedType = targetTypeOverride || reportType;
     let listToExport = baseJudicaturas;
     let titleToUse = 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR';
     let subtitleToUse = 'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional';
     let effectiveGroupByRamo = groupByRamo;
     let prefix = 'Reporte_Consolidado_Judicaturas';
+    let effectiveStatusFilter: string | undefined = undefined;
 
     if (selectedType === 'penal') {
       listToExport = baseJudicaturas.filter((j) => j.tipoRamo === 'Penal');
@@ -117,6 +196,20 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
       subtitleToUse = 'Gerencia de Informática • Órganos Jurisdiccionales de Cámara de Amparos en Adecuación y Apertura';
       effectiveGroupByRamo = false;
       prefix = 'Reporte_Judicaturas_Camara_Amparos';
+    } else if (selectedType === 'estatus') {
+      if (selectedStatus !== 'Todos') {
+        listToExport = baseJudicaturas.filter((j) => getJudEstatus(j) === selectedStatus);
+        titleToUse = documentTitle.trim() || `REPORTE OFICIAL DE JUDICATURAS: ESTATUS ${selectedStatus.toUpperCase()}`;
+        subtitleToUse = documentSubtitle.trim() || `Gerencia de Informática • Órganos Jurisdiccionales con Estatus: ${selectedStatus}`;
+        prefix = `Reporte_Judicaturas_Estatus_${selectedStatus.replace(/\s+/g, '_')}`;
+        effectiveStatusFilter = selectedStatus;
+      } else {
+        listToExport = baseJudicaturas;
+        titleToUse = documentTitle.trim() || 'REPORTE OFICIAL DE JUDICATURAS: CONTROL POR ESTATUS';
+        subtitleToUse = documentSubtitle.trim() || 'Gerencia de Informática • Monitoreo Integral de Estatus de Inauguración';
+        prefix = 'Reporte_Judicaturas_Control_Estatus';
+      }
+      effectiveGroupByRamo = groupByRamo;
     } else {
       effectiveGroupByRamo = true;
       titleToUse = documentTitle.trim() || 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR';
@@ -157,8 +250,11 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
           scope === 'filtered'
             ? {
                 ...filterInfo,
-                ramo: selectedType === 'penal' ? 'Penal' : selectedType === 'civil' ? 'Civil' : filterInfo?.ramo,
+                ramo: selectedType === 'penal' ? 'Penal' : selectedType === 'civil' ? 'Civil' : selectedType === 'amparos' ? 'Amparos' : filterInfo?.ramo,
+                estadoInauguracion: effectiveStatusFilter || (selectedType === 'estatus' && selectedStatus !== 'Todos' ? selectedStatus : filterInfo?.estadoInauguracion),
               }
+            : effectiveStatusFilter
+            ? { estadoInauguracion: effectiveStatusFilter }
             : undefined,
         currentUser,
         filenamePrefix: prefix,
@@ -167,7 +263,12 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
       setDownloadSuccess(filename);
 
       showToast({
-        title: selectedType === 'consolidado' ? 'Reporte Consolidado Descargado' : 'Reporte de Cámara Descargado',
+        title:
+          selectedType === 'consolidado'
+            ? 'Reporte Consolidado Descargado'
+            : selectedType === 'estatus'
+            ? `Reporte de Estatus (${selectedStatus}) Descargado`
+            : 'Reporte de Cámara Descargado',
         message: `Se descargó "${filename}" con la cabecera y membrete oficial del Organismo Judicial.`,
         type: 'success',
       });
@@ -193,7 +294,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera del Modal con Cintilla Azul Oscuro Institucional */}
@@ -218,7 +319,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                 </span>
               </div>
               <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
-                Reporte Consolidado en PDF (Tabla, Estados y Gantt)
+                Reporte de Judicaturas en PDF (Estatus, Tabla, Estados y Gantt)
               </h2>
             </div>
           </div>
@@ -248,7 +349,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
               <p className="text-[11px] text-slate-600 leading-relaxed">
                 El documento se genera con el <strong>logotipo oficial del Organismo Judicial</strong> en el membrete
                 superior de <strong>todas y cada una de las hojas</strong>, acompañado del código de auditoría digital,
-                metadatos de emisión y paginación secuencial estandarizada.
+                metadatos de emisión, firmas institucionales de responsabilidad y paginación secuencial estandarizada.
               </p>
             </div>
           </div>
@@ -264,11 +365,11 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
               {/* Opción 1: Reporte Consolidado con Cámaras Separadas */}
               <button
                 type="button"
-                onClick={() => setReportType('consolidado')}
+                onClick={() => handleSelectReportType('consolidado')}
                 className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
                   reportType === 'consolidado'
                     ? 'border-indigo-600 bg-indigo-50/80 ring-2 ring-indigo-500/25 shadow-xs'
@@ -292,7 +393,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                     )}
                   </div>
                   <p className="text-[10px] text-slate-600 leading-snug">
-                    Reporte integral con <strong>Cámaras Penal, Civil y Amparos separadas</strong> en secciones independientes.
+                    Reporte integral con <strong>Cámaras Penal, Civil y Amparos</strong> separadas.
                   </p>
                 </div>
                 <div className="mt-2 pt-2 border-t border-indigo-100 flex items-center justify-between text-[9px] font-mono font-bold text-indigo-900">
@@ -304,10 +405,48 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                 </div>
               </button>
 
-              {/* Opción 2: Solo Cámara Penal */}
+              {/* Opción 2: Reporte Filtrado por Estatus */}
               <button
                 type="button"
-                onClick={() => setReportType('penal')}
+                onClick={() => handleSelectReportType('estatus')}
+                className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
+                  reportType === 'estatus'
+                    ? 'border-amber-600 bg-amber-50/80 ring-2 ring-amber-500/25 shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
+                      <Flag className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Por Estatus</span>
+                    </div>
+                    {reportType === 'estatus' ? (
+                      <div className="w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-black uppercase bg-amber-100 text-amber-900">
+                        Filtro
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-600 leading-snug">
+                    Informe oficial enfocado en un <strong>estatus específico</strong> o agrupado.
+                  </p>
+                </div>
+                <div className="mt-2 pt-2 border-t border-amber-100 flex items-center justify-between text-[9px] font-mono font-bold text-amber-950">
+                  <span className="truncate">{selectedStatus === 'Todos' ? 'Todos los estatus' : selectedStatus}</span>
+                  <span className="shrink-0">
+                    {selectedStatus === 'Todos' ? baseJudicaturas.length : (statusCounts[selectedStatus as keyof typeof statusCounts] || 0)} sedes
+                  </span>
+                </div>
+              </button>
+
+              {/* Opción 3: Solo Cámara Penal */}
+              <button
+                type="button"
+                onClick={() => handleSelectReportType('penal')}
                 className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
                   reportType === 'penal'
                     ? 'border-purple-600 bg-purple-50/80 ring-2 ring-purple-500/25 shadow-xs'
@@ -326,12 +465,12 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                       </div>
                     ) : (
                       <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-black uppercase bg-purple-100 text-purple-800 font-mono">
-                        {penalCount} sedes
+                        {penalCount}
                       </span>
                     )}
                   </div>
                   <p className="text-[10px] text-slate-600 leading-snug">
-                    Informe oficial especializado exclusivo de órganos jurisdiccionales del Ramo Penal.
+                    Informe especializado de órganos jurisdiccionales del Ramo Penal.
                   </p>
                 </div>
                 <div className="mt-2 pt-2 border-t border-purple-100 flex items-center justify-between text-[10px] font-mono font-bold text-purple-900">
@@ -340,10 +479,10 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                 </div>
               </button>
 
-              {/* Opción 3: Solo Cámara Civil */}
+              {/* Opción 4: Solo Cámara Civil */}
               <button
                 type="button"
-                onClick={() => setReportType('civil')}
+                onClick={() => handleSelectReportType('civil')}
                 className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
                   reportType === 'civil'
                     ? 'border-blue-600 bg-blue-50/80 ring-2 ring-blue-500/25 shadow-xs'
@@ -362,12 +501,12 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                       </div>
                     ) : (
                       <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-black uppercase bg-blue-100 text-blue-800 font-mono">
-                        {civilCount} sedes
+                        {civilCount}
                       </span>
                     )}
                   </div>
                   <p className="text-[10px] text-slate-600 leading-snug">
-                    Informe oficial especializado exclusivo de órganos jurisdiccionales del Ramo Civil.
+                    Informe especializado de órganos jurisdiccionales del Ramo Civil.
                   </p>
                 </div>
                 <div className="mt-2 pt-2 border-t border-blue-100 flex items-center justify-between text-[10px] font-mono font-bold text-blue-900">
@@ -376,10 +515,10 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                 </div>
               </button>
 
-              {/* Opción 4: Solo Cámara Amparos */}
+              {/* Opción 5: Solo Cámara Amparos */}
               <button
                 type="button"
-                onClick={() => setReportType('amparos')}
+                onClick={() => handleSelectReportType('amparos')}
                 className={`p-3 rounded-xl border text-left flex flex-col justify-between cursor-pointer transition-all ${
                   reportType === 'amparos'
                     ? 'border-emerald-600 bg-emerald-50/80 ring-2 ring-emerald-500/25 shadow-xs'
@@ -398,12 +537,12 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
                       </div>
                     ) : (
                       <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-black uppercase bg-emerald-100 text-emerald-800 font-mono">
-                        {amparosCount} sedes
+                        {amparosCount}
                       </span>
                     )}
                   </div>
                   <p className="text-[10px] text-slate-600 leading-snug">
-                    Informe oficial especializado de órganos de Cámara de Amparos.
+                    Informe especializado de órganos de Cámara de Amparos.
                   </p>
                 </div>
                 <div className="mt-2 pt-2 border-t border-emerald-100 flex items-center justify-between text-[10px] font-mono font-bold text-emerald-900">
@@ -413,6 +552,61 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
               </button>
             </div>
           </div>
+
+          {/* Subpanel interactivo de selección de estatus si reportType === 'estatus' */}
+          {reportType === 'estatus' && (
+            <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Flag className="w-4 h-4 text-amber-700" />
+                  <span className="font-bold text-slate-900 text-xs uppercase tracking-wide">
+                    Seleccione el Estatus de Inauguración para el Informe
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-amber-900 bg-white px-2 py-0.5 rounded-md border border-amber-300">
+                  {targetJudicaturas.length} judicaturas coinciden con este filtro
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                {[
+                  { id: 'Todos', label: 'Todos', color: '#1e293b', count: statusCounts['Todos'] },
+                  { id: 'Pendiente Fecha', label: 'Pendiente Fecha', color: '#d97706', count: statusCounts['Pendiente Fecha'] },
+                  { id: 'Reprogramado', label: 'Reprogramado', color: '#e11d48', count: statusCounts['Reprogramado'] },
+                  { id: 'Inaugurado', label: 'Inaugurado', color: '#059669', count: statusCounts['Inaugurado'] },
+                  { id: 'Finalizado', label: 'Finalizado', color: '#2563eb', count: statusCounts['Finalizado'] },
+                  { id: 'Traslado', label: 'Traslado', color: '#7c3aed', count: statusCounts['Traslado'] },
+                ].map((st) => {
+                  const isCur = selectedStatus === st.id;
+                  return (
+                    <button
+                      key={`modal-status-${st.id}`}
+                      type="button"
+                      onClick={() => handleSelectStatus(st.id)}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        isCur
+                          ? 'bg-white border-amber-500 shadow-sm ring-2 ring-amber-400/40'
+                          : 'bg-white/80 border-slate-200 hover:border-slate-300 hover:bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: st.color }}
+                        />
+                        <span className="font-mono text-xs font-black" style={{ color: st.color }}>
+                          {st.count}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                        {st.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Configuración de Alcance */}
           <div className="space-y-2">
@@ -691,17 +885,35 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
               <span>Solo Amparos</span>
             </button>
 
-            {/* Descarga Principal Consolidada (Penal, Civil y Amparos Separadas) */}
-            <button
-              type="button"
-              onClick={() => handleGenerate('consolidado')}
-              disabled={isGenerating || baseJudicaturas.length === 0 || (!includeTable && !includeGantt && !includeStatusMatrix)}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs shadow-md border border-amber-300 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Descargar Reporte Consolidado completo con Cámaras Penal, Civil y Amparos separadas"
-            >
-              <Download className="w-4 h-4 text-slate-950" />
-              <span>{isGenerating ? 'Generando...' : 'Descargar Consolidado (Penal + Civil + Amparos)'}</span>
-            </button>
+            {/* Descarga Específica por Estatus si está activo */}
+            {reportType === 'estatus' ? (
+              <button
+                type="button"
+                onClick={() => handleGenerate('estatus')}
+                disabled={isGenerating || targetJudicaturas.length === 0 || (!includeTable && !includeGantt && !includeStatusMatrix)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs shadow-md border border-amber-300 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Descargar Reporte Oficial de Judicaturas filtrado por Estatus: ${selectedStatus}`}
+              >
+                <Download className="w-4 h-4 text-slate-950" />
+                <span>
+                  {isGenerating
+                    ? 'Generando...'
+                    : `Descargar Informe (${selectedStatus === 'Todos' ? 'Todos los Estatus' : selectedStatus})`}
+                </span>
+              </button>
+            ) : (
+              /* Descarga Principal Consolidada (Penal, Civil y Amparos Separadas) */
+              <button
+                type="button"
+                onClick={() => handleGenerate('consolidado')}
+                disabled={isGenerating || baseJudicaturas.length === 0 || (!includeTable && !includeGantt && !includeStatusMatrix)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs shadow-md border border-amber-300 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Descargar Reporte Consolidado completo con Cámaras Penal, Civil y Amparos separadas"
+              >
+                <Download className="w-4 h-4 text-slate-950" />
+                <span>{isGenerating ? 'Generando...' : 'Descargar Consolidado (Penal + Civil + Amparos)'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

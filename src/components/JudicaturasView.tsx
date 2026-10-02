@@ -64,9 +64,11 @@ import {
   FileCheck,
   Upload,
   FileSpreadsheet,
+  Paperclip,
 } from 'lucide-react';
 import { exportJudicaturasToExcel, exportJudicaturasToCSV, downloadJudicaturasImportTemplate } from '../utils/judicaturasExport';
 import { ImportJudicaturasModal } from './ImportJudicaturasModal';
+import { JudicaturaDocumentsSection } from './judicaturas/JudicaturaDocumentsSection';
 
 export const JudicaturasView: React.FC = () => {
   const {
@@ -83,7 +85,7 @@ export const JudicaturasView: React.FC = () => {
 
   // Filtros y Vista (por defecto 'table' / listado como solicitó el usuario)
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchField, setSearchField] = useState<'todos' | 'nombre' | 'ramo' | 'observaciones'>('todos');
+  const [searchField, setSearchField] = useState<'todos' | 'nombre' | 'ramo' | 'observaciones' | 'documentos'>('todos');
   const [ramoFilter, setRamoFilter] = useState<'Todos' | 'Penal' | 'Civil' | 'Amparos'>('Todos');
   const [equipamientoFilter, setEquipamientoFilter] = useState<'Todos' | 'Completo' | 'Pendiente'>('Todos');
   const [estatusInauguracionFilter, setEstatusInauguracionFilter] = useState<string>('Todos');
@@ -100,8 +102,11 @@ export const JudicaturasView: React.FC = () => {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingJudicatura, setEditingJudicatura] = useState<JudicaturaRecord | null>(null);
   const [detailJudicaturaId, setDetailJudicaturaId] = useState<string | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<'acciones' | 'documentos' | 'todo'>('acciones');
   const [deleteConfirmJudicatura, setDeleteConfirmJudicatura] = useState<JudicaturaRecord | null>(null);
   const [isConsolidatedPdfModalOpen, setIsConsolidatedPdfModalOpen] = useState(false);
+  const [consolidatedModalInitialType, setConsolidatedModalInitialType] = useState<'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos'>('consolidado');
+  const [consolidatedModalInitialStatus, setConsolidatedModalInitialStatus] = useState<string>('Todos');
   const [selectedBoletaJudicatura, setSelectedBoletaJudicatura] = useState<JudicaturaRecord | null>(null);
 
   // Form Fields (Cámara Penal, Cámara Civil y Cámara Amparos)
@@ -173,13 +178,33 @@ export const JudicaturasView: React.FC = () => {
           matchSearch = camaraName.includes(searchLower);
         } else if (searchField === 'observaciones') {
           matchSearch = Boolean(j.observaciones && j.observaciones.some(o => o.texto.toLowerCase().includes(searchLower)));
+        } else if (searchField === 'documentos') {
+          matchSearch = Boolean(
+            j.documentos &&
+            j.documentos.some(
+              d =>
+                d.nombre.toLowerCase().includes(searchLower) ||
+                (d.categoria && d.categoria.toLowerCase().includes(searchLower)) ||
+                (d.descripcion && d.descripcion.toLowerCase().includes(searchLower))
+            )
+          );
         } else {
           // Todos los campos
           const camaraName = j.tipoRamo === 'Penal' ? 'cámara penal penal' : j.tipoRamo === 'Civil' ? 'cámara civil civil' : 'cámara amparos amparos';
+          const matchDocs = Boolean(
+            j.documentos &&
+            j.documentos.some(
+              d =>
+                d.nombre.toLowerCase().includes(searchLower) ||
+                (d.categoria && d.categoria.toLowerCase().includes(searchLower)) ||
+                (d.descripcion && d.descripcion.toLowerCase().includes(searchLower))
+            )
+          );
           matchSearch =
             j.nombreJudicatura.toLowerCase().includes(searchLower) ||
             camaraName.includes(searchLower) ||
-            Boolean(j.observaciones && j.observaciones.some(o => o.texto.toLowerCase().includes(searchLower)));
+            Boolean(j.observaciones && j.observaciones.some(o => o.texto.toLowerCase().includes(searchLower))) ||
+            matchDocs;
         }
       }
 
@@ -864,14 +889,26 @@ export const JudicaturasView: React.FC = () => {
     }
   };
 
-  // Generación y exportación de informe consolidado en PDF (Descarga Directa con Cámaras Separadas)
+  // Generación y exportación de informe en PDF (Descarga Directa adaptada al filtro activo)
   const handleQuickExportPDF = () => {
     setIsExportingPdf(true);
     try {
+      const recordsToExport = filteredJudicaturas.length > 0 ? filteredJudicaturas : judicaturas;
+      const isStatusFiltered = estatusInauguracionFilter !== 'Todos';
+      const title = isStatusFiltered
+        ? `REPORTE OFICIAL DE JUDICATURAS: ESTATUS ${estatusInauguracionFilter.toUpperCase()}`
+        : 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR (CÁMARAS PENAL, CIVIL Y AMPAROS)';
+      const subtitle = isStatusFiltered
+        ? `Gerencia de Informática • Órganos Jurisdiccionales con Estatus de Inauguración: ${estatusInauguracionFilter}`
+        : 'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional';
+      const prefix = isStatusFiltered
+        ? `Reporte_Judicaturas_Estatus_${estatusInauguracionFilter.replace(/\s+/g, '_')}`
+        : 'Reporte_Consolidado_Judicaturas_Penal_y_Civil';
+
       const filename = generateConsolidatedJudicaturasPDF({
-        judicaturas: filteredJudicaturas.length > 0 ? filteredJudicaturas : judicaturas,
-        title: 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR (CÁMARAS PENAL, CIVIL Y AMPAROS)',
-        subtitle: 'Gerencia de Informática • Seguimiento Integral con Separación Analítica por Cámara Jurisdiccional',
+        judicaturas: recordsToExport,
+        title,
+        subtitle,
         includeTable: true,
         includeGantt: true,
         includeStatusMatrix: true,
@@ -880,22 +917,24 @@ export const JudicaturasView: React.FC = () => {
           search: searchTerm.trim() || undefined,
           ramo: ramoFilter !== 'Todos' ? ramoFilter : undefined,
           equipamiento: equipamientoFilter !== 'Todos' ? equipamientoFilter : undefined,
-          estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
+          estadoInauguracion: isStatusFiltered ? estatusInauguracionFilter : undefined,
         },
         currentUser,
-        filenamePrefix: 'Reporte_Consolidado_Judicaturas_Penal_y_Civil'
+        filenamePrefix: prefix,
       });
       showToast({
-        title: 'Reporte Consolidado Descargado con Éxito',
-        message: `Se descargó "${filename}" con Cámaras Penal y Civil separadas.`,
-        type: 'success'
+        title: isStatusFiltered
+          ? `Informe de Estatus "${estatusInauguracionFilter}" Descargado`
+          : 'Reporte Consolidado Descargado con Éxito',
+        message: `Se descargó "${filename}" con la estructura oficial del Organismo Judicial.`,
+        type: 'success',
       });
     } catch (err) {
-      console.error('Error exportando reporte consolidado de judicaturas:', err);
+      console.error('Error exportando reporte de judicaturas:', err);
       showToast({
         title: 'Error al generar PDF',
-        message: 'Ocurrió un inconveniente al exportar el informe consolidado.',
-        type: 'error'
+        message: 'Ocurrió un inconveniente al exportar el informe.',
+        type: 'error',
       });
     } finally {
       setIsExportingPdf(false);
@@ -903,6 +942,15 @@ export const JudicaturasView: React.FC = () => {
   };
 
   const handleOpenConsolidatedPDFModal = () => {
+    setConsolidatedModalInitialType('consolidado');
+    setConsolidatedModalInitialStatus('Todos');
+    setIsConsolidatedPdfModalOpen(true);
+  };
+
+  const handleOpenStatusReportModal = (status?: string) => {
+    const targetStatus = status || (estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : 'Todos');
+    setConsolidatedModalInitialType('estatus');
+    setConsolidatedModalInitialStatus(targetStatus);
     setIsConsolidatedPdfModalOpen(true);
   };
 
@@ -999,13 +1047,14 @@ export const JudicaturasView: React.FC = () => {
             <th className="px-3 py-3 text-center" title="Enlace de Datos">Enlace</th>
             <th className="px-4 py-3 text-center">Estatus y Fecha</th>
             <th className="px-4 py-3">Última Acción / Bitácora</th>
+            <th className="px-3 py-3 text-center" title="Expediente Digital y Documentos Adjuntos">Expediente</th>
             <th className="px-4 py-3 text-center">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 text-xs">
           {items.length === 0 ? (
             <tr>
-              <td colSpan={hideRamoColumn ? 9 : 10} className="px-4 py-8 text-center text-slate-400">
+              <td colSpan={hideRamoColumn ? 10 : 11} className="px-4 py-8 text-center text-slate-400">
                 <div className="flex flex-col items-center justify-center gap-1.5">
                   <Search className="w-6 h-6 text-slate-300" />
                   <p className="font-semibold text-slate-600 text-xs">
@@ -1175,7 +1224,38 @@ export const JudicaturasView: React.FC = () => {
                     )}
                   </td>
 
-                  {/* 10. Acciones: Visualizar, Generar Ficha, Editar, Eliminar */}
+                  {/* 10. Expediente Digital / Documentos Adjuntos */}
+                  <td className="px-3 py-3.5 whitespace-nowrap text-center">
+                    {j.documentos && j.documentos.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailJudicaturaId(j.id);
+                          setActiveDetailTab('documentos');
+                        }}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-[11px] font-bold transition-all cursor-pointer shadow-2xs hover:scale-105"
+                        title={`Ver ${j.documentos.length} documento(s) adjunto(s) en la ficha`}
+                      >
+                        <Paperclip className="w-3.5 h-3.5 text-blue-800" />
+                        <span>{j.documentos.length} {j.documentos.length === 1 ? 'doc' : 'docs'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailJudicaturaId(j.id);
+                          setActiveDetailTab('documentos');
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 hover:bg-blue-50 text-slate-400 hover:text-blue-900 border border-slate-200 hover:border-blue-200 text-[10px] font-semibold transition-all cursor-pointer"
+                        title="Sin documentos en expediente. Clic para digitalizar y adjuntar."
+                      >
+                        <PlusCircle className="w-3 h-3" />
+                        <span>Adjuntar</span>
+                      </button>
+                    )}
+                  </td>
+
+                  {/* 11. Acciones: Visualizar, Generar Ficha, Editar, Eliminar */}
                   <td className="px-4 py-3.5 whitespace-nowrap text-center">
                     <div className="inline-flex items-center justify-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-2xs">
                       <button
@@ -1472,12 +1552,27 @@ export const JudicaturasView: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setDetailJudicaturaId(j.id)}
+                    onClick={() => {
+                      setDetailJudicaturaId(j.id);
+                      setActiveDetailTab('acciones');
+                    }}
                     className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-blue-900 border border-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                   >
                     <GitBranch className="w-4 h-4 text-blue-700" />
                     <span>Ver Ficha ({(j.observaciones || []).length})</span>
                     <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailJudicaturaId(j.id);
+                      setActiveDetailTab('documentos');
+                    }}
+                    className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                    title="Ver expediente digital y documentos adjuntos"
+                  >
+                    <Paperclip className="w-3.5 h-3.5 text-blue-800" />
+                    <span>Docs ({(j.documentos || []).length})</span>
                   </button>
                   <button
                     type="button"
@@ -1528,17 +1623,17 @@ export const JudicaturasView: React.FC = () => {
 
         {/* MENÚ DE CONTROL DE JUDICATURAS: DISTRIBUCIÓN EN 2 FILAS HOMOGÉNEAS */}
         <div className="space-y-2.5">
-          {/* Fila 1: Gestión de Judicaturas, Supervisión y Reportes Oficiales (4 Opciones Homogéneas) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {/* Fila 1: Gestión de Judicaturas, Supervisión y Reportes Oficiales (5 Opciones Homogéneas) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             {/* Opción 1: Nueva Judicatura */}
             <button
               id="btn-nueva-judicatura"
               type="button"
               onClick={handleOpenCreate}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs border border-slate-700 flex items-center justify-between gap-2 transition-all cursor-pointer group"
+              className="w-full px-3 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs border border-slate-700 flex items-center justify-between gap-1.5 transition-all cursor-pointer group"
               title="Registrar una nueva judicatura por inaugurar"
             >
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <PlusCircle className="w-4 h-4 text-amber-400 shrink-0 group-hover:rotate-90 transition-transform duration-300" />
                 <span className="truncate">Nueva Judicatura</span>
               </div>
@@ -1559,46 +1654,64 @@ export const JudicaturasView: React.FC = () => {
                 }
               }}
               disabled={judicaturas.length === 0}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs border border-emerald-600 flex items-center justify-between gap-2 transition-all cursor-pointer disabled:opacity-50 group"
+              className="w-full px-3 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs border border-emerald-600 flex items-center justify-between gap-1.5 transition-all cursor-pointer disabled:opacity-50 group"
               title="Abrir Boleta Oficial de Control y Supervisión de Judicaturas"
             >
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <FileCheck className="w-4 h-4 text-amber-300 shrink-0 group-hover:scale-110 transition-transform" />
-                <span className="truncate">Boleta de Control</span>
+                <span className="truncate">Boleta Control</span>
               </div>
               <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-950 text-emerald-200 border border-emerald-500/40 shrink-0">
-                Ficha Oficial
+                Ficha
               </span>
             </button>
 
-            {/* Opción 3: Reporte Consolidado en PDF */}
+            {/* Opción 3: Informe por Estatus en PDF */}
+            <button
+              id="btn-reporte-estatus-pdf"
+              type="button"
+              onClick={() => handleOpenStatusReportModal(estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined)}
+              disabled={filteredJudicaturas.length === 0}
+              className="w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-bold text-xs shadow-xs border border-amber-500 flex items-center justify-between gap-1.5 transition-all cursor-pointer group disabled:opacity-50"
+              title="Generar informe oficial en PDF filtrado por estatus de inauguración"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Flag className="w-4 h-4 text-amber-200 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="truncate">Por Estatus</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase bg-white text-amber-950 shrink-0">
+                {estatusInauguracionFilter === 'Todos' ? 'PDF' : estatusInauguracionFilter.slice(0, 8)}
+              </span>
+            </button>
+
+            {/* Opción 4: Reporte Consolidado en PDF */}
             <button
               id="btn-reporte-consolidado-pdf"
               type="button"
               onClick={handleOpenConsolidatedPDFModal}
               disabled={filteredJudicaturas.length === 0}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-800 hover:from-blue-800 hover:to-indigo-800 text-white font-bold text-xs shadow-xs border border-blue-700 flex items-center justify-between gap-2 transition-all cursor-pointer group disabled:opacity-50"
+              className="w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-800 hover:from-blue-800 hover:to-indigo-800 text-white font-bold text-xs shadow-xs border border-blue-700 flex items-center justify-between gap-1.5 transition-all cursor-pointer group disabled:opacity-50"
               title="Generar reporte consolidado oficial en PDF (Tabla, Estado de Cada Una y Diagrama de Gantt)"
             >
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <FileText className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="truncate">Reporte Consolidado</span>
+                <span className="truncate">Consolidado</span>
               </div>
               <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase bg-amber-400 text-slate-900 shrink-0">
-                Gantt + PDF
+                Gantt+PDF
               </span>
             </button>
 
-            {/* Opción 4: Descarga Rápida Directa en PDF */}
+            {/* Opción 5: Descarga Rápida Directa en PDF */}
             <button
               id="btn-exportar-pdf-judicaturas"
               type="button"
               onClick={handleQuickExportPDF}
               disabled={isExportingPdf || filteredJudicaturas.length === 0}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs shadow-2xs flex items-center justify-between gap-2 transition-all cursor-pointer disabled:opacity-50 group"
-              title="Descarga rápida directa del reporte consolidado oficial en PDF"
+              className="w-full px-3 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs shadow-2xs flex items-center justify-between gap-1.5 transition-all cursor-pointer disabled:opacity-50 group"
+              title="Descarga rápida directa del informe oficial en PDF según el filtro activo"
             >
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <Download className="w-4 h-4 text-rose-600 shrink-0 group-hover:translate-y-0.5 transition-transform" />
                 <span className="truncate">{isExportingPdf ? 'Generando...' : 'Descarga Rápida'}</span>
               </div>
@@ -2041,10 +2154,17 @@ export const JudicaturasView: React.FC = () => {
                     >
                       {sc.status}
                     </span>
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: sc.color }}
-                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenStatusReportModal(sc.status);
+                      }}
+                      className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-800 transition-colors cursor-pointer shrink-0"
+                      title={`Generar informe oficial en PDF para estatus "${sc.status}"`}
+                    >
+                      <FileText className="w-3.5 h-3.5" style={{ color: sc.color }} />
+                    </button>
                   </div>
 
                   <div className="mt-2 flex items-baseline justify-between">
@@ -2400,6 +2520,7 @@ export const JudicaturasView: React.FC = () => {
               <option value="nombre">Solo Nombre</option>
               <option value="ramo">Solo Cámara</option>
               <option value="observaciones">Solo Observaciones</option>
+              <option value="documentos">Solo Documentos / Expediente</option>
             </select>
           </div>
         </div>
@@ -2557,21 +2678,32 @@ export const JudicaturasView: React.FC = () => {
               {filteredJudicaturas.length} judicatura{filteredJudicaturas.length === 1 ? '' : 's'} encontrada{filteredJudicaturas.length === 1 ? '' : 's'}
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchTerm('');
-              setSearchField('todos');
-              setRamoFilter('Todos');
-              setEquipamientoFilter('Todos');
-              setEstatusInauguracionFilter('Todos');
-              setDurationFilter('Todos');
-              setCurrentPage(1);
-            }}
-            className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline ml-2 cursor-pointer shrink-0"
-          >
-            Restablecer todos
-          </button>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            <button
+              type="button"
+              onClick={() => handleOpenStatusReportModal(estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined)}
+              className="px-3 py-1.5 rounded-lg bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              title="Generar informe oficial en PDF para este filtro"
+            >
+              <FileText className="w-3.5 h-3.5 text-amber-400" />
+              <span>Generar Informe de este Filtro</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setSearchField('todos');
+                setRamoFilter('Todos');
+                setEquipamientoFilter('Todos');
+                setEstatusInauguracionFilter('Todos');
+                setDurationFilter('Todos');
+                setCurrentPage(1);
+              }}
+              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+            >
+              Restablecer todos
+            </button>
+          </div>
         </div>
       )}
 
@@ -3515,6 +3647,14 @@ export const JudicaturasView: React.FC = () => {
                       Nota: También se guardará automáticamente al hacer clic en "Actualizar Ficha".
                     </span>
                   </div>
+
+                  {/* Expediente Digital y Documentos Adjuntos en Edición de Ficha */}
+                  <div className="pt-3 border-t border-slate-200">
+                    <JudicaturaDocumentsSection
+                      judicatura={editingJudicatura}
+                      canEdit={canEdit}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div>
@@ -3646,6 +3786,19 @@ export const JudicaturasView: React.FC = () => {
                       <FileCheck className="w-3.5 h-3.5 text-amber-300" />
                       <span>Boleta de Control Judicaturas</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveDetailTab('documentos')}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs ${
+                        activeDetailTab === 'documentos'
+                          ? 'bg-amber-400 text-slate-950 font-black'
+                          : 'bg-white hover:bg-slate-100 border border-slate-300 text-slate-700'
+                      }`}
+                      title="Ver y digitalizar documentos del expediente digital"
+                    >
+                      <Paperclip className="w-3.5 h-3.5 text-blue-900" />
+                      <span>Documentos ({(activeDetailJudicatura.documentos || []).length})</span>
+                    </button>
                     {canEdit && (
                       <button
                         type="button"
@@ -3731,88 +3884,144 @@ export const JudicaturasView: React.FC = () => {
                 </div>
               </div>
 
-              {/* SECCIÓN ÁRBOL CRONOLÓGICO DE ACCIONES Y OBSERVACIONES */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                      <GitBranch className="w-4 h-4 text-blue-900" />
-                      Árbol Cronológico de Acciones ({activeDetailJudicatura.observaciones?.length || 0})
-                    </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Historial inmutable de avances, intervenciones y resoluciones técnicas
-                    </p>
-                  </div>
-                </div>
+              {/* SELECTOR DE PESTAÑAS: ÁRBOL CRONOLÓGICO vs EXPEDIENTE DIGITAL */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveDetailTab('acciones')}
+                  className={`flex-1 py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    activeDetailTab === 'acciones'
+                      ? 'bg-white text-blue-950 shadow-xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <GitBranch className="w-4 h-4 text-blue-900" />
+                  <span>Árbol de Acciones ({(activeDetailJudicatura.observaciones || []).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDetailTab('documentos')}
+                  className={`flex-1 py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    activeDetailTab === 'documentos'
+                      ? 'bg-white text-blue-950 shadow-xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Paperclip className="w-4 h-4 text-amber-500" />
+                  <span>Expediente Digital ({(activeDetailJudicatura.documentos || []).length})</span>
+                  {activeDetailJudicatura.documentos && activeDetailJudicatura.documentos.length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDetailTab('todo')}
+                  className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    activeDetailTab === 'todo'
+                      ? 'bg-white text-blue-950 shadow-xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Ver ambas secciones en la misma ficha"
+                >
+                  <Layers className="w-3.5 h-3.5 text-slate-600" />
+                  <span className="hidden sm:inline">Ver Todo</span>
+                </button>
+              </div>
 
-                {/* Formulario para Añadir Nueva Observación al Árbol */}
-                <form onSubmit={handleAddObservation} className="bg-blue-50/50 p-3.5 rounded-xl border border-blue-200 space-y-2.5">
-                  <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
-                    <PlusCircle className="w-3.5 h-3.5 text-blue-800" />
-                    Registrar Acción #{((activeDetailJudicatura.observaciones?.length || 0) + 1)}
-                  </span>
-                  <textarea
-                    rows={2}
-                    value={nuevaObservacionTexto}
-                    onChange={(e) => setNuevaObservacionTexto(e.target.value)}
-                    placeholder="Describa la acción técnica realizada, prueba de enlace, entrega de equipo o novedad..."
-                    className="w-full p-2.5 bg-white border border-blue-300 rounded-xl focus:ring-2 focus:ring-blue-800 focus:outline-none text-xs"
-                  />
+              {/* SECCIÓN 1: ÁRBOL CRONOLÓGICO DE ACCIONES Y OBSERVACIONES */}
+              {(activeDetailTab === 'acciones' || activeDetailTab === 'todo') && (
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500">
-                      Registrando como: <strong>{currentUser?.nombreCompleto || currentUser?.username || 'Operador GIT'}</strong>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                        <GitBranch className="w-4 h-4 text-blue-900" />
+                        Árbol Cronológico de Acciones ({activeDetailJudicatura.observaciones?.length || 0})
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        Historial inmutable de avances, intervenciones y resoluciones técnicas
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Formulario para Añadir Nueva Observación al Árbol */}
+                  <form onSubmit={handleAddObservation} className="bg-blue-50/50 p-3.5 rounded-xl border border-blue-200 space-y-2.5">
+                    <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                      <PlusCircle className="w-3.5 h-3.5 text-blue-800" />
+                      Registrar Acción #{((activeDetailJudicatura.observaciones?.length || 0) + 1)}
                     </span>
-                    <button
-                      type="submit"
-                      disabled={isAddingObs || !nuevaObservacionTexto.trim()}
-                      className="px-3 py-1.5 rounded-lg bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>{isAddingObs ? 'Registrando...' : 'Agregar al Árbol'}</span>
-                    </button>
-                  </div>
-                </form>
+                    <textarea
+                      rows={2}
+                      value={nuevaObservacionTexto}
+                      onChange={(e) => setNuevaObservacionTexto(e.target.value)}
+                      placeholder="Describa la acción técnica realizada, prueba de enlace, entrega de equipo o novedad..."
+                      className="w-full p-2.5 bg-white border border-blue-300 rounded-xl focus:ring-2 focus:ring-blue-800 focus:outline-none text-xs"
+                    />
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500">
+                        Registrando como: <strong>{currentUser?.nombreCompleto || currentUser?.username || 'Operador GIT'}</strong>
+                      </span>
+                      <button
+                        type="submit"
+                        disabled={isAddingObs || !nuevaObservacionTexto.trim()}
+                        className="px-3 py-1.5 rounded-lg bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{isAddingObs ? 'Registrando...' : 'Agregar al Árbol'}</span>
+                      </button>
+                    </div>
+                  </form>
 
-                {/* Representación Gráfica del Árbol (Timeline) */}
-                {(!activeDetailJudicatura.observaciones || activeDetailJudicatura.observaciones.length === 0) ? (
-                  <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-400">
-                    <Clock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <p className="font-semibold text-xs text-slate-600">No hay acciones registradas en el árbol</p>
-                    <p className="text-[10px] mt-0.5">Use el formulario superior para registrar la primera acción.</p>
-                  </div>
-                ) : (
-                  <div className="relative pl-6 space-y-6 before:content-[''] before:absolute before:top-2 before:bottom-2 before:left-2.5 before:w-0.5 before:bg-gradient-to-b before:from-blue-600 before:via-indigo-400 before:to-slate-300">
-                    {activeDetailJudicatura.observaciones.map((obs, idx) => (
-                      <div key={obs.id || idx} className="relative group">
-                        {/* Nodo del Árbol */}
-                        <div className="absolute -left-6 top-1 w-5 h-5 rounded-full bg-blue-900 border-2 border-white shadow-md flex items-center justify-center text-white text-[9px] font-mono font-black z-10 group-hover:scale-110 transition-transform">
-                          {obs.numeroAccion}
-                        </div>
+                  {/* Representación Gráfica del Árbol (Timeline) */}
+                  {(!activeDetailJudicatura.observaciones || activeDetailJudicatura.observaciones.length === 0) ? (
+                    <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-400">
+                      <Clock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                      <p className="font-semibold text-xs text-slate-600">No hay acciones registradas en el árbol</p>
+                      <p className="text-[10px] mt-0.5">Use el formulario superior para registrar la primera acción.</p>
+                    </div>
+                  ) : (
+                    <div className="relative pl-6 space-y-6 before:content-[''] before:absolute before:top-2 before:bottom-2 before:left-2.5 before:w-0.5 before:bg-gradient-to-b before:from-blue-600 before:via-indigo-400 before:to-slate-300">
+                      {activeDetailJudicatura.observaciones.map((obs, idx) => (
+                        <div key={obs.id || idx} className="relative group">
+                          {/* Nodo del Árbol */}
+                          <div className="absolute -left-6 top-1 w-5 h-5 rounded-full bg-blue-900 border-2 border-white shadow-md flex items-center justify-center text-white text-[9px] font-mono font-black z-10 group-hover:scale-110 transition-transform">
+                            {obs.numeroAccion}
+                          </div>
 
-                        {/* Tarjeta de la Rama */}
-                        <div className="bg-slate-50 hover:bg-slate-100/90 border border-slate-200 rounded-xl p-3.5 transition-all shadow-2xs">
-                          <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-200 text-[10px]">
-                            <div className="flex items-center gap-2">
-                              <span className="font-black px-2 py-0.5 rounded bg-blue-900 text-white">
-                                Acción #{obs.numeroAccion}
-                              </span>
-                              <span className="font-semibold text-slate-700">
-                                {obs.autor || 'Operador GIT'}
+                          {/* Tarjeta de la Rama */}
+                          <div className="bg-slate-50 hover:bg-slate-100/90 border border-slate-200 rounded-xl p-3.5 transition-all shadow-2xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-200 text-[10px]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black px-2 py-0.5 rounded bg-blue-900 text-white">
+                                  Acción #{obs.numeroAccion}
+                                </span>
+                                <span className="font-semibold text-slate-700">
+                                  {obs.autor || 'Operador GIT'}
+                                </span>
+                              </div>
+                              <span className="font-mono text-slate-500">
+                                {formatDateTime(obs.fecha)}
                               </span>
                             </div>
-                            <span className="font-mono text-slate-500">
-                              {formatDateTime(obs.fecha)}
-                            </span>
+                            <p className="text-xs text-slate-800 mt-2 leading-relaxed whitespace-pre-wrap">
+                              {obs.texto}
+                            </p>
                           </div>
-                          <p className="text-xs text-slate-800 mt-2 leading-relaxed whitespace-pre-wrap">
-                            {obs.texto}
-                          </p>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SECCIÓN 2: EXPEDIENTE DIGITAL Y DOCUMENTOS ADJUNTOS */}
+              {(activeDetailTab === 'documentos' || activeDetailTab === 'todo') && (
+                <div className="pt-2">
+                  <JudicaturaDocumentsSection
+                    judicatura={activeDetailJudicatura}
+                    canEdit={canEdit}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Pie del Detalle */}
@@ -3900,6 +4109,8 @@ export const JudicaturasView: React.FC = () => {
           equipamiento: equipamientoFilter !== 'Todos' ? equipamientoFilter : undefined,
           estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
         }}
+        initialReportType={consolidatedModalInitialType}
+        initialStatus={consolidatedModalInitialStatus}
       />
 
       {/* ========================================================================= */}

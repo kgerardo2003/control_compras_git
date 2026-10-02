@@ -321,3 +321,103 @@ export async function processAttachedFile(file: File): Promise<AttachedDocument>
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * Guarda un documento adjunto de una judicatura en IndexedDB local con alta capacidad
+ */
+export async function saveJudicaturaAttachmentToIndexedDB(
+  judicaturaId: string,
+  docNombre: string,
+  document: AttachedDocument
+): Promise<boolean> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const record = {
+        id: `jud_${judicaturaId}_${docNombre}`,
+        document,
+        actualizadoEn: new Date().toISOString()
+      };
+      store.put(record);
+
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch (err) {
+    console.warn("Aviso al guardar adjunto de judicatura en IndexedDB:", err);
+    return false;
+  }
+}
+
+/**
+ * Recupera un documento adjunto de una judicatura desde IndexedDB local
+ */
+export async function getJudicaturaAttachmentFromIndexedDB(
+  judicaturaId: string,
+  docNombre: string
+): Promise<AttachedDocument | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(`jud_${judicaturaId}_${docNombre}`);
+
+      request.onsuccess = () => {
+        db.close();
+        if (request.result && request.result.document) {
+          resolve(request.result.document);
+        } else {
+          resolve(null);
+        }
+      };
+
+      request.onerror = () => {
+        db.close();
+        resolve(null);
+      };
+    });
+  } catch (err) {
+    console.warn("Aviso al recuperar adjunto de judicatura de IndexedDB:", err);
+    return null;
+  }
+}
+
+/**
+ * Elimina un documento adjunto de una judicatura desde IndexedDB local
+ */
+export async function deleteJudicaturaAttachmentFromIndexedDB(
+  judicaturaId: string,
+  docNombre: string
+): Promise<boolean> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.delete(`jud_${judicaturaId}_${docNombre}`);
+
+      request.onsuccess = () => {
+        db.close();
+        resolve(true);
+      };
+
+      request.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch (err) {
+    console.warn("Aviso al eliminar adjunto de judicatura de IndexedDB:", err);
+    return false;
+  }
+}

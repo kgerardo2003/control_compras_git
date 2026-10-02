@@ -46,8 +46,9 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
     }
 
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const databaseId = cfg.firestoreDatabaseId || 'ai-studio-controlcomprasgi-02a1a92c-61ef-4fa8-b38d-a9532c263771';
     tempApp = initializeApp(cfg, `sync-app-${Date.now()}`);
-    db = getFirestore(tempApp, cfg.firestoreDatabaseId);
+    db = getFirestore(tempApp, databaseId);
 
     console.log('[FirestoreSync] Reconciliando base de datos central con Firestore...');
 
@@ -211,11 +212,12 @@ export async function forcePushToFirestore(): Promise<{
     }
 
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const databaseId = cfg.firestoreDatabaseId || 'ai-studio-controlcomprasgi-02a1a92c-61ef-4fa8-b38d-a9532c263771';
     tempApp = initializeApp(cfg, `force-push-${Date.now()}`);
-    db = getFirestore(tempApp, cfg.firestoreDatabaseId);
+    db = getFirestore(tempApp, databaseId);
 
     const store = getStoreState();
-    console.log(`[FirestoreSync] Forzando sincronización hacia base de datos de producción Firestore (${cfg.firestoreDatabaseId})...`);
+    console.log(`[FirestoreSync] Forzando sincronización hacia base de datos de producción Firestore (${databaseId})...`);
 
     // 1. Subir Judicaturas a Firestore
     if (store.judicaturas && store.judicaturas.length > 0) {

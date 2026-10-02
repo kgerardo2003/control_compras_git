@@ -18,6 +18,12 @@ import {
   Upload
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { 
+  SHARED_FIRESTORE_DATABASE_ID, 
+  SHARED_FIRESTORE_CONSOLE_URL, 
+  SHARED_FIREBASE_PROJECT_ID, 
+  SHARED_FIRESTORE_DATABASE_URL 
+} from '../lib/firebase';
 
 interface FirestoreStatusData {
   firestore: {
@@ -130,7 +136,7 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({ isOp
 
   const isQuota = data?.firestore.quotaExceeded || localFirestoreStatus === 'offline' && !data;
   const isOnline = isFirestoreConnected || data?.firestore.status === 'conectado';
-  const consoleLink = data?.firestore.consoleUrl || "https://console.firebase.google.com/project/gen-lang-client-0584258501/firestore/databases/ai-studio-sistemadecontrol-5592e35a-812a-481c-bad9-b7ae12134a41/data?openUpgradeDialog=true";
+  const consoleLink = data?.firestore.consoleUrl || SHARED_FIRESTORE_CONSOLE_URL;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -235,10 +241,13 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({ isOp
                 Identificador de Base de Datos
               </span>
               <p className="font-mono text-xs font-semibold text-slate-800 break-all select-all">
-                {data?.firestore.databaseId || 'ai-studio-sistemadecontrol-5592e35a-812a-481c-bad9-b7ae12134a41'}
+                {data?.firestore.databaseId || SHARED_FIRESTORE_DATABASE_ID}
               </p>
               <span className="text-[10px] text-slate-400 mt-1 block">
-                Proyecto Google Cloud: {data?.firestore.projectId || 'gen-lang-client-0584258501'}
+                Proyecto Google Cloud: {data?.firestore.projectId || SHARED_FIREBASE_PROJECT_ID}
+              </span>
+              <span className="text-[10px] text-blue-600 mt-0.5 block break-all font-mono">
+                Instancia Única Compartida (Todos los Puestos)
               </span>
             </div>
 

@@ -24,6 +24,7 @@ import {
   TwoFactorMethod,
   JudicaturaRecord,
   JudicaturaObservacion,
+  JudicaturaDocumento,
   ServicioContratado
 } from '../types';
 import { 
@@ -98,10 +99,12 @@ import {
   removeBatchServiciosFromFirestore,
   onServiciosSnapshot,
   saveBatchServiciosToFirestore,
-  forcePushAllLocalDataToFirestore
+  forcePushAllLocalDataToFirestore,
+  SHARED_FIRESTORE_DATABASE_ID,
+  SHARED_FIRESTORE_DATABASE_URL
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit, getDocs } from 'firebase/firestore';
-import { saveAttachmentToIndexedDB, getAttachmentFromIndexedDB, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
+import { saveAttachmentToIndexedDB, getAttachmentFromIndexedDB, getAttachmentWithDataUrl, saveJudicaturaAttachmentToIndexedDB } from '../utils/attachmentStorage';
 
 export const DEFAULT_LOGO_CONFIG: CustomLogoConfig = {
   type: 'custom_image',
@@ -124,6 +127,8 @@ interface AppContextType {
   isOnline: boolean;
   isFirestoreConnected: boolean;
   firestoreStatus: 'conectado' | 'conectando' | 'offline' | 'error' | 'cuota_excedida';
+  firestoreDatabaseId: string;
+  firestoreDatabaseUrl: string;
   hasPendingWrites: boolean;
   syncConflict: boolean;
   lastSyncTime: Date | null;
@@ -280,6 +285,8 @@ interface AppContextType {
     records: Array<Omit<JudicaturaRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string }>,
     replaceAll?: boolean
   ) => Promise<{ count: number }>;
+  addJudicaturaDocumento: (judicaturaId: string, doc: JudicaturaDocumento) => Promise<{ success: boolean; message?: string }>;
+  deleteJudicaturaDocumento: (judicaturaId: string, docIdOrName: string) => Promise<{ success: boolean; message?: string }>;
 
   // Módulo de Servicios Contratados, Vigencia y Alertas Tempranas (GIT)
   servicios: ServicioContratado[];
@@ -4063,6 +4070,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fechaInauguracion: data.fechaInauguracion || '',
       estadoInauguracion: data.estadoInauguracion || (data.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'),
       observaciones: observacionInicial,
+      documentos: (data as any).documentos || [],
       creadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
       fechaCreacion: nowIso
     };
@@ -4334,6 +4342,117 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return { count: importedCount };
+  };
+
+  const addJudicaturaDocumento = async (
+    judicaturaId: string, 
+    docItem: JudicaturaDocumento
+  ): Promise<{ success: boolean; message?: string }> => {
+    const jud = judicaturas.find(j => j.id === judicaturaId);
+    if (!jud) return { success: false, message: 'Judicatura no encontrada.' };
+
+    const docId = docItem.id || `doc-jud-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const newDoc: JudicaturaDocumento = {
+      ...docItem,
+      id: docId,
+      fechaSubida: docItem.fechaSubida || new Date().toISOString(),
+      subidoPor: docItem.subidoPor || currentUser?.nombreCompleto || 'Usuario del Sistema'
+    };
+
+    const currentDocs = Array.isArray(jud.documentos) ? jud.documentos : [];
+    const updatedDocs = [newDoc, ...currentDocs];
+    const updatedJud: JudicaturaRecord = {
+      ...jud,
+      documentos: updatedDocs,
+      modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaModificacion: new Date().toISOString()
+    };
+
+    const updatedList = judicaturas.map(j => j.id === judicaturaId ? updatedJud : j);
+    setJudicaturas(updatedList);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updatedList));
+
+    // Respaldo de alta capacidad en IndexedDB para adjuntos pesados
+    if (newDoc.dataUrl) {
+      saveJudicaturaAttachmentToIndexedDB(judicaturaId, newDoc.nombre, newDoc).catch(() => {});
+    }
+
+    saveJudicaturaToFirestore(updatedJud).catch(err => 
+      console.warn("Aviso Firestore al guardar documento en judicatura:", err)
+    );
+
+    fetch('/api/db/judicaturas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedJud)
+    }).catch(err => console.warn("Aviso servidor central al guardar documento en judicatura:", err));
+
+    notifyStationMutation();
+
+    logAudit(
+      'EDITAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Documento adjuntado "${newDoc.nombre}" (${newDoc.categoria || 'General'}) a la ficha de judicatura ${jud.nombreJudicatura}`,
+      judicaturaId
+    );
+
+    showToast({
+      title: 'Documento Adjuntado',
+      message: `El archivo "${newDoc.nombre}" se agregó correctamente al expediente digital.`,
+      type: 'exito'
+    });
+
+    return { success: true };
+  };
+
+  const deleteJudicaturaDocumento = async (
+    judicaturaId: string, 
+    docIdOrName: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    const jud = judicaturas.find(j => j.id === judicaturaId);
+    if (!jud) return { success: false, message: 'Judicatura no encontrada.' };
+
+    const currentDocs = Array.isArray(jud.documentos) ? jud.documentos : [];
+    const docToDelete = currentDocs.find(d => d.id === docIdOrName || d.nombre === docIdOrName);
+    const updatedDocs = currentDocs.filter(d => d.id !== docIdOrName && d.nombre !== docIdOrName);
+
+    const updatedJud: JudicaturaRecord = {
+      ...jud,
+      documentos: updatedDocs,
+      modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaModificacion: new Date().toISOString()
+    };
+
+    const updatedList = judicaturas.map(j => j.id === judicaturaId ? updatedJud : j);
+    setJudicaturas(updatedList);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updatedList));
+
+    saveJudicaturaToFirestore(updatedJud).catch(err => 
+      console.warn("Aviso Firestore al eliminar documento en judicatura:", err)
+    );
+
+    fetch('/api/db/judicaturas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedJud)
+    }).catch(err => console.warn("Aviso servidor central al eliminar documento en judicatura:", err));
+
+    notifyStationMutation();
+
+    logAudit(
+      'EDITAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Documento eliminado "${docToDelete?.nombre || docIdOrName}" de la ficha de judicatura ${jud.nombreJudicatura}`,
+      judicaturaId
+    );
+
+    showToast({
+      title: 'Documento Eliminado',
+      message: `Se eliminó el documento del expediente digital.`,
+      type: 'info'
+    });
+
+    return { success: true };
   };
 
   // ==========================================
@@ -4849,6 +4968,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isOnline,
         isFirestoreConnected,
         firestoreStatus,
+        firestoreDatabaseId: SHARED_FIRESTORE_DATABASE_ID,
+        firestoreDatabaseUrl: SHARED_FIRESTORE_DATABASE_URL,
         hasPendingWrites,
         syncConflict,
         lastSyncTime,
@@ -4951,6 +5072,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteJudicatura,
         addJudicaturaObservacion,
         importJudicaturas,
+        addJudicaturaDocumento,
+        deleteJudicaturaDocumento,
         servicios,
         addServicio,
         updateServicio,

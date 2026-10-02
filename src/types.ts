@@ -395,6 +395,23 @@ export interface JudicaturaObservacion {
   texto: string; // Texto de la observación o acción realizada
 }
 
+export type CategoriaDocumentoJudicatura = 
+  | 'Acta de Entrega'
+  | 'Dictamen Técnico GIT'
+  | 'Plano / Diagrama de Red'
+  | 'Formulario F56'
+  | 'Contrato / Enlace'
+  | 'Oficio Oficial'
+  | 'Evidencia Fotográfica'
+  | 'General';
+
+export interface JudicaturaDocumento extends AttachedDocument {
+  id?: string;
+  categoria?: CategoriaDocumentoJudicatura | string;
+  descripcion?: string;
+  subidoPor?: string;
+}
+
 export interface JudicaturaRecord {
   id: string;
   nombreJudicatura: string;
@@ -408,6 +425,7 @@ export interface JudicaturaRecord {
   fechaInauguracion?: string;       // YYYY-MM-DD (Opcional)
   estadoInauguracion?: EstadoInauguracionJudicatura; // Reprogramado, Pendiente Fecha, Inaugurado
   observaciones: JudicaturaObservacion[];
+  documentos?: JudicaturaDocumento[]; // Documentos y expedientes digitalizados adjuntos
   creadoPor: string;
   fechaCreacion: string;
   modificadoPor?: string;

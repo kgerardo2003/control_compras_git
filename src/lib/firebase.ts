@@ -25,21 +25,26 @@ try {
 import firebaseConfigFile from '../../firebase-applet-config.json';
 import { PurchaseRecord, AuditLogEntry, Catalog, User, UserProfile, BudgetLineItem, BudgetModification, AttachedDocument, JudicaturaRecord, ServicioContratado } from '../types';
 
+export const SHARED_FIRESTORE_DATABASE_ID = 'ai-studio-controlcomprasgi-02a1a92c-61ef-4fa8-b38d-a9532c263771';
+export const SHARED_FIREBASE_PROJECT_ID = 'gen-lang-client-0584258501';
+export const SHARED_FIRESTORE_DATABASE_URL = `https://firestore.googleapis.com/v1/projects/${SHARED_FIREBASE_PROJECT_ID}/databases/${SHARED_FIRESTORE_DATABASE_ID}/documents`;
+export const SHARED_FIRESTORE_CONSOLE_URL = `https://console.firebase.google.com/project/${SHARED_FIREBASE_PROJECT_ID}/firestore/databases/${SHARED_FIRESTORE_DATABASE_ID}/data`;
+
 export const FIREBASE_CONFIG = {
-  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || firebaseConfigFile.apiKey,
-  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || firebaseConfigFile.authDomain,
-  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) || firebaseConfigFile.projectId,
-  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET) || firebaseConfigFile.storageBucket,
-  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || firebaseConfigFile.messagingSenderId,
-  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || firebaseConfigFile.appId,
-  firestoreDatabaseId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_FIRESTORE_DATABASE_ID) || firebaseConfigFile.firestoreDatabaseId
+  apiKey: firebaseConfigFile.apiKey || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY),
+  authDomain: firebaseConfigFile.authDomain || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN),
+  projectId: SHARED_FIREBASE_PROJECT_ID,
+  storageBucket: firebaseConfigFile.storageBucket || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET),
+  messagingSenderId: firebaseConfigFile.messagingSenderId || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID),
+  appId: firebaseConfigFile.appId || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID),
+  firestoreDatabaseId: SHARED_FIRESTORE_DATABASE_ID
 };
 
 // Inicialización de Firebase App
 export const app = getApps().length > 0 ? getApp() : initializeApp(FIREBASE_CONFIG);
 
-// Conexión autoritativa a la base de datos compartida de Firestore (CRITICAL: todos los clientes conectan a la misma instancia)
-export const db: Firestore = getFirestore(app, FIREBASE_CONFIG.firestoreDatabaseId || firebaseConfigFile.firestoreDatabaseId);
+// Conexión autoritativa a la base de datos compartida única de Firestore (CRITICAL: todos los usuarios y clientes conectan a la misma instancia exacta)
+export const db: Firestore = getFirestore(app, SHARED_FIRESTORE_DATABASE_ID);
 
 // Verificación segura de conexión al servidor Firestore
 export async function testConnection(): Promise<boolean> {

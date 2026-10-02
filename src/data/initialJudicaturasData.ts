@@ -36,6 +36,28 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
         texto: 'Apertura de expediente e inicio de adecuaciones físicas y eléctricas para la nueva sede del juzgado pluripersonal.'
       }
     ],
+    documentos: [
+      {
+        id: 'doc-jud-001-1',
+        nombre: 'Acta_Recepcion_Definitiva_Villa_Nueva.pdf',
+        tamano: 345000,
+        tipo: 'application/pdf',
+        fechaSubida: '2026-03-28T16:00:00Z',
+        categoria: 'Acta de Entrega',
+        descripcion: 'Acta de entrega y recepción técnica de instalaciones y equipos informáticos firmada por la delegación del Organismo Judicial.',
+        subidoPor: 'Lic. Kevin Gerardo López de León'
+      },
+      {
+        id: 'doc-jud-001-2',
+        nombre: 'Certificacion_Fluke_Red_FibraOptica.pdf',
+        tamano: 184000,
+        tipo: 'application/pdf',
+        fechaSubida: '2026-03-25T15:10:00Z',
+        categoria: 'Dictamen Técnico GIT',
+        descripcion: 'Certificación técnica de enlace de datos 100 Mbps y cableado estructurado Categoría 6A emitida por el Departamento de Redes y Telecomunicaciones.',
+        subidoPor: 'Ing. Marco Vinicio Cruz'
+      }
+    ],
     creadoPor: 'Lic. Kevin Gerardo López de León',
     fechaCreacion: '2026-01-15T08:00:00Z'
   },

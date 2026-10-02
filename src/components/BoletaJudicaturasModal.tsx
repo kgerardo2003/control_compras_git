@@ -286,6 +286,52 @@ export const BoletaJudicaturasModal: React.FC<BoletaJudicaturasModalProps> = ({ 
             )}
           </div>
 
+          {/* Bloque 3.1: Expediente Digital y Documentos Oficiales Registrados */}
+          {judicatura.documentos && judicatura.documentos.length > 0 && (
+            <div className="my-5">
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 mb-2">
+                Expediente Digital y Documentos Oficiales Adjuntos ({judicatura.documentos.length}):
+              </h3>
+              <table className="w-full border-collapse border border-slate-300 text-xs">
+                <thead className="bg-slate-100 font-bold text-slate-800">
+                  <tr>
+                    <th className="border border-slate-300 p-1.5 w-10 text-center">#</th>
+                    <th className="border border-slate-300 p-1.5 w-36 text-left">Categoría</th>
+                    <th className="border border-slate-300 p-1.5 text-left">Nombre de Archivo y Detalle</th>
+                    <th className="border border-slate-300 p-1.5 w-28 text-center">Fecha Carga</th>
+                    <th className="border border-slate-300 p-1.5 w-36 text-left">Subido Por</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {judicatura.documentos.map((doc, idx) => (
+                    <tr key={doc.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                      <td className="border border-slate-300 p-1.5 text-center font-bold text-slate-700 font-mono">
+                        {idx + 1}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 font-bold text-blue-900 text-[11px]">
+                        {doc.categoria || 'General'}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 text-slate-800">
+                        <span className="font-semibold">{doc.nombre}</span>
+                        {doc.descripcion && (
+                          <span className="block text-[10px] text-slate-500 italic mt-0.5">
+                            {doc.descripcion}
+                          </span>
+                        )}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 text-center font-mono text-[10px] text-slate-600">
+                        {doc.fechaSubida ? formatDate(doc.fechaSubida) : 'N/D'}
+                      </td>
+                      <td className="border border-slate-300 p-1.5 text-[10px] text-slate-600">
+                        {doc.subidoPor || 'Operador GIT'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* Bloque 4: Dictamen de Infraestructura */}
           <div className="my-5 p-3.5 border border-slate-300 rounded bg-slate-50/60">
             <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-1">

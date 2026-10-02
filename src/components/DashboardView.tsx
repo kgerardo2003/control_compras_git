@@ -53,6 +53,7 @@ import { formatQuetzales, formatDate, exportToCSV, formatDateTime, getModalidadC
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, ALL_AREAS_LABEL } from '../utils/rbacUtils';
 import { DesertedAndPrescindedAnalytics } from './analytics/DesertedAndPrescindedAnalytics';
+import { SyncStatusMonitor } from './SyncStatusMonitor';
 
 // Helper para determinar si un evento NOG está vigente (en convocatoria pública o recepción de plicas)
 export const isPurchaseVigente = (p: { estatusEvento?: string }): boolean => {
@@ -1407,6 +1408,9 @@ export const DashboardView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Monitor de Sincronización en Tiempo Real con Backend Firestore */}
+      <SyncStatusMonitor />
 
       {/* Indicador de Alcance Departamental RBAC en Dashboard */}
       {!isAdmin && (

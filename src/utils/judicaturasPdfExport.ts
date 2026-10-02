@@ -511,7 +511,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         if (data.section === 'body' && data.row.index === 1 && data.column.index === 0) {
           data.cell.styles.textColor = [29, 78, 216]; // Blue
         }
-        if (data.section === 'body' && data.row.index === 2) {
+        if (data.section === 'body' && data.row.index === 2 && data.column.index === 0) {
+          data.cell.styles.textColor = [6, 78, 59]; // Emerald (Amparos)
+        }
+        if (data.section === 'body' && data.row.index === 3) {
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fillColor = [241, 245, 249];
           data.cell.styles.textColor = [15, 23, 42];
@@ -1210,6 +1213,68 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
   }
 
   // =========================================================================
+  // BLOQUE OFICIAL DE FIRMAS Y RESPONSABILIDAD INSTITUCIONAL
+  // =========================================================================
+  if (currentY > pageHeight - 38) {
+    doc.addPage('a4', 'landscape');
+    currentY = 34;
+  }
+
+  const signWidth = (pageWidth - marginX * 2 - 24) / 3;
+  const signY = currentY + 12;
+
+  // 1. Elaboró
+  doc.setDrawColor(148, 163, 184);
+  doc.setLineWidth(0.3);
+  doc.line(marginX, signY, marginX + signWidth, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('ELABORÓ / TÉCNICO DE MONITOREO', marginX + signWidth / 2, signY + 3.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.text(currentUser?.nombreCompleto || currentUser?.username || 'Ingeniero de Infraestructura y Redes GIT', marginX + signWidth / 2, signY + 7, { align: 'center' });
+  doc.setFontSize(5.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Departamento de Servicios Informáticos', marginX + signWidth / 2, signY + 10, { align: 'center' });
+
+  // 2. Revisó
+  const sign2X = marginX + signWidth + 12;
+  doc.line(sign2X, signY, sign2X + signWidth, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('REVISÓ / COORDINACIÓN DE INFRAESTRUCTURA', sign2X + signWidth / 2, signY + 3.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.text('Supervisión Técnica de Adecuaciones TIC', sign2X + signWidth / 2, signY + 7, { align: 'center' });
+  doc.setFontSize(5.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Gerencia de Informática • Organismo Judicial', sign2X + signWidth / 2, signY + 10, { align: 'center' });
+
+  // 3. Aprobó / Vo.Bo.
+  const sign3X = sign2X + signWidth + 12;
+  doc.line(sign3X, signY, sign3X + signWidth, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('VO.BO. / AUTORIZADO', sign3X + signWidth / 2, signY + 3.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.text('Gerencia de Informática', sign3X + signWidth / 2, signY + 7, { align: 'center' });
+  doc.setFontSize(5.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Organismo Judicial de Guatemala', sign3X + signWidth / 2, signY + 10, { align: 'center' });
+
+  currentY = signY + 15;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    'Documento oficial emitido a través del Sistema Integral de Control de Judicaturas e Infraestructura TI. Válido para fines de auditoría y seguimiento institucional.',
+    pageWidth / 2,
+    currentY,
+    { align: 'center' }
+  );
+
+  // =========================================================================
   // PIE Y CABECERA INSTITUCIONAL EN TODAS LAS PÁGINAS (CON LOGOTIPO DEL OJ)
   // =========================================================================
   // Recorrer de forma exhaustiva todas las páginas del documento generado para
@@ -1484,6 +1549,60 @@ export function generateIndividualJudicaturaPDF(
   });
 
   currentY = (doc as any).lastAutoTable.finalY + 8;
+
+  // 3.1. EXPEDIENTE DIGITAL Y DOCUMENTOS OFICIALES ADJUNTOS
+  const docList = judicatura.documentos || [];
+  if (docList.length > 0) {
+    if (currentY > pageHeight - 55) {
+      doc.addPage();
+      currentY = 35;
+    }
+
+    doc.setFillColor(10, 10, 105);
+    doc.rect(marginX, currentY, 2.5, 5, 'F');
+    doc.setTextColor(10, 10, 105);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(`EXPEDIENTE DIGITAL Y DOCUMENTOS OFICIALES ADJUNTOS (${docList.length})`, marginX + 5, currentY + 4);
+    currentY += 7;
+
+    const docsBody = docList.map((d, idx) => [
+      `#${idx + 1}`,
+      d.categoria || 'General',
+      d.nombre + (d.descripcion ? `\nNota: ${d.descripcion}` : ''),
+      d.fechaSubida ? formatDateTime(d.fechaSubida) : 'N/D',
+      d.subidoPor || 'Operador GIT'
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: marginX, right: marginX },
+      head: [['NO.', 'CATEGORÍA', 'NOMBRE DE ARCHIVO Y DETALLE', 'FECHA CARGA', 'RESPONSABLE']],
+      body: docsBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 23, 42],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.5,
+      },
+      styles: {
+        fontSize: 7.2,
+        textColor: [15, 23, 42],
+        cellPadding: 2,
+        overflow: 'linebreak',
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', halign: 'center', cellWidth: 10 },
+        1: { cellWidth: 35, fontStyle: 'bold' },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 30, halign: 'center' },
+        4: { cellWidth: 35 },
+      },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 8;
+  }
 
   // 4. BLOQUE DE FIRMAS Y RESPONSABILIDAD INSTITUCIONAL
   if (currentY > pageHeight - 38) {
