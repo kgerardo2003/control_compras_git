@@ -309,14 +309,14 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
   });
   const auditCode = `OJ-GIT-JUD-${now.getFullYear()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
-  // Espacio superior reservado para la cabecera (banner de 22mm + margen)
-  let currentY = 34;
+  // Espacio superior reservado para la cabecera (banner de 22mm + margen limpio de separación)
+  let currentY = 36.5;
 
   // =========================================================================
   // PÁGINA 1: PANEL EJECUTIVO DE KPIS Y GRÁFICAS CIRCULARES DE CONTROL
   // =========================================================================
   if (includeCharts && judicaturas.length > 0) {
-    let page1Y = 32;
+    let page1Y = 37.5;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
@@ -336,7 +336,16 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     page1Y += 4.5;
 
     // Filtros aplicados si existen
-    if (filterInfo && (filterInfo.search || filterInfo.ramo || filterInfo.equipamiento || filterInfo.estadoInauguracion || filterInfo.priorizado)) {
+    const hasFilters = Boolean(
+      filterInfo &&
+        (filterInfo.search ||
+          filterInfo.ramo ||
+          filterInfo.equipamiento ||
+          filterInfo.estadoInauguracion ||
+          filterInfo.priorizado)
+    );
+
+    if (hasFilters && filterInfo) {
       const filters = [];
       if (filterInfo.search) filters.push(`Búsqueda: "${filterInfo.search}"`);
       if (filterInfo.ramo && filterInfo.ramo !== 'Todos') {
@@ -368,14 +377,14 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     const dashboardImg = generateJudicaturasExecutiveDashboardImage(judicaturas);
     if (dashboardImg) {
       const imgWidth = pageWidth - marginX * 2; // 273 mm
-      const imgHeight = 148; // mm (alta definición nítida)
+      const imgHeight = hasFilters ? 142 : 146; // mm (alta definición nítida sin rozar el pie de página)
       doc.addImage(dashboardImg, 'PNG', marginX, page1Y, imgWidth, imgHeight);
     }
 
     // Salto de página para dar inicio a las tablas detalladas o cronograma
     if (includeTable || includeGantt || includeStatusMatrix) {
       doc.addPage('a4', 'landscape');
-      currentY = 34;
+      currentY = 36.5;
     }
   }
 
@@ -524,7 +533,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     // Cuadro Comparativo Ejecutivo por Ramo
     autoTable(doc, {
       startY: currentY,
-      margin: { top: 34, left: marginX, right: marginX, bottom: 14 },
+      margin: { top: 35, left: marginX, right: marginX, bottom: 14 },
       head: [
         [
           'Ramo Jurisdiccional',
@@ -635,7 +644,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       // Si queda muy poco espacio vertical, saltar página
       if (currentY > pageHeight - 38) {
         doc.addPage('a4', 'landscape');
-        currentY = 34;
+        currentY = 36.5;
       }
 
       // Banner institucional de separación de Ramo
@@ -686,7 +695,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
       autoTable(doc, {
         startY: currentY,
-        margin: { top: 34, left: marginX, right: marginX, bottom: 14 },
+        margin: { top: 35, left: marginX, right: marginX, bottom: 14 },
         head: [
           [
             '#',
@@ -709,7 +718,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         showHead: 'everyPage',
         styles: {
           fontSize: 6.2,
-          cellPadding: 1.8,
+          cellPadding: 1.5,
           overflow: 'linebreak',
           valign: 'middle',
         },
@@ -717,22 +726,24 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           fillColor: headerBg,
           textColor: [255, 255, 255],
           fontStyle: 'bold',
-          fontSize: 6.3,
+          fontSize: 5.8,
+          cellPadding: { top: 2, bottom: 2, left: 0.6, right: 0.6 },
           halign: 'center',
+          valign: 'middle',
         },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 7 },
-          1: { halign: 'left', cellWidth: 50, fontStyle: 'bold' },
-          2: { halign: 'center', cellWidth: 14, fontStyle: 'bold' },
-          3: { halign: 'center', cellWidth: 26 },
-          4: { halign: 'center', cellWidth: 8 },
-          5: { halign: 'center', cellWidth: 8 },
-          6: { halign: 'center', cellWidth: 8 },
-          7: { halign: 'center', cellWidth: 9 },
-          8: { halign: 'center', cellWidth: 18 },
-          9: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
-          10: { halign: 'center', cellWidth: 17 },
-          11: { halign: 'left', valign: 'top', cellWidth: 88 },
+          0: { halign: 'center', cellWidth: 6 },
+          1: { halign: 'left', cellWidth: 48, fontStyle: 'bold' },
+          2: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
+          3: { halign: 'center', cellWidth: 24 },
+          4: { halign: 'center', cellWidth: 7 },
+          5: { halign: 'center', cellWidth: 10 },
+          6: { halign: 'center', cellWidth: 7.5 },
+          7: { halign: 'center', cellWidth: 10.5 },
+          8: { halign: 'center', cellWidth: 17 },
+          9: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
+          10: { halign: 'center', cellWidth: 14 },
+          11: { halign: 'left', valign: 'top', cellWidth: 94 },
         },
         alternateRowStyles: {
           fillColor: [248, 250, 252],
@@ -873,7 +884,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
       autoTable(doc, {
         startY: currentY,
-        margin: { top: 34, left: marginX, right: marginX, bottom: 14 },
+        margin: { top: 35, left: marginX, right: marginX, bottom: 14 },
         head: [
           [
             '#',
@@ -897,7 +908,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         showHead: 'everyPage',
         styles: {
           fontSize: 6.2,
-          cellPadding: 1.8,
+          cellPadding: 1.5,
           overflow: 'linebreak',
           valign: 'middle',
         },
@@ -905,23 +916,25 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           fillColor: [10, 10, 105],
           textColor: [255, 255, 255],
           fontStyle: 'bold',
-          fontSize: 6.3,
+          fontSize: 5.8,
+          cellPadding: { top: 2, bottom: 2, left: 0.6, right: 0.6 },
           halign: 'center',
+          valign: 'middle',
         },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 7 },
-          1: { halign: 'left', cellWidth: 44, fontStyle: 'bold' },
-          2: { halign: 'center', cellWidth: 19 },
-          3: { halign: 'center', cellWidth: 13, fontStyle: 'bold' },
-          4: { halign: 'center', cellWidth: 25 },
-          5: { halign: 'center', cellWidth: 8 },
-          6: { halign: 'center', cellWidth: 8 },
-          7: { halign: 'center', cellWidth: 8 },
-          8: { halign: 'center', cellWidth: 9 },
-          9: { halign: 'center', cellWidth: 17 },
-          10: { halign: 'center', cellWidth: 19, fontStyle: 'bold' },
-          11: { halign: 'center', cellWidth: 16 },
-          12: { halign: 'left', valign: 'top', cellWidth: 80 },
+          0: { halign: 'center', cellWidth: 6 },
+          1: { halign: 'left', cellWidth: 42, fontStyle: 'bold' },
+          2: { halign: 'center', cellWidth: 17 },
+          3: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
+          4: { halign: 'center', cellWidth: 23 },
+          5: { halign: 'center', cellWidth: 7 },
+          6: { halign: 'center', cellWidth: 10 },
+          7: { halign: 'center', cellWidth: 7.5 },
+          8: { halign: 'center', cellWidth: 10.5 },
+          9: { halign: 'center', cellWidth: 16 },
+          10: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
+          11: { halign: 'center', cellWidth: 14 },
+          12: { halign: 'left', valign: 'top', cellWidth: 86 },
         },
         alternateRowStyles: {
           fillColor: [248, 250, 252],
@@ -997,7 +1010,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
   // =========================================================================
   if (includeGantt) {
     doc.addPage('a4', 'landscape');
-    currentY = 34;
+    currentY = 36.5;
 
     // Encabezado de la Sección de Gantt
     doc.setFont('helvetica', 'bold');
@@ -1258,7 +1271,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
   // =========================================================================
   if (includeStatusMatrix) {
     doc.addPage('a4', 'landscape');
-    currentY = 34;
+    currentY = 36.5;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
@@ -1313,7 +1326,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
     autoTable(doc, {
       startY: currentY,
-      margin: { top: 34, left: marginX, right: marginX, bottom: 14 },
+      margin: { top: 35, left: marginX, right: marginX, bottom: 14 },
       head: [
         [
           '#',
@@ -1335,7 +1348,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       showHead: 'everyPage',
       styles: {
         fontSize: 6.2,
-        cellPadding: 1.8,
+        cellPadding: 1.5,
         overflow: 'linebreak',
         valign: 'middle',
       },
@@ -1343,21 +1356,23 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         fillColor: [10, 10, 105], // #0A0A69
         textColor: [255, 255, 255],
         fontStyle: 'bold',
-        fontSize: 6.3,
+        fontSize: 5.8,
+        cellPadding: { top: 2, bottom: 2, left: 0.6, right: 0.6 },
         halign: 'center',
+        valign: 'middle',
       },
       columnStyles: {
-        0: { halign: 'center', cellWidth: 7 },
+        0: { halign: 'center', cellWidth: 6 },
         1: { halign: 'left', cellWidth: 44, fontStyle: 'bold' },
-        2: { halign: 'center', cellWidth: 18 },
-        3: { halign: 'center', cellWidth: 14, fontStyle: 'bold' },
-        4: { halign: 'center', cellWidth: 15 },
+        2: { halign: 'center', cellWidth: 17 },
+        3: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
+        4: { halign: 'center', cellWidth: 16 },
         5: { halign: 'center', cellWidth: 15 },
         6: { halign: 'center', cellWidth: 15 },
-        7: { halign: 'center', cellWidth: 15 },
-        8: { halign: 'center', cellWidth: 14, fontStyle: 'bold' },
-        9: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
-        10: { halign: 'left', valign: 'top', cellWidth: 96 },
+        7: { halign: 'center', cellWidth: 16 },
+        8: { halign: 'center', cellWidth: 15, fontStyle: 'bold' },
+        9: { halign: 'center', cellWidth: 19, fontStyle: 'bold' },
+        10: { halign: 'left', valign: 'top', cellWidth: 94 },
       },
       alternateRowStyles: {
         fillColor: [248, 250, 252],
