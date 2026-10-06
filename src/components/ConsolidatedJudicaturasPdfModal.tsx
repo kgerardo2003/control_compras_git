@@ -21,6 +21,7 @@ import {
   FolderTree,
   Landmark,
   Flag,
+  PieChart,
 } from 'lucide-react';
 
 interface ConsolidatedJudicaturasPdfModalProps {
@@ -71,6 +72,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
   });
 
   const [scope, setScope] = useState<'filtered' | 'all'>('filtered');
+  const [includeCharts, setIncludeCharts] = useState(true);
   const [includeTable, setIncludeTable] = useState(true);
   const [includeGantt, setIncludeGantt] = useState(true);
   const [includeStatusMatrix, setIncludeStatusMatrix] = useState(true);
@@ -243,6 +245,7 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
         judicaturas: listToExport,
         title: titleToUse,
         subtitle: subtitleToUse,
+        includeCharts,
         includeTable,
         includeGantt,
         includeStatusMatrix,
@@ -677,7 +680,32 @@ export const ConsolidatedJudicaturasPdfModal: React.FC<ConsolidatedJudicaturasPd
             <label className="font-bold text-slate-900 text-xs uppercase tracking-wider block">
               2. Secciones del Reporte Consolidado
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Sección 0: Panel Ejecutivo de KPIs y Gráficas Circulares */}
+              <label
+                className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                  includeCharts
+                    ? 'border-amber-400 bg-amber-50/50'
+                    : 'border-slate-200 bg-slate-50 opacity-60'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={includeCharts}
+                  onChange={(e) => setIncludeCharts(e.target.checked)}
+                  className="mt-0.5 rounded text-amber-600 focus:ring-amber-500"
+                />
+                <div>
+                  <div className="flex items-center gap-1 text-slate-900 font-bold text-xs">
+                    <PieChart className="w-3.5 h-3.5 text-amber-600" />
+                    <span>KPIs y Gráficas Circulares</span>
+                  </div>
+                  <p className="text-[10.5px] text-slate-500 mt-0.5">
+                    Panel ejecutivo con métricas clave y 4 gráficos circulares de decisión
+                  </p>
+                </div>
+              </label>
+
               {/* Sección 1: Tabla de Judicaturas y Resumen */}
               <label
                 className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${

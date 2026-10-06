@@ -3,11 +3,16 @@ import autoTable from 'jspdf-autotable';
 import { JudicaturaRecord } from '../types';
 import { formatDate, formatDateTime } from './formatters';
 import { OJ_LOGO_DATA_URI } from './ojLogoAsset';
+import {
+  generateJudicaturasExecutiveDashboardImage,
+  generateIndividualJudicaturaGaugeImage,
+} from './judicaturasChartRenderer';
 
 export interface ExportJudicaturasPDFOptions {
   judicaturas: JudicaturaRecord[];
   title?: string;
   subtitle?: string;
+  includeCharts?: boolean;
   includeTable?: boolean;
   includeGantt?: boolean;
   includeStatusMatrix?: boolean;
@@ -25,6 +30,19 @@ export interface ExportJudicaturasPDFOptions {
     cargo?: string;
   } | null;
   filenamePrefix?: string;
+}
+
+/**
+ * Formatea todas las observaciones y diagnósticos registrados en la bitácora de la judicatura
+ * sin recortes ni truncamiento de texto para el reporte oficial.
+ */
+function formatDiagnosticoYAccionesFull(j: JudicaturaRecord): string {
+  if (!j.observaciones || j.observaciones.length === 0) {
+    return 'Sin observaciones reportadas';
+  }
+  return j.observaciones
+    .map((o) => `[#${o.numeroAccion}]${o.autor ? ` [${o.autor}]` : ''}: ${o.texto}`)
+    .join('\n\n');
 }
 
 interface TimelineWeek {
@@ -251,6 +269,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     judicaturas,
     title = 'REPORTE CONSOLIDADO DE CONTROL DE JUDICATURAS POR INAUGURAR',
     subtitle = 'Gerencia de Informática • Seguimiento Integral de Adecuaciones, Infraestructura TIC y Cronograma de Apertura',
+    includeCharts = true,
     includeTable = true,
     includeGantt = true,
     includeStatusMatrix = true,
@@ -286,6 +305,70 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
   // Espacio superior reservado para la cabecera (banner de 22mm + margen)
   let currentY = 34;
+
+  // =========================================================================
+  // PÁGINA 1: PANEL EJECUTIVO DE KPIS Y GRÁFICAS CIRCULARES DE CONTROL
+  // =========================================================================
+  if (includeCharts && judicaturas.length > 0) {
+    let page1Y = 32;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${title} • PANEL EJECUTIVO Y GRÁFICAS CIRCULARES`, marginX, page1Y);
+
+    page1Y += 4.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `${subtitle} • Análisis visual, métricas ejecutivas (KPIs) y gráficos circulares para toma de decisiones institucionales`,
+      marginX,
+      page1Y
+    );
+
+    page1Y += 4.5;
+
+    // Filtros aplicados si existen
+    if (filterInfo && (filterInfo.search || filterInfo.ramo || filterInfo.equipamiento || filterInfo.estadoInauguracion)) {
+      const filters = [];
+      if (filterInfo.search) filters.push(`Búsqueda: "${filterInfo.search}"`);
+      if (filterInfo.ramo && filterInfo.ramo !== 'Todos') {
+        const rName = filterInfo.ramo === 'Penal' ? 'Cámara Penal' : filterInfo.ramo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos';
+        filters.push(`Cámara: ${rName}`);
+      }
+      if (filterInfo.equipamiento && filterInfo.equipamiento !== 'Todos') {
+        filters.push(`Equipamiento TIC: ${filterInfo.equipamiento}`);
+      }
+      if (filterInfo.estadoInauguracion && filterInfo.estadoInauguracion !== 'Todos') {
+        filters.push(`Estado Inauguración: ${filterInfo.estadoInauguracion}`);
+      }
+
+      if (filters.length > 0) {
+        doc.setFillColor(241, 245, 249);
+        doc.rect(marginX, page1Y, pageWidth - marginX * 2, 5.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Filtros Aplicados: ${filters.join('   •   ')}`, marginX + 3, page1Y + 3.8);
+        page1Y += 7.5;
+      }
+    }
+
+    // Generar imagen de gráficos circulares y KPIs con canvas a 300 DPI
+    const dashboardImg = generateJudicaturasExecutiveDashboardImage(judicaturas);
+    if (dashboardImg) {
+      const imgWidth = pageWidth - marginX * 2; // 273 mm
+      const imgHeight = 148; // mm (alta definición nítida)
+      doc.addImage(dashboardImg, 'PNG', marginX, page1Y, imgWidth, imgHeight);
+    }
+
+    // Salto de página para dar inicio a las tablas detalladas o cronograma
+    if (includeTable || includeGantt || includeStatusMatrix) {
+      doc.addPage('a4', 'landscape');
+      currentY = 34;
+    }
+  }
 
   // =========================================================================
   // SECCIÓN 1: RESUMEN EJECUTIVO Y TABLA DE JUDICATURAS CON ESTADO
@@ -572,13 +655,6 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
         const estadoEquip = isAllReady ? '100% Completo' : 'En Proceso';
 
-        const obsCount = (j.observaciones || []).length;
-        const latestObs =
-          j.observaciones && j.observaciones.length > 0
-            ? j.observaciones[0].texto
-            : 'Sin incidencias reportadas';
-        const truncatedObs = latestObs.length > 75 ? `${latestObs.substring(0, 72)}...` : latestObs;
-
         return [
           String(index + 1),
           j.nombreJudicatura,
@@ -590,7 +666,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           estadoEquip,
           estatus,
           fechaInaug,
-          `[#${obsCount}] ${truncatedObs}`,
+          formatDiagnosticoYAccionesFull(j),
         ];
       });
 
@@ -745,13 +821,6 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
         const estadoEquip = isAllReady ? '100% Completo' : 'En Proceso';
 
-        const obsCount = (j.observaciones || []).length;
-        const latestObs =
-          j.observaciones && j.observaciones.length > 0
-            ? j.observaciones[0].texto
-            : 'Sin incidencias reportadas';
-        const truncatedObs = latestObs.length > 75 ? `${latestObs.substring(0, 72)}...` : latestObs;
-
         return [
           String(index + 1),
           j.nombreJudicatura,
@@ -764,7 +833,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           estadoEquip,
           estatus,
           fechaInaug,
-          `[#${obsCount}] ${truncatedObs}`,
+          formatDiagnosticoYAccionesFull(j),
         ];
       });
 
@@ -1179,9 +1248,6 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       const estatusInaug = j.estadoInauguracion || (j.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
       const fechaInaug = j.fechaInauguracion ? formatDate(j.fechaInauguracion) : 'Por Definir';
 
-      const ultObs = j.observaciones && j.observaciones.length > 0 ? j.observaciones[0].texto : 'Sin observaciones';
-      const resumenObs = ultObs.length > 80 ? `${ultObs.substring(0, 77)}...` : ultObs;
-
       return [
         String(idx + 1),
         j.nombreJudicatura,
@@ -1192,7 +1258,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         enlaceStatus,
         pct,
         `${estatusInaug}\n(${fechaInaug})`,
-        resumenObs,
+        formatDiagnosticoYAccionesFull(j),
       ];
     });
 
@@ -1218,6 +1284,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       styles: {
         fontSize: 6.5,
         cellPadding: 2,
+        overflow: 'linebreak',
         valign: 'middle',
       },
       headStyles: {
@@ -1229,14 +1296,14 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       },
       columnStyles: {
         0: { halign: 'center', cellWidth: 7 },
-        1: { halign: 'left', cellWidth: 55, fontStyle: 'bold' },
-        2: { halign: 'center', cellWidth: 23 },
-        3: { halign: 'center', cellWidth: 19 },
-        4: { halign: 'center', cellWidth: 19 },
-        5: { halign: 'center', cellWidth: 19 },
-        6: { halign: 'center', cellWidth: 20 },
-        7: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
-        8: { halign: 'center', cellWidth: 24, fontStyle: 'bold' },
+        1: { halign: 'left', cellWidth: 50, fontStyle: 'bold' },
+        2: { halign: 'center', cellWidth: 20 },
+        3: { halign: 'center', cellWidth: 16 },
+        4: { halign: 'center', cellWidth: 16 },
+        5: { halign: 'center', cellWidth: 16 },
+        6: { halign: 'center', cellWidth: 17 },
+        7: { halign: 'center', cellWidth: 15, fontStyle: 'bold' },
+        8: { halign: 'center', cellWidth: 22, fontStyle: 'bold' },
         9: { halign: 'left', cellWidth: 'auto' },
       },
       alternateRowStyles: {
@@ -1282,18 +1349,28 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         }
       },
     });
+
+    currentY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : currentY + 8;
   }
 
   // =========================================================================
   // BLOQUE OFICIAL DE FIRMAS Y RESPONSABILIDAD INSTITUCIONAL
   // =========================================================================
-  if (currentY > pageHeight - 38) {
+  // Actualizar siempre currentY con la posición final de la última tabla ejecutada
+  const lastTableFinalY = (doc as any).lastAutoTable?.finalY;
+  if (lastTableFinalY && lastTableFinalY > 0) {
+    currentY = lastTableFinalY + 8;
+  }
+
+  // El bloque de firmas mide ~44mm con disclaimer y márgenes
+  const requiredSignatureHeight = 44;
+  if (currentY + requiredSignatureHeight > pageHeight - 16) {
     doc.addPage('a4', 'landscape');
-    currentY = 34;
+    currentY = 38;
   }
 
   const signWidth = (pageWidth - marginX * 2 - 24) / 3;
-  const signY = currentY + 12;
+  const signY = currentY + 10;
 
   // 1. Elaboró
   doc.setDrawColor(148, 163, 184);
@@ -1511,6 +1588,15 @@ export function generateIndividualJudicaturaPDF(
 
   currentY += 32;
 
+  // 1.5. GRÁFICA CIRCULAR DE COBERTURA TIC Y ESTADO DE COMPONENTES
+  const gaugeImg = generateIndividualJudicaturaGaugeImage(judicatura);
+  if (gaugeImg) {
+    const gaugeWidth = pageWidth - marginX * 2; // ~187.9 mm
+    const gaugeHeight = 44; // mm
+    doc.addImage(gaugeImg, 'PNG', marginX, currentY, gaugeWidth, gaugeHeight);
+    currentY += gaugeHeight + 6;
+  }
+
   // 2. RESUMEN DE ADECUACIONES E INFRAESTRUCTURA TECNOLÓGICA (TABLAS RESUMEN)
   const fechaIni = judicatura.fechaInicioAdecuaciones ? formatDate(judicatura.fechaInicioAdecuaciones) : 'N/D';
   const fechaFin = judicatura.fechaFinAdecuaciones ? formatDate(judicatura.fechaFinAdecuaciones) : 'N/D';
@@ -1677,13 +1763,19 @@ export function generateIndividualJudicaturaPDF(
   }
 
   // 4. BLOQUE DE FIRMAS Y RESPONSABILIDAD INSTITUCIONAL
-  if (currentY > pageHeight - 38) {
+  const finalIndivTableY = (doc as any).lastAutoTable?.finalY;
+  if (finalIndivTableY && finalIndivTableY > 0) {
+    currentY = finalIndivTableY + 8;
+  }
+
+  const requiredIndivSignHeight = 36;
+  if (currentY + requiredIndivSignHeight > pageHeight - 16) {
     doc.addPage();
     currentY = 35;
   }
 
   const signWidth = (pageWidth - marginX * 2 - 20) / 3;
-  const signY = currentY + 12;
+  const signY = currentY + 10;
 
   // Línea 1: Elaboró
   doc.setDrawColor(148, 163, 184);
