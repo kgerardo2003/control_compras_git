@@ -18,6 +18,7 @@ export const prepareJudicaturasForExport = (records: JudicaturaRecord[]) => {
     'Enlace de Datos': j.enlaceDatos,
     'Fecha de Inauguración': j.fechaInauguracion || '',
     'Estatus de Inauguración': j.estadoInauguracion || 'Pendiente Fecha',
+    'Priorizado': j.priorizado === 'Si' ? 'Si' : 'No',
     'Observaciones': (j.observaciones || []).map(o => `[${o.autor || 'GIT'}]: ${o.texto}`).join(' ; ') || '',
     'Creado Por': j.creadoPor || 'Sistema GIT',
     'Fecha Creación': j.fechaCreacion ? j.fechaCreacion.slice(0, 10) : ''
@@ -45,6 +46,7 @@ export const exportJudicaturasToExcel = (records: JudicaturaRecord[], fileName?:
     { wch: 18 }, // Enlace
     { wch: 20 }, // Fecha Inauguración
     { wch: 22 }, // Estatus
+    { wch: 14 }, // Priorizado
     { wch: 55 }, // Observaciones
     { wch: 26 }, // Creado Por
     { wch: 16 }, // Fecha Creación

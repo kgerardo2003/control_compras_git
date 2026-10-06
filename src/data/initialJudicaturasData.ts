@@ -13,6 +13,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'Si',
     fechaInauguracion: '2026-04-15',
     estadoInauguracion: 'Inaugurado',
+    priorizado: 'Si',
     observaciones: [
       {
         id: 'obs-001-3',
@@ -73,6 +74,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'Si',
     fechaInauguracion: '',
     estadoInauguracion: 'Pendiente Fecha',
+    priorizado: 'No',
     observaciones: [
       {
         id: 'obs-002-2',
@@ -104,6 +106,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'No',
     fechaInauguracion: '2026-07-01',
     estadoInauguracion: 'Reprogramado',
+    priorizado: 'Si',
     observaciones: [
       {
         id: 'obs-003-2',
@@ -135,6 +138,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'No',
     fechaInauguracion: '',
     estadoInauguracion: 'Pendiente Fecha',
+    priorizado: 'No',
     observaciones: [
       {
         id: 'obs-004-1',
@@ -159,6 +163,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'Si',
     fechaInauguracion: '2026-04-28',
     estadoInauguracion: 'Inaugurado',
+    priorizado: 'Si',
     observaciones: [
       {
         id: 'obs-005-3',
@@ -197,6 +202,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'No',
     fechaInauguracion: '2026-09-25',
     estadoInauguracion: 'Reprogramado',
+    priorizado: 'No',
     observaciones: [
       {
         id: 'obs-006-1',
@@ -221,6 +227,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'Si',
     fechaInauguracion: '2026-06-10',
     estadoInauguracion: 'Inaugurado',
+    priorizado: 'Si',
     observaciones: [
       {
         id: 'obs-007-1',
@@ -245,6 +252,7 @@ export const INITIAL_JUDICATURAS: JudicaturaRecord[] = [
     enlaceDatos: 'Si',
     fechaInauguracion: '2026-08-05',
     estadoInauguracion: 'Pendiente Fecha',
+    priorizado: 'No',
     observaciones: [
       {
         id: 'obs-008-1',

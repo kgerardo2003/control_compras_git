@@ -35,6 +35,7 @@ interface ConsolidatedJudicaturasPdfModalProps {
     ramo?: string;
     equipamiento?: string;
     estadoInauguracion?: string;
+    priorizado?: string;
   };
   initialReportType?: 'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos';
   initialStatus?: string;

@@ -65,6 +65,7 @@ import {
   Upload,
   FileSpreadsheet,
   Paperclip,
+  Star,
 } from 'lucide-react';
 import { exportJudicaturasToExcel, exportJudicaturasToCSV, downloadJudicaturasImportTemplate } from '../utils/judicaturasExport';
 import { ImportJudicaturasModal } from './ImportJudicaturasModal';
@@ -89,6 +90,8 @@ export const JudicaturasView: React.FC = () => {
   const [ramoFilter, setRamoFilter] = useState<'Todos' | 'Penal' | 'Civil' | 'Amparos'>('Todos');
   const [equipamientoFilter, setEquipamientoFilter] = useState<'Todos' | 'Completo' | 'Pendiente'>('Todos');
   const [estatusInauguracionFilter, setEstatusInauguracionFilter] = useState<string>('Todos');
+  const [priorizadoFilter, setPriorizadoFilter] = useState<'Todos' | 'Si' | 'No'>('Todos');
+  const [circularChartTab, setCircularChartTab] = useState<'estatus' | 'priorizados'>('estatus');
   const [durationFilter, setDurationFilter] = useState<'Todos' | '<=30' | '31-60' | '>60'>('Todos');
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'gantt'>('table');
   const [isGroupedByRamo, setIsGroupedByRamo] = useState<boolean>(true);
@@ -120,6 +123,7 @@ export const JudicaturasView: React.FC = () => {
   const [enlaceDatos, setEnlaceDatos] = useState<'Si' | 'No'>('No');
   const [fechaInauguracion, setFechaInauguracion] = useState('');
   const [estadoInauguracion, setEstadoInauguracion] = useState<EstadoInauguracionJudicatura>('Pendiente Fecha');
+  const [priorizado, setPriorizado] = useState<'Si' | 'No'>('No');
   const [observacionesIniciales, setObservacionesIniciales] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -230,6 +234,12 @@ export const JudicaturasView: React.FC = () => {
         currentEstatus.trim().toLowerCase() === estatusInauguracionFilter.trim().toLowerCase() ||
         (j.estadoInauguracion && j.estadoInauguracion.trim().toLowerCase() === estatusInauguracionFilter.trim().toLowerCase());
 
+      // Filtro Priorizado
+      const matchPriorizado =
+        priorizadoFilter === 'Todos' ||
+        (priorizadoFilter === 'Si' && j.priorizado === 'Si') ||
+        (priorizadoFilter === 'No' && j.priorizado !== 'Si');
+
       // Filtro por Plazo de Ejecución (Dashboard de Rendimiento)
       let matchDuration = true;
       if (durationFilter !== 'Todos' && j.fechaInicioAdecuaciones && j.fechaFinAdecuaciones) {
@@ -239,9 +249,9 @@ export const JudicaturasView: React.FC = () => {
         else if (durationFilter === '>60') matchDuration = diff > 60;
       }
 
-      return matchSearch && matchRamo && matchEquipamiento && matchEstatus && matchDuration;
+      return matchSearch && matchRamo && matchEquipamiento && matchEstatus && matchPriorizado && matchDuration;
     });
-  }, [judicaturas, searchTerm, searchField, ramoFilter, equipamientoFilter, estatusInauguracionFilter, durationFilter]);
+  }, [judicaturas, searchTerm, searchField, ramoFilter, equipamientoFilter, estatusInauguracionFilter, priorizadoFilter, durationFilter]);
 
   // Paginación
   const totalPages = Math.ceil(filteredJudicaturas.length / itemsPerPage) || 1;
@@ -325,6 +335,15 @@ export const JudicaturasView: React.FC = () => {
       { name: 'Sin Equipar (0)', value: sinEquipar, color: '#64748b', porcentaje: total > 0 ? Math.round((sinEquipar / total) * 100) : 0 },
     ].filter(item => item.value > 0);
 
+    // 4. Gráfica Circular de Priorización Institucional
+    const priorizadosCount = judicaturas.filter(j => j.priorizado === 'Si').length;
+    const noPriorizadosCount = total - priorizadosCount;
+    const priorizadosRate = total > 0 ? Math.round((priorizadosCount / total) * 100) : 0;
+    const chartPriorizados = [
+      { name: 'Priorizadas (Sí)', value: priorizadosCount, color: '#d97706', porcentaje: priorizadosRate },
+      { name: 'Ordinarias (No)', value: noPriorizadosCount, color: '#64748b', porcentaje: total > 0 ? Math.round((noPriorizadosCount / total) * 100) : 0 },
+    ].filter(item => item.value > 0);
+
     return {
       total,
       penal,
@@ -336,13 +355,17 @@ export const JudicaturasView: React.FC = () => {
       reprogramadosCount,
       finalizadosCount,
       trasladosCount,
+      priorizadosCount,
+      noPriorizadosCount,
+      priorizadosRate,
       equipamiento100,
       equipamientoParcial,
       sinEquipar,
       proximas,
       chartEstatusInauguracion,
       chartCamaras,
-      chartEquipamiento
+      chartEquipamiento,
+      chartPriorizados
     };
   }, [judicaturas]);
 
@@ -453,10 +476,23 @@ export const JudicaturasView: React.FC = () => {
     const civilTotal = judicaturas.filter(j => j.tipoRamo === 'Civil').length;
     const amparosTotal = judicaturas.filter(j => j.tipoRamo === 'Amparos').length;
 
+    // Dataset para Donut Recharts de Priorización
+    const priorizadosCount = judicaturas.filter(j => j.priorizado === 'Si').length;
+    const noPriorizadosCount = total - priorizadosCount;
+    const priorizadosPct = total > 0 ? Math.round((priorizadosCount / total) * 100) : 0;
+    const noPriorizadosPct = total > 0 ? Math.round((noPriorizadosCount / total) * 100) : 0;
+    const pieChartPriorizadosData = [
+      { name: 'Priorizadas (Sí)', value: priorizadosCount, color: '#d97706', porcentaje: priorizadosPct, count: priorizadosCount },
+      { name: 'Ordinarias (No)', value: noPriorizadosCount, color: '#64748b', porcentaje: noPriorizadosPct, count: noPriorizadosCount },
+    ].filter(i => i.value > 0);
+
     return {
       statusCards,
       barChartData,
       pieChartData,
+      pieChartPriorizadosData,
+      priorizadosCount,
+      priorizadosPct,
       total,
       penalTotal,
       civilTotal,
@@ -481,6 +517,7 @@ export const JudicaturasView: React.FC = () => {
       reprogramados: list.filter(j => getStatus(j) === 'Reprogramado').length,
       finalizados: list.filter(j => getStatus(j) === 'Finalizado').length,
       traslados: list.filter(j => getStatus(j) === 'Traslado').length,
+      priorizados: list.filter(j => j.priorizado === 'Si').length,
       equip100: list.filter(j =>
         j.equipoComputo === 'Si' &&
         j.equipoAudio === 'Si' &&
@@ -699,6 +736,7 @@ export const JudicaturasView: React.FC = () => {
     setEnlaceDatos('No');
     setFechaInauguracion(''); // Opcional por defecto
     setEstadoInauguracion('Pendiente Fecha');
+    setPriorizado('No');
     setObservacionesIniciales('');
     setFormErrors({});
     setIsFormModalOpen(true);
@@ -717,6 +755,7 @@ export const JudicaturasView: React.FC = () => {
     setEnlaceDatos(jud.enlaceDatos);
     setFechaInauguracion(jud.fechaInauguracion || '');
     setEstadoInauguracion(jud.estadoInauguracion || (jud.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'));
+    setPriorizado(jud.priorizado || 'No');
     setObservacionesIniciales('');
     setNuevaObservacionModal('');
     setFormErrors({});
@@ -815,6 +854,7 @@ export const JudicaturasView: React.FC = () => {
           enlaceDatos,
           fechaInauguracion: fechaInauguracion || '',
           estadoInauguracion,
+          priorizado,
         });
         showToast({
           title: 'Judicatura Actualizada',
@@ -833,6 +873,7 @@ export const JudicaturasView: React.FC = () => {
           enlaceDatos,
           fechaInauguracion: fechaInauguracion || '',
           estadoInauguracion,
+          priorizado,
           observacionesIniciales: observacionesIniciales.trim() || undefined,
         });
         showToast({
@@ -970,6 +1011,56 @@ export const JudicaturasView: React.FC = () => {
     setIsConsolidatedPdfModalOpen(true);
   };
 
+  // Handler para filtrar interactivamente al hacer clic en la gráfica de judicaturas priorizadas
+  const handleTogglePriorizado = (itemOrValue: string) => {
+    const isSi = itemOrValue.includes('Sí') || itemOrValue === 'Si';
+    const targetVal: 'Si' | 'No' = isSi ? 'Si' : 'No';
+    const nextVal: 'Todos' | 'Si' | 'No' = priorizadoFilter === targetVal ? 'Todos' : targetVal;
+    setPriorizadoFilter(nextVal);
+    setCurrentPage(1);
+
+    if (nextVal === 'Si') {
+      showToast({
+        title: 'Filtro Activado: Judicaturas Priorizadas',
+        message: `Mostrando ${stats.priorizadosCount} judicaturas con Alta Prioridad institucional.`,
+        type: 'info'
+      });
+    } else if (nextVal === 'No') {
+      showToast({
+        title: 'Filtro Activado: Judicaturas Ordinarias',
+        message: `Mostrando ${stats.noPriorizadosCount} judicaturas de trámite ordinario.`,
+        type: 'info'
+      });
+    } else {
+      showToast({
+        title: 'Filtro de Priorización Desactivado',
+        message: 'Mostrando todas las judicaturas (Priorizadas y Ordinarias).',
+        type: 'info'
+      });
+    }
+  };
+
+  // Handler para filtrar interactivamente al hacer clic en la gráfica de estatus
+  const handleToggleEstatus = (statusName: string) => {
+    const nextStatus = estatusInauguracionFilter === statusName ? 'Todos' : statusName;
+    setEstatusInauguracionFilter(nextStatus);
+    setCurrentPage(1);
+
+    if (nextStatus !== 'Todos') {
+      showToast({
+        title: `Filtro por Estatus: ${nextStatus}`,
+        message: `Mostrando judicaturas con estatus ${nextStatus}.`,
+        type: 'info'
+      });
+    } else {
+      showToast({
+        title: 'Filtro de Estatus Desactivado',
+        message: 'Mostrando todos los estatus.',
+        type: 'info'
+      });
+    }
+  };
+
   const handleExportExcel = () => {
     try {
       const recordsToExport = filteredJudicaturas.length > 0 ? filteredJudicaturas : judicaturas;
@@ -1051,26 +1142,27 @@ export const JudicaturasView: React.FC = () => {
   // Renderizador reutilizable de Tabla de Judicaturas
   const renderJudicaturasTable = (items: JudicaturaRecord[], hideRamoColumn = false) => (
     <div className="overflow-x-auto">
-      <table className="w-full text-left">
+      <table className="w-full text-left min-w-[1380px]">
         <thead className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase sticky top-0 border-b border-slate-200 tracking-wider">
           <tr>
-            <th className="px-4 py-3">Nombre de la Judicatura</th>
-            {!hideRamoColumn && <th className="px-4 py-3">Cámara Asignada</th>}
-            <th className="px-4 py-3">Período de Adecuaciones</th>
-            <th className="px-3 py-3 text-center" title="Equipo de Cómputo">PC</th>
-            <th className="px-3 py-3 text-center" title="Equipo de Audio">Audio</th>
-            <th className="px-3 py-3 text-center" title="Cableado de Red Estructurado">Red</th>
-            <th className="px-3 py-3 text-center" title="Enlace de Datos">Enlace</th>
-            <th className="px-4 py-3 text-center">Estatus y Fecha</th>
-            <th className="px-4 py-3">Última Acción / Bitácora</th>
-            <th className="px-3 py-3 text-center" title="Expediente Digital y Documentos Adjuntos">Expediente</th>
-            <th className="px-4 py-3 text-center">Acciones</th>
+            <th className="px-4 py-3 min-w-[380px] md:min-w-[440px] text-slate-700 font-extrabold">Nombre de la Judicatura</th>
+            {!hideRamoColumn && <th className="px-4 py-3 min-w-[140px]">Cámara Asignada</th>}
+            <th className="px-3 py-3 text-center min-w-[100px]" title="Judicatura Priorizada de Alta Prioridad">Priorizado</th>
+            <th className="px-4 py-3 min-w-[160px]">Período de Adecuaciones</th>
+            <th className="px-3 py-3 text-center min-w-[55px]" title="Equipo de Cómputo">PC</th>
+            <th className="px-3 py-3 text-center min-w-[55px]" title="Equipo de Audio">Audio</th>
+            <th className="px-3 py-3 text-center min-w-[55px]" title="Cableado de Red Estructurado">Red</th>
+            <th className="px-3 py-3 text-center min-w-[55px]" title="Enlace de Datos">Enlace</th>
+            <th className="px-4 py-3 text-center min-w-[150px]">Estatus y Fecha</th>
+            <th className="px-4 py-3 min-w-[220px]">Última Acción / Bitácora</th>
+            <th className="px-3 py-3 text-center min-w-[110px]" title="Expediente Digital y Documentos Adjuntos">Expediente</th>
+            <th className="px-4 py-3 text-center min-w-[110px]">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 text-xs">
           {items.length === 0 ? (
             <tr>
-              <td colSpan={hideRamoColumn ? 10 : 11} className="px-4 py-8 text-center text-slate-400">
+              <td colSpan={hideRamoColumn ? 11 : 12} className="px-4 py-8 text-center text-slate-400">
                 <div className="flex flex-col items-center justify-center gap-1.5">
                   <Search className="w-6 h-6 text-slate-300" />
                   <p className="font-semibold text-slate-600 text-xs">
@@ -1085,20 +1177,29 @@ export const JudicaturasView: React.FC = () => {
 
               return (
                 <tr key={j.id} className="hover:bg-slate-50/80 transition-colors">
-                  {/* 1. Nombre de la Judicatura */}
-                  <td className="px-4 py-3.5 max-w-xs">
+                  {/* 1. Nombre de la Judicatura (Visible completo sin truncamiento para todas las cámaras) */}
+                  <td className="px-4 py-3.5 min-w-[380px] md:min-w-[440px] align-middle">
                     <button
                       type="button"
                       onClick={() => setDetailJudicaturaId(j.id)}
-                      className="font-bold text-slate-900 hover:text-blue-900 text-left cursor-pointer group flex items-start gap-1.5"
+                      className="font-bold text-slate-900 hover:text-blue-900 text-left cursor-pointer group block w-full"
+                      title={j.nombreJudicatura}
                     >
-                      <span className="line-clamp-2 leading-snug group-hover:underline">
+                      <span className="leading-relaxed group-hover:underline break-words whitespace-normal text-xs text-slate-900 font-bold block">
                         {j.nombreJudicatura}
                       </span>
                     </button>
-                    <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
-                      ID: {j.id}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        ID: {j.id}
+                      </span>
+                      {j.priorizado === 'Si' && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
+                          <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-600" />
+                          Priorizada
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* 2. Cámara Asignada */}
@@ -1122,6 +1223,26 @@ export const JudicaturasView: React.FC = () => {
                       )}
                     </td>
                   )}
+
+                  {/* Priorizado */}
+                  <td className="px-3 py-3.5 whitespace-nowrap text-center">
+                    {j.priorizado === 'Si' ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
+                        title="Judicatura Priorizada (Alta Prioridad Institucional)"
+                      >
+                        <Star className="w-3 h-3 text-amber-600 fill-amber-400" />
+                        <span>Sí</span>
+                      </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200"
+                        title="Ordinaria / No priorizada"
+                      >
+                        No
+                      </span>
+                    )}
+                  </td>
 
                   {/* 3. Período de Adecuaciones */}
                   <td className="px-4 py-3.5 whitespace-nowrap">
@@ -1372,6 +1493,12 @@ export const JudicaturasView: React.FC = () => {
                       >
                         {j.tipoRamo === 'Penal' ? 'Cámara Penal' : j.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos'}
                       </span>
+                      {j.priorizado === 'Si' && (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                          <Star className="w-3 h-3 text-amber-600 fill-amber-400" />
+                          Priorizada
+                        </span>
+                      )}
                       {isAllEquipped ? (
                         <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -1384,7 +1511,7 @@ export const JudicaturasView: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <h3 className="text-base font-bold text-slate-900 mt-2 truncate" title={j.nombreJudicatura}>
+                    <h3 className="text-sm font-bold text-slate-900 mt-2 break-words leading-snug whitespace-normal" title={j.nombreJudicatura}>
                       {j.nombreJudicatura}
                     </h3>
                   </div>
@@ -2083,11 +2210,24 @@ export const JudicaturasView: React.FC = () => {
               <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
               <span>TIC 100%: {stats.equipamiento100}</span>
             </div>
+            <button
+              type="button"
+              onClick={() => handleTogglePriorizado('Si')}
+              className={`px-3 py-1.5 rounded-xl border text-xs flex items-center gap-1.5 font-bold font-mono transition-all cursor-pointer ${
+                priorizadoFilter === 'Si'
+                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm ring-2 ring-amber-300/60'
+                  : 'bg-amber-950/70 border-amber-500/40 text-amber-200 hover:bg-amber-900/80'
+              }`}
+              title="Filtrar judicaturas catalogadas como Priorizadas (Alta Prioridad)"
+            >
+              <Star className={`w-3.5 h-3.5 ${priorizadoFilter === 'Si' ? 'fill-slate-950 text-slate-950' : 'fill-amber-400 text-amber-400'}`} />
+              <span>Priorizadas: {statusExecutiveMetrics.priorizadosCount} ({statusExecutiveMetrics.priorizadosPct}%)</span>
+            </button>
           </div>
         </div>
 
         {/* Fila 1: Tarjetas Ejecutivas de Resumen por Estatus */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-9 gap-3">
           {/* Tarjeta Global: Total Judicaturas */}
           <div
             onClick={() => {
@@ -2257,12 +2397,71 @@ export const JudicaturasView: React.FC = () => {
               <span className="font-bold">Completado</span>
             </div>
           </div>
+
+          {/* Tarjeta Priorizadas (Alta Prioridad OJ) */}
+          <div
+            onClick={() => handleTogglePriorizado('Si')}
+            className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden group ${
+              priorizadoFilter === 'Si'
+                ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-400 shadow-md scale-[1.02]'
+                : 'bg-white border-amber-200 hover:border-amber-300 shadow-2xs hover:shadow-sm'
+            }`}
+            title="Haga clic para filtrar judicaturas catalogadas como Priorizadas (Alta Prioridad)"
+          >
+            {/* Indicador superior de color */}
+            <div
+              className={`absolute top-0 left-0 right-0 h-1 ${
+                priorizadoFilter === 'Si' ? 'bg-amber-700' : 'bg-amber-500'
+              }`}
+            />
+            <div>
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-black uppercase tracking-wider ${
+                  priorizadoFilter === 'Si' ? 'text-slate-950' : 'text-amber-800'
+                }`}>
+                  Priorizadas (★)
+                </span>
+                <Star className={`w-4 h-4 ${
+                  priorizadoFilter === 'Si' ? 'text-slate-950 fill-slate-950' : 'text-amber-500 fill-amber-400'
+                }`} />
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className={`text-2xl font-black font-mono tracking-tight ${
+                  priorizadoFilter === 'Si' ? 'text-slate-950' : 'text-amber-950'
+                }`}>
+                  {stats.priorizadosCount}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                  priorizadoFilter === 'Si' ? 'bg-slate-900 text-amber-300' : 'bg-amber-100 text-amber-900'
+                }`}>
+                  {stats.priorizadosRate}%
+                </span>
+              </div>
+              {/* Barra visual de porcentaje */}
+              <div className="w-full bg-slate-100/70 h-1.5 rounded-full overflow-hidden mt-2">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    priorizadoFilter === 'Si' ? 'bg-slate-900' : 'bg-amber-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(100, Math.max(5, stats.priorizadosRate))}%`,
+                  }}
+                />
+              </div>
+            </div>
+            <div className={`mt-2.5 pt-2 border-t flex items-center justify-between text-[10px] ${
+              priorizadoFilter === 'Si' ? 'border-amber-600/40 text-slate-900 font-bold' : 'border-amber-100 text-amber-800'
+            }`}>
+              <span>{priorizadoFilter === 'Si' ? 'Filtro Activo' : 'Alta Prioridad'}</span>
+              <span className="font-bold">{stats.priorizadosCount}/{stats.total} sedes</span>
+            </div>
+          </div>
         </div>
 
         {/* Fila 2: Panel de Gráficos Recharts para Visión Ejecutiva */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Gráfico 1: Gráfico de Barras Recharts de Judicaturas por Estatus comparando Ramo Penal vs Ramo Civil */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {/* Gráfico 1: Gráfico de Barras Recharts de Judicaturas por Estatus comparando Ramo Penal vs Ramo Civil vs Amparos */}
+          <div className="md:col-span-2 xl:col-span-2 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2 pb-3 border-b border-slate-100">
               <div>
                 <div className="flex items-center gap-2">
@@ -2369,25 +2568,41 @@ export const JudicaturasView: React.FC = () => {
             </div>
           </div>
 
-          {/* Gráfico 2: Dona Recharts de Distribución Porcentual por Estatus */}
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+          {/* Gráfico 2: Dona Recharts de Distribución Porcentual por Estatus (Con filtrado interactivo al hacer clic) */}
+          <div className={`bg-white rounded-2xl p-4 sm:p-5 border shadow-xs flex flex-col justify-between transition-all ${
+            estatusInauguracionFilter !== 'Todos'
+              ? 'border-blue-400 ring-2 ring-blue-400/20'
+              : 'border-slate-200'
+          }`}>
             <div>
-              <div className="flex items-center justify-between mb-1 pb-3 border-b border-slate-100">
+              <div className="flex items-center justify-between mb-1 pb-3 border-b border-slate-100 flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <PieChartIcon className="w-4 h-4 text-emerald-600" />
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                     Distribución por Estatus
                   </h3>
                 </div>
-                <span className="text-[10px] font-bold text-slate-700 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                  {statusExecutiveMetrics.total} sedes
-                </span>
+                {estatusInauguracionFilter !== 'Todos' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleEstatus(estatusInauguracionFilter)}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300 hover:bg-blue-200 flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Quitar filtro de estatus"
+                  >
+                    <span>Filtro: {estatusInauguracionFilter}</span>
+                    <X className="w-3 h-3 text-blue-900" />
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-bold text-slate-700 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                    {statusExecutiveMetrics.total} sedes
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 mb-2">
-                Proporción porcentual por estado del proceso de apertura
+                Haga clic en la dona o leyenda para filtrar por estatus
               </p>
 
-              {/* Dona Recharts */}
+              {/* Dona Recharts de Estatus */}
               <div className="h-44 relative flex items-center justify-center">
                 {statusExecutiveMetrics.total > 0 && statusExecutiveMetrics.pieChartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -2400,6 +2615,13 @@ export const JudicaturasView: React.FC = () => {
                         outerRadius={68}
                         paddingAngle={3}
                         dataKey="value"
+                        cursor="pointer"
+                        onClick={(entry: any) => {
+                          const clickedName = entry?.name || entry?.payload?.name || '';
+                          if (clickedName) {
+                            handleToggleEstatus(clickedName);
+                          }
+                        }}
                       >
                         {statusExecutiveMetrics.pieChartData.map((entry, index) => (
                           <Cell
@@ -2407,12 +2629,13 @@ export const JudicaturasView: React.FC = () => {
                             fill={entry.color}
                             stroke="#ffffff"
                             strokeWidth={2}
+                            className="cursor-pointer transition-all hover:opacity-85"
                           />
                         ))}
                       </Pie>
                       <RechartsTooltip
                         formatter={(val: any, name: any) => [
-                          `${val} Judicatura${Number(val) === 1 ? '' : 's'}`,
+                          `${val} Judicatura${Number(val) === 1 ? '' : 's'} (${statusExecutiveMetrics.total > 0 ? Math.round((Number(val) / statusExecutiveMetrics.total) * 100) : 0}%)`,
                           name,
                         ]}
                         contentStyle={{
@@ -2428,61 +2651,229 @@ export const JudicaturasView: React.FC = () => {
                   <div className="text-slate-400 text-xs italic">Sin registros disponibles</div>
                 )}
                 {statusExecutiveMetrics.total > 0 && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-lg font-black font-mono text-slate-900 leading-none">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (estatusInauguracionFilter !== 'Todos') {
+                        handleToggleEstatus(estatusInauguracionFilter);
+                      }
+                    }}
+                    className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer group"
+                    title={estatusInauguracionFilter !== 'Todos' ? 'Haga clic para restablecer estatus' : 'Distribución global'}
+                  >
+                    <span className="text-lg font-black font-mono text-slate-900 leading-none group-hover:scale-110 transition-transform">
                       {statusExecutiveMetrics.total}
                     </span>
                     <span className="text-[8px] font-bold uppercase text-slate-500 mt-0.5">
-                      Judicaturas
+                      {estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : 'Judicaturas'}
                     </span>
-                  </div>
+                  </button>
                 )}
               </div>
             </div>
 
             {/* Leyenda interactiva con filtros directos */}
             <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
-              {statusExecutiveMetrics.statusCards.map((item) => (
-                <button
-                  key={`pie-leg-${item.status}`}
-                  type="button"
-                  onClick={() => {
-                    setEstatusInauguracionFilter(
-                      estatusInauguracionFilter === item.status ? 'Todos' : item.status
-                    );
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer ${
-                    estatusInauguracionFilter === item.status
-                      ? 'bg-blue-50 ring-1 ring-blue-800'
-                      : 'hover:bg-slate-50'
-                  }`}
-                  title={`Filtrar por ${item.status}`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="text-[11px] font-semibold text-slate-700 truncate">
-                      {item.status}
+              {statusExecutiveMetrics.statusCards.map((item) => {
+                const isCur = estatusInauguracionFilter === item.status;
+                return (
+                  <button
+                    key={`pie-leg-est-${item.status}`}
+                    type="button"
+                    onClick={() => handleToggleEstatus(item.status)}
+                    className={`w-full p-1.5 rounded-lg flex items-center justify-between transition-colors text-left cursor-pointer border ${
+                      isCur
+                        ? 'bg-blue-50/80 border-blue-400 font-bold shadow-2xs'
+                        : 'border-transparent hover:bg-slate-50'
+                    }`}
+                    title={`Filtrar por ${item.status}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-[11px] font-semibold text-slate-700 truncate">
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono text-slate-400">{item.pct}%</span>
+                      <span
+                        className="text-[10px] font-black font-mono px-1.5 py-0.2 rounded border"
+                        style={{
+                          backgroundColor: `${item.color}15`,
+                          borderColor: `${item.color}35`,
+                          color: item.color,
+                        }}
+                      >
+                        {item.count}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Gráfico 3: Dona Recharts de Judicaturas Priorizadas (Con filtrado interactivo al hacer clic) */}
+          <div className={`bg-white rounded-2xl p-4 sm:p-5 border shadow-xs flex flex-col justify-between transition-all ${
+            priorizadoFilter === 'Si'
+              ? 'border-amber-400 ring-2 ring-amber-400/30'
+              : priorizadoFilter === 'No'
+              ? 'border-slate-400 ring-2 ring-slate-400/20'
+              : 'border-slate-200'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between mb-1 pb-3 border-b border-slate-100 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-600">
+                    <Star className="w-4 h-4 fill-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                      Judicaturas Priorizadas
+                    </h3>
+                    <span className="text-[10px] text-amber-800 font-semibold block">
+                      Alta Prioridad Institucional OJ
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[10px] font-mono text-slate-400">{item.pct}%</span>
-                    <span
-                      className="text-[10px] font-black font-mono px-1.5 py-0.2 rounded border"
-                      style={{
-                        backgroundColor: `${item.color}15`,
-                        borderColor: `${item.color}35`,
-                        color: item.color,
-                      }}
-                    >
-                      {item.count}
+                </div>
+
+                {priorizadoFilter !== 'Todos' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleTogglePriorizado(priorizadoFilter)}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Quitar filtro de priorización"
+                  >
+                    <span>Filtro: {priorizadoFilter === 'Si' ? 'Solo Sí' : 'Solo No'}</span>
+                    <X className="w-3 h-3 text-amber-800" />
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-bold text-slate-700 font-mono bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                    {statusExecutiveMetrics.priorizadosCount} de {statusExecutiveMetrics.total}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 mb-2">
+                Haga clic en la dona o leyenda para filtrar instantáneamente
+              </p>
+
+              {/* Dona Recharts de Priorizadas con Click Interactivo */}
+              <div className="h-44 relative flex items-center justify-center">
+                {statusExecutiveMetrics.total > 0 && statusExecutiveMetrics.pieChartPriorizadosData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={statusExecutiveMetrics.pieChartPriorizadosData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={42}
+                        outerRadius={68}
+                        paddingAngle={4}
+                        dataKey="value"
+                        cursor="pointer"
+                        onClick={(entry: any) => {
+                          const clickedName = entry?.name || entry?.payload?.name || '';
+                          if (clickedName) {
+                            handleTogglePriorizado(clickedName);
+                          } else {
+                            handleTogglePriorizado('Si');
+                          }
+                        }}
+                      >
+                        {statusExecutiveMetrics.pieChartPriorizadosData.map((entry, index) => (
+                          <Cell
+                            key={`pie-cell-prio-${index}`}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            className="cursor-pointer transition-all hover:opacity-85"
+                          />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any, name: any) => [
+                          `${val} Judicatura${Number(val) === 1 ? '' : 's'} (${statusExecutiveMetrics.total > 0 ? Math.round((Number(val) / statusExecutiveMetrics.total) * 100) : 0}%)`,
+                          name,
+                        ]}
+                        contentStyle={{
+                          fontSize: '11px',
+                          borderRadius: '8px',
+                          padding: '6px 10px',
+                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-slate-400 text-xs italic">Sin registros disponibles</div>
+                )}
+                {statusExecutiveMetrics.total > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleTogglePriorizado('Priorizadas (Sí)')}
+                    className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer group"
+                    title="Haga clic para filtrar judicaturas priorizadas"
+                  >
+                    <span className="text-lg font-black font-mono text-amber-700 leading-none group-hover:scale-110 transition-transform">
+                      {statusExecutiveMetrics.priorizadosPct}%
                     </span>
-                  </div>
-                </button>
-              ))}
+                    <span className="text-[8px] font-bold uppercase text-amber-900 mt-0.5 flex items-center gap-0.5">
+                      <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-600" />
+                      Priorizadas
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Leyenda interactiva con click directo para filtrar */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+              {statusExecutiveMetrics.pieChartPriorizadosData.map((item) => {
+                const isSi = item.name.includes('Sí');
+                const filterVal = isSi ? 'Si' : 'No';
+                const isCur = priorizadoFilter === filterVal;
+                return (
+                  <button
+                    key={`pie-leg-dedicated-${item.name}`}
+                    type="button"
+                    onClick={() => handleTogglePriorizado(item.name)}
+                    className={`w-full p-2 rounded-xl flex items-center justify-between transition-all text-left cursor-pointer border ${
+                      isCur
+                        ? isSi
+                          ? 'bg-amber-100/90 border-amber-400 shadow-2xs font-bold text-amber-950'
+                          : 'bg-slate-100 border-slate-400 shadow-2xs font-bold text-slate-900'
+                        : 'border-slate-100 hover:bg-slate-50 text-slate-700'
+                    }`}
+                    title={`Hacer clic para filtrar por ${item.name}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0 shadow-2xs"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-[11px] font-bold truncate">
+                        {item.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono text-slate-500 font-semibold">{item.porcentaje}%</span>
+                      <span
+                        className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full border shadow-2xs"
+                        style={{
+                          backgroundColor: `${item.color}15`,
+                          borderColor: `${item.color}40`,
+                          color: item.color,
+                        }}
+                      >
+                        {item.count} sedes
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -2606,6 +2997,31 @@ export const JudicaturasView: React.FC = () => {
                 }`}
               >
                 {r.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Filtro de Priorización */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+            {[
+              { id: 'Todos', label: 'Todas' },
+              { id: 'Si', label: 'Priorizadas (★)' },
+              { id: 'No', label: 'Ordinarias' },
+            ].map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setPriorizadoFilter(p.id as any);
+                  setCurrentPage(1);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  priorizadoFilter === p.id
+                    ? 'bg-white text-amber-900 shadow-xs ring-1 ring-amber-300'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {p.label}
               </button>
             ))}
           </div>
@@ -2849,6 +3265,8 @@ export const JudicaturasView: React.FC = () => {
                   <span>•</span>
                   <span className="text-purple-700">Traslado: {judicaturasByRamo.penalStats.traslados}</span>
                   <span>•</span>
+                  <span className="text-amber-800 font-black">★ Priorizadas: {judicaturasByRamo.penalStats.priorizados}</span>
+                  <span>•</span>
                   <span className="text-teal-700 font-black">TIC 100%: {judicaturasByRamo.penalStats.equip100}</span>
                 </div>
 
@@ -2922,6 +3340,8 @@ export const JudicaturasView: React.FC = () => {
                   <span>•</span>
                   <span className="text-purple-700">Traslado: {judicaturasByRamo.civilStats.traslados}</span>
                   <span>•</span>
+                  <span className="text-amber-800 font-black">★ Priorizadas: {judicaturasByRamo.civilStats.priorizados}</span>
+                  <span>•</span>
                   <span className="text-teal-700 font-black">TIC 100%: {judicaturasByRamo.civilStats.equip100}</span>
                 </div>
 
@@ -2994,6 +3414,8 @@ export const JudicaturasView: React.FC = () => {
                   <span className="text-blue-700">Fin: {judicaturasByRamo.amparosStats.finalizados}</span>
                   <span>•</span>
                   <span className="text-purple-700">Traslado: {judicaturasByRamo.amparosStats.traslados}</span>
+                  <span>•</span>
+                  <span className="text-amber-800 font-black">★ Priorizadas: {judicaturasByRamo.amparosStats.priorizados}</span>
                   <span>•</span>
                   <span className="text-teal-700 font-black">TIC 100%: {judicaturasByRamo.amparosStats.equip100}</span>
                 </div>
@@ -3183,9 +3605,9 @@ export const JudicaturasView: React.FC = () => {
 
           {/* Contenedor del Gantt con Scroll Horizontal */}
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <div className="min-w-[900px]">
+            <div className="min-w-[1100px]">
               {/* Encabezado Semanal */}
-              <div className="grid grid-cols-[260px_repeat(auto-fit,minmax(90px,1fr))] bg-slate-100 text-slate-700 font-bold text-[11px] border-b border-slate-300">
+              <div className="grid grid-cols-[380px_repeat(auto-fit,minmax(90px,1fr))] bg-slate-100 text-slate-700 font-bold text-[11px] border-b border-slate-300">
                 <div className="p-2.5 border-r border-slate-200 sticky left-0 bg-slate-100 z-10">
                   Judicatura / Cámara
                 </div>
@@ -3212,7 +3634,7 @@ export const JudicaturasView: React.FC = () => {
                   return (
                     <div
                       key={j.id}
-                      className="grid grid-cols-[260px_repeat(auto-fit,minmax(90px,1fr))] hover:bg-slate-50/80 transition-colors items-center text-xs"
+                      className="grid grid-cols-[380px_repeat(auto-fit,minmax(90px,1fr))] hover:bg-slate-50/80 transition-colors items-center text-xs"
                     >
                       {/* Columna Izquierda: Identificador */}
                       <div className="p-2.5 border-r border-slate-200 sticky left-0 bg-white z-10 flex items-center justify-between gap-2 shadow-xs">
@@ -3220,7 +3642,7 @@ export const JudicaturasView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setDetailJudicaturaId(j.id)}
-                            className="font-bold text-slate-900 hover:text-blue-800 text-left truncate block cursor-pointer"
+                            className="font-bold text-slate-900 hover:text-blue-800 text-left break-words whitespace-normal leading-snug block cursor-pointer"
                             title={j.nombreJudicatura}
                           >
                             {j.nombreJudicatura}
@@ -3545,8 +3967,8 @@ export const JudicaturasView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Estatus y Fecha (Requisito Solicitado) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-blue-50/50 p-3.5 rounded-xl border border-blue-100">
+              {/* Estatus, Priorizado y Fecha (Requisito Solicitado) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-blue-50/50 p-3.5 rounded-xl border border-blue-100">
                 {/* Estatus */}
                 <div>
                   <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
@@ -3567,6 +3989,26 @@ export const JudicaturasView: React.FC = () => {
                   </select>
                   <span className="text-[10px] text-slate-500 mt-1 block">
                     Estatus actual de la judicatura
+                  </span>
+                </div>
+
+                {/* Priorizado */}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                    Priorizado <span className="text-amber-600">*</span>
+                  </label>
+                  <select
+                    id="select-priorizado"
+                    value={priorizado}
+                    onChange={(e) => setPriorizado(e.target.value as 'Si' | 'No')}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                  >
+                    <option value="Si">Si (Alta Prioridad)</option>
+                    <option value="No">No (Ordinario)</option>
+                  </select>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Indicador prioritario institucional
                   </span>
                 </div>
 
@@ -4137,6 +4579,7 @@ export const JudicaturasView: React.FC = () => {
           ramo: ramoFilter !== 'Todos' ? ramoFilter : undefined,
           equipamiento: equipamientoFilter !== 'Todos' ? equipamientoFilter : undefined,
           estadoInauguracion: estatusInauguracionFilter !== 'Todos' ? estatusInauguracionFilter : undefined,
+          priorizado: priorizadoFilter !== 'Todos' ? (priorizadoFilter === 'Si' ? 'Solo Priorizadas (Sí)' : 'No Priorizadas (No)') : undefined,
         }}
         initialReportType={consolidatedModalInitialType}
         initialStatus={consolidatedModalInitialStatus}

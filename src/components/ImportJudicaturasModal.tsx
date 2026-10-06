@@ -251,6 +251,13 @@ export const ImportJudicaturasModal: React.FC<ImportJudicaturasModalProps> = ({
           row['estadoInauguracion'] ||
           '';
 
+        const priorizadoVal =
+          row['Priorizado'] ||
+          row['Alta Prioridad'] ||
+          row['Prioritaria'] ||
+          row['priorizado'] ||
+          '';
+
         const observacionesVal = (
           row['Observaciones'] ||
           row['Acciones'] ||
@@ -279,6 +286,7 @@ export const ImportJudicaturasModal: React.FC<ImportJudicaturasModalProps> = ({
         const cableadoEstructurado = normalizeSiNo(cableadoVal, 'Si');
         const enlaceDatos = normalizeSiNo(enlaceVal, 'Si');
         const estadoInauguracion = normalizeEstatus(estatusVal);
+        const priorizado = normalizeSiNo(priorizadoVal, 'No');
 
         const data: Partial<JudicaturaRecord> & { observacionesTexto?: string } = {
           id: idVal ? String(idVal).trim() : undefined,
@@ -292,6 +300,7 @@ export const ImportJudicaturasModal: React.FC<ImportJudicaturasModalProps> = ({
           enlaceDatos,
           fechaInauguracion: normFechaInauguracion || undefined,
           estadoInauguracion,
+          priorizado,
           observacionesTexto: observacionesVal,
         };
 

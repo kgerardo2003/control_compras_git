@@ -22,6 +22,7 @@ export interface ExportJudicaturasPDFOptions {
     ramo?: string;
     equipamiento?: string;
     estadoInauguracion?: string;
+    priorizado?: string;
   };
   currentUser?: {
     nombreCompleto?: string;
@@ -38,10 +39,15 @@ export interface ExportJudicaturasPDFOptions {
  */
 function formatDiagnosticoYAccionesFull(j: JudicaturaRecord): string {
   if (!j.observaciones || j.observaciones.length === 0) {
-    return 'Sin observaciones reportadas';
+    return 'Sin observaciones ni diagnósticos registrados en bitácora.';
   }
-  return j.observaciones
-    .map((o) => `[#${o.numeroAccion}]${o.autor ? ` [${o.autor}]` : ''}: ${o.texto}`)
+  const sorted = [...j.observaciones].sort((a, b) => a.numeroAccion - b.numeroAccion);
+  return sorted
+    .map((o) => {
+      const fechaStr = o.fecha ? ` ${formatDate(o.fecha.slice(0, 10))}` : '';
+      const autorStr = o.autor ? ` [${o.autor}]` : '';
+      return `• Acción #${o.numeroAccion}${fechaStr}${autorStr}:\n${o.texto}`;
+    })
     .join('\n\n');
 }
 
@@ -330,7 +336,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     page1Y += 4.5;
 
     // Filtros aplicados si existen
-    if (filterInfo && (filterInfo.search || filterInfo.ramo || filterInfo.equipamiento || filterInfo.estadoInauguracion)) {
+    if (filterInfo && (filterInfo.search || filterInfo.ramo || filterInfo.equipamiento || filterInfo.estadoInauguracion || filterInfo.priorizado)) {
       const filters = [];
       if (filterInfo.search) filters.push(`Búsqueda: "${filterInfo.search}"`);
       if (filterInfo.ramo && filterInfo.ramo !== 'Todos') {
@@ -342,6 +348,9 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       }
       if (filterInfo.estadoInauguracion && filterInfo.estadoInauguracion !== 'Todos') {
         filters.push(`Estado Inauguración: ${filterInfo.estadoInauguracion}`);
+      }
+      if (filterInfo.priorizado && filterInfo.priorizado !== 'Todos') {
+        filters.push(`Priorización: ${filterInfo.priorizado}`);
       }
 
       if (filters.length > 0) {
@@ -389,7 +398,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
     currentY += 4.5;
 
     // Filtros aplicados si existen
-    if (filterInfo && (filterInfo.search || filterInfo.ramo || filterInfo.equipamiento || filterInfo.estadoInauguracion)) {
+    if (filterInfo && (filterInfo.search || filterInfo.ramo || filterInfo.equipamiento || filterInfo.estadoInauguracion || filterInfo.priorizado)) {
       const filters = [];
       if (filterInfo.search) filters.push(`Búsqueda: "${filterInfo.search}"`);
       if (filterInfo.ramo && filterInfo.ramo !== 'Todos') {
@@ -401,6 +410,9 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       }
       if (filterInfo.estadoInauguracion && filterInfo.estadoInauguracion !== 'Todos') {
         filters.push(`Estado Inauguración: ${filterInfo.estadoInauguracion}`);
+      }
+      if (filterInfo.priorizado && filterInfo.priorizado !== 'Todos') {
+        filters.push(`Priorización: ${filterInfo.priorizado}`);
       }
 
       if (filters.length > 0) {
@@ -646,6 +658,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         const adecuacionesText = `${formatDate(j.fechaInicioAdecuaciones)} al ${formatDate(j.fechaFinAdecuaciones)}`;
         const estatus = getJudEstatus(j);
         const fechaInaug = j.fechaInauguracion ? formatDate(j.fechaInauguracion) : 'Por definir';
+        const priorizadoText = j.priorizado === 'Si' ? 'Sí' : 'No';
 
         const isAllReady =
           j.equipoComputo === 'Si' &&
@@ -658,6 +671,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         return [
           String(index + 1),
           j.nombreJudicatura,
+          priorizadoText,
           adecuacionesText,
           j.equipoComputo,
           j.equipoAudio,
@@ -677,6 +691,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           [
             '#',
             'Nombre de la Judicatura',
+            'Priorizado',
             'Período Adecuaciones',
             'PC',
             'Audio',
@@ -685,14 +700,16 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             'Estado TIC',
             'Estatus',
             'Fecha',
-            'Última Acción / Bitácora',
+            'Diagnóstico y Última Acción Registrada',
           ],
         ],
         body: tableData,
         theme: 'grid',
+        rowPageBreak: 'avoid',
+        showHead: 'everyPage',
         styles: {
-          fontSize: 6.5,
-          cellPadding: 1.6,
+          fontSize: 6.2,
+          cellPadding: 1.8,
           overflow: 'linebreak',
           valign: 'middle',
         },
@@ -700,28 +717,39 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           fillColor: headerBg,
           textColor: [255, 255, 255],
           fontStyle: 'bold',
-          fontSize: 6.5,
+          fontSize: 6.3,
           halign: 'center',
         },
         columnStyles: {
           0: { halign: 'center', cellWidth: 7 },
-          1: { halign: 'left', cellWidth: 62, fontStyle: 'bold' },
-          2: { halign: 'center', cellWidth: 30 },
-          3: { halign: 'center', cellWidth: 10 },
-          4: { halign: 'center', cellWidth: 10 },
-          5: { halign: 'center', cellWidth: 10 },
-          6: { halign: 'center', cellWidth: 11 },
-          7: { halign: 'center', cellWidth: 20 },
-          8: { halign: 'center', cellWidth: 24, fontStyle: 'bold' },
-          9: { halign: 'center', cellWidth: 20 },
-          10: { halign: 'left', cellWidth: 'auto' },
+          1: { halign: 'left', cellWidth: 50, fontStyle: 'bold' },
+          2: { halign: 'center', cellWidth: 14, fontStyle: 'bold' },
+          3: { halign: 'center', cellWidth: 26 },
+          4: { halign: 'center', cellWidth: 8 },
+          5: { halign: 'center', cellWidth: 8 },
+          6: { halign: 'center', cellWidth: 8 },
+          7: { halign: 'center', cellWidth: 9 },
+          8: { halign: 'center', cellWidth: 18 },
+          9: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
+          10: { halign: 'center', cellWidth: 17 },
+          11: { halign: 'left', valign: 'top', cellWidth: 88 },
         },
         alternateRowStyles: {
           fillColor: [248, 250, 252],
         },
         didParseCell: (data) => {
-          // Columnas Equipamiento TIC
-          if (data.section === 'body' && [3, 4, 5, 6].includes(data.column.index)) {
+          // Priorizado (Columna 2)
+          if (data.section === 'body' && data.column.index === 2) {
+            const val = String(data.cell.raw);
+            if (val === 'Sí' || val === 'Si') {
+              data.cell.styles.textColor = [180, 83, 9]; // Amber/Gold
+              data.cell.styles.fontStyle = 'bold';
+            } else {
+              data.cell.styles.textColor = [100, 116, 139];
+            }
+          }
+          // Columnas Equipamiento TIC (Columnas 4, 5, 6, 7)
+          if (data.section === 'body' && [4, 5, 6, 7].includes(data.column.index)) {
             const val = String(data.cell.raw);
             data.cell.styles.fontStyle = 'bold';
             if (val === 'Si') {
@@ -730,8 +758,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
               data.cell.styles.textColor = [225, 29, 72];
             }
           }
-          // Estado TIC
-          if (data.section === 'body' && data.column.index === 7) {
+          // Estado TIC (Columna 8)
+          if (data.section === 'body' && data.column.index === 8) {
             const val = String(data.cell.raw);
             data.cell.styles.fontStyle = 'bold';
             if (val.includes('100%')) {
@@ -740,8 +768,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
               data.cell.styles.textColor = [180, 83, 9];
             }
           }
-          // Estatus
-          if (data.section === 'body' && data.column.index === 8) {
+          // Estatus (Columna 9)
+          if (data.section === 'body' && data.column.index === 9) {
             const val = String(data.cell.raw);
             data.cell.styles.fontStyle = 'bold';
             if (val === 'Inaugurado') {
@@ -757,6 +785,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             } else {
               data.cell.styles.textColor = [180, 83, 9];
             }
+          }
+          // Diagnóstico y Última Acción Registrada (Columna 11)
+          if (data.section === 'body' && data.column.index === 11) {
+            data.cell.styles.valign = 'top';
           }
         },
       });
@@ -812,6 +844,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         const adecuacionesText = `${formatDate(j.fechaInicioAdecuaciones)} al ${formatDate(j.fechaFinAdecuaciones)}`;
         const estatus = getJudEstatus(j);
         const fechaInaug = j.fechaInauguracion ? formatDate(j.fechaInauguracion) : 'Por definir';
+        const priorizadoText = j.priorizado === 'Si' ? 'Sí' : 'No';
 
         const isAllReady =
           j.equipoComputo === 'Si' &&
@@ -825,6 +858,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           String(index + 1),
           j.nombreJudicatura,
           camaraText,
+          priorizadoText,
           adecuacionesText,
           j.equipoComputo,
           j.equipoAudio,
@@ -845,6 +879,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             '#',
             'Nombre de la Judicatura',
             'Cámara',
+            'Priorizado',
             'Período Adecuaciones',
             'PC',
             'Audio',
@@ -853,14 +888,16 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             'Estado TIC',
             'Estatus',
             'Fecha',
-            'Última Acción / Bitácora',
+            'Diagnóstico y Última Acción Registrada',
           ],
         ],
         body: unifiedData,
         theme: 'grid',
+        rowPageBreak: 'avoid',
+        showHead: 'everyPage',
         styles: {
-          fontSize: 6.5,
-          cellPadding: 1.6,
+          fontSize: 6.2,
+          cellPadding: 1.8,
           overflow: 'linebreak',
           valign: 'middle',
         },
@@ -868,22 +905,23 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           fillColor: [10, 10, 105],
           textColor: [255, 255, 255],
           fontStyle: 'bold',
-          fontSize: 6.5,
+          fontSize: 6.3,
           halign: 'center',
         },
         columnStyles: {
           0: { halign: 'center', cellWidth: 7 },
-          1: { halign: 'left', cellWidth: 54, fontStyle: 'bold' },
-          2: { halign: 'center', cellWidth: 23 },
-          3: { halign: 'center', cellWidth: 30 },
-          4: { halign: 'center', cellWidth: 10 },
-          5: { halign: 'center', cellWidth: 10 },
-          6: { halign: 'center', cellWidth: 10 },
-          7: { halign: 'center', cellWidth: 11 },
-          8: { halign: 'center', cellWidth: 20 },
-          9: { halign: 'center', cellWidth: 23, fontStyle: 'bold' },
-          10: { halign: 'center', cellWidth: 19 },
-          11: { halign: 'left', cellWidth: 'auto' },
+          1: { halign: 'left', cellWidth: 44, fontStyle: 'bold' },
+          2: { halign: 'center', cellWidth: 19 },
+          3: { halign: 'center', cellWidth: 13, fontStyle: 'bold' },
+          4: { halign: 'center', cellWidth: 25 },
+          5: { halign: 'center', cellWidth: 8 },
+          6: { halign: 'center', cellWidth: 8 },
+          7: { halign: 'center', cellWidth: 8 },
+          8: { halign: 'center', cellWidth: 9 },
+          9: { halign: 'center', cellWidth: 17 },
+          10: { halign: 'center', cellWidth: 19, fontStyle: 'bold' },
+          11: { halign: 'center', cellWidth: 16 },
+          12: { halign: 'left', valign: 'top', cellWidth: 80 },
         },
         alternateRowStyles: {
           fillColor: [248, 250, 252],
@@ -897,8 +935,18 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             else if (val.includes('Civil')) data.cell.styles.textColor = [29, 78, 216];
             else if (val.includes('Amparos')) data.cell.styles.textColor = [5, 150, 105];
           }
-          // Componentes TIC (Columnas 4, 5, 6, 7)
-          if (data.section === 'body' && [4, 5, 6, 7].includes(data.column.index)) {
+          // Priorizado (Columna 3)
+          if (data.section === 'body' && data.column.index === 3) {
+            const val = String(data.cell.raw);
+            if (val === 'Sí' || val === 'Si') {
+              data.cell.styles.textColor = [180, 83, 9];
+              data.cell.styles.fontStyle = 'bold';
+            } else {
+              data.cell.styles.textColor = [100, 116, 139];
+            }
+          }
+          // Componentes TIC (Columnas 5, 6, 7, 8)
+          if (data.section === 'body' && [5, 6, 7, 8].includes(data.column.index)) {
             const val = String(data.cell.raw);
             data.cell.styles.fontStyle = 'bold';
             if (val === 'Si') {
@@ -907,8 +955,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
               data.cell.styles.textColor = [225, 29, 72];
             }
           }
-          // Estado TIC (Columna 8)
-          if (data.section === 'body' && data.column.index === 8) {
+          // Estado TIC (Columna 9)
+          if (data.section === 'body' && data.column.index === 9) {
             const val = String(data.cell.raw);
             data.cell.styles.fontStyle = 'bold';
             if (val.includes('100%')) {
@@ -917,8 +965,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
               data.cell.styles.textColor = [180, 83, 9];
             }
           }
-          // Estatus (Columna 9)
-          if (data.section === 'body' && data.column.index === 9) {
+          // Estatus (Columna 10)
+          if (data.section === 'body' && data.column.index === 10) {
             const val = String(data.cell.raw);
             data.cell.styles.fontStyle = 'bold';
             if (val === 'Inaugurado') {
@@ -934,6 +982,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             } else {
               data.cell.styles.textColor = [180, 83, 9];
             }
+          }
+          // Diagnóstico y Última Acción Registrada (Columna 12)
+          if (data.section === 'body' && data.column.index === 12) {
+            data.cell.styles.valign = 'top';
           }
         },
       });
@@ -1192,18 +1244,13 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         }
       }
 
-      // Borde inferior de la fila
+      // Borde final de la fila
       doc.setDrawColor(226, 232, 240);
       doc.setLineWidth(0.2);
       doc.line(marginX, currentY + rowHeight, marginX + contentWidth, currentY + rowHeight);
 
       currentY += rowHeight;
     });
-
-    // Borde final de la tabla de Gantt
-    doc.setDrawColor(148, 163, 184);
-    doc.setLineWidth(0.3);
-    doc.rect(marginX, currentY - (judicaturas.length * rowHeight), contentWidth, judicaturas.length * rowHeight);
   }
 
   // =========================================================================
@@ -1236,6 +1283,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
 
     const matrixData = sortedMatrixJudicaturas.map((j, idx) => {
       const camara = j.tipoRamo === 'Penal' ? 'Cámara Penal' : j.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos';
+      const priorizadoText = j.priorizado === 'Si' ? 'Sí' : 'No';
       
       const computoStatus = j.equipoComputo === 'Si' ? 'Completado' : 'Pendiente';
       const audioStatus = j.equipoAudio === 'Si' ? 'Completado' : 'Pendiente';
@@ -1252,6 +1300,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         String(idx + 1),
         j.nombreJudicatura,
         camara,
+        priorizadoText,
         computoStatus,
         audioStatus,
         redStatus,
@@ -1270,6 +1319,7 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
           '#',
           'Judicatura',
           'Cámara',
+          'Priorizado',
           'Cómputo (PC)',
           'Audio Sala',
           'Cableado Red',
@@ -1281,9 +1331,11 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
       ],
       body: matrixData,
       theme: 'grid',
+      rowPageBreak: 'avoid',
+      showHead: 'everyPage',
       styles: {
-        fontSize: 6.5,
-        cellPadding: 2,
+        fontSize: 6.2,
+        cellPadding: 1.8,
         overflow: 'linebreak',
         valign: 'middle',
       },
@@ -1291,27 +1343,38 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
         fillColor: [10, 10, 105], // #0A0A69
         textColor: [255, 255, 255],
         fontStyle: 'bold',
-        fontSize: 6.5,
+        fontSize: 6.3,
         halign: 'center',
       },
       columnStyles: {
         0: { halign: 'center', cellWidth: 7 },
-        1: { halign: 'left', cellWidth: 50, fontStyle: 'bold' },
-        2: { halign: 'center', cellWidth: 20 },
-        3: { halign: 'center', cellWidth: 16 },
-        4: { halign: 'center', cellWidth: 16 },
-        5: { halign: 'center', cellWidth: 16 },
-        6: { halign: 'center', cellWidth: 17 },
-        7: { halign: 'center', cellWidth: 15, fontStyle: 'bold' },
-        8: { halign: 'center', cellWidth: 22, fontStyle: 'bold' },
-        9: { halign: 'left', cellWidth: 'auto' },
+        1: { halign: 'left', cellWidth: 44, fontStyle: 'bold' },
+        2: { halign: 'center', cellWidth: 18 },
+        3: { halign: 'center', cellWidth: 14, fontStyle: 'bold' },
+        4: { halign: 'center', cellWidth: 15 },
+        5: { halign: 'center', cellWidth: 15 },
+        6: { halign: 'center', cellWidth: 15 },
+        7: { halign: 'center', cellWidth: 15 },
+        8: { halign: 'center', cellWidth: 14, fontStyle: 'bold' },
+        9: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
+        10: { halign: 'left', valign: 'top', cellWidth: 96 },
       },
       alternateRowStyles: {
         fillColor: [248, 250, 252],
       },
       didParseCell: (data) => {
-        // Indicadores de Componentes TIC (Columnas 3, 4, 5, 6)
-        if (data.section === 'body' && [3, 4, 5, 6].includes(data.column.index)) {
+        // Priorizado (Columna 3)
+        if (data.section === 'body' && data.column.index === 3) {
+          const val = String(data.cell.raw);
+          if (val === 'Sí' || val === 'Si') {
+            data.cell.styles.textColor = [180, 83, 9]; // Amber
+            data.cell.styles.fontStyle = 'bold';
+          } else {
+            data.cell.styles.textColor = [100, 116, 139];
+          }
+        }
+        // Indicadores de Componentes TIC (Columnas 4, 5, 6, 7)
+        if (data.section === 'body' && [4, 5, 6, 7].includes(data.column.index)) {
           const val = String(data.cell.raw);
           data.cell.styles.fontStyle = 'bold';
           if (val === 'Completado') {
@@ -1320,8 +1383,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             data.cell.styles.textColor = [225, 29, 72]; // Rose
           }
         }
-        // Avance TIC
-        if (data.section === 'body' && data.column.index === 7) {
+        // Avance TIC (Columna 8)
+        if (data.section === 'body' && data.column.index === 8) {
           const val = String(data.cell.raw);
           if (val === '100%') {
             data.cell.styles.textColor = [4, 120, 87];
@@ -1329,8 +1392,8 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             data.cell.styles.textColor = [180, 83, 9];
           }
         }
-        // Apertura / Estatus (Columna 8)
-        if (data.section === 'body' && data.column.index === 8) {
+        // Apertura / Estatus (Columna 9)
+        if (data.section === 'body' && data.column.index === 9) {
           const val = String(data.cell.raw);
           data.cell.styles.fontStyle = 'bold';
           if (val.includes('Inaugurado')) {
@@ -1347,6 +1410,10 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
             data.cell.styles.textColor = [180, 83, 9];
           }
         }
+        // Diagnóstico y Última Acción Registrada (Columna 10)
+        if (data.section === 'body' && data.column.index === 10) {
+          data.cell.styles.valign = 'top';
+        }
       },
     });
 
@@ -1356,15 +1423,21 @@ export function generateConsolidatedJudicaturasPDF(options: ExportJudicaturasPDF
   // =========================================================================
   // BLOQUE OFICIAL DE FIRMAS Y RESPONSABILIDAD INSTITUCIONAL
   // =========================================================================
-  // Actualizar siempre currentY con la posición final de la última tabla ejecutada
-  const lastTableFinalY = (doc as any).lastAutoTable?.finalY;
-  if (lastTableFinalY && lastTableFinalY > 0) {
-    currentY = lastTableFinalY + 8;
+  if (includeStatusMatrix) {
+    const matrixFinalY = (doc as any).lastAutoTable?.finalY;
+    if (matrixFinalY && matrixFinalY > 0) {
+      currentY = matrixFinalY + 8;
+    }
+  } else if (!includeGantt && includeTable) {
+    const tableFinalY = (doc as any).lastAutoTable?.finalY;
+    if (tableFinalY && tableFinalY > 0) {
+      currentY = tableFinalY + 8;
+    }
   }
 
-  // El bloque de firmas mide ~44mm con disclaimer y márgenes
-  const requiredSignatureHeight = 44;
-  if (currentY + requiredSignatureHeight > pageHeight - 16) {
+  // El bloque de firmas requiere al menos 56mm para firmas + disclaimer con márgenes
+  const requiredSignatureHeight = 56;
+  if (currentY + requiredSignatureHeight > pageHeight - 16 || currentY > pageHeight - 56) {
     doc.addPage('a4', 'landscape');
     currentY = 38;
   }
@@ -1559,17 +1632,17 @@ export function generateIndividualJudicaturaPDF(
   const metaY = currentY + 7 + (titleLinesCount * 4.5);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('CÁMARA:', marginX + 5, metaY);
+  doc.text('CÁMARA:', marginX + 4, metaY);
   doc.setFont('helvetica', 'normal');
   const camaraNombreFicha = judicatura.tipoRamo === 'Penal' ? 'Cámara Penal' : judicatura.tipoRamo === 'Civil' ? 'Cámara Civil' : 'Cámara Amparos';
-  doc.text(camaraNombreFicha, marginX + 22, metaY);
+  doc.text(camaraNombreFicha, marginX + 19, metaY);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('ESTATUS:', marginX + 68, metaY);
+  doc.text('ESTATUS:', marginX + 54, metaY);
   doc.setFont('helvetica', 'bold');
-  const estatusActual = judicatura.estadoInauguracion || (judicatura.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha');
+  const estatusActual = judicatura.estadoInauguracion || (judicatura.fechaInauguracion ? 'Programado' : 'Pendiente Fecha');
   if (estatusActual === 'Inaugurado' || estatusActual === 'Finalizado') {
     doc.setTextColor(5, 150, 105);
   } else if (estatusActual === 'Reprogramado') {
@@ -1577,14 +1650,27 @@ export function generateIndividualJudicaturaPDF(
   } else {
     doc.setTextColor(180, 83, 9);
   }
-  doc.text(estatusActual.toUpperCase(), marginX + 85, metaY);
+  doc.text(estatusActual.toUpperCase(), marginX + 69, metaY);
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text('FECHA:', marginX + 130, metaY);
+  doc.text('PRIORIZADO:', marginX + 104, metaY);
+  doc.setFont('helvetica', 'bold');
+  const isPriorizado = judicatura.priorizado === 'Si';
+  if (isPriorizado) {
+    doc.setTextColor(180, 83, 9); // Amber
+    doc.text('SÍ (ALTA)', marginX + 125, metaY);
+  } else {
+    doc.setTextColor(100, 116, 139);
+    doc.text('NO', marginX + 125, metaY);
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('FECHA:', marginX + 144, metaY);
   doc.setFont('courier', 'bold');
   doc.setTextColor(10, 10, 105);
-  doc.text(judicatura.fechaInauguracion ? formatDate(judicatura.fechaInauguracion) : 'POR DEFINIR', marginX + 144, metaY);
+  doc.text(judicatura.fechaInauguracion ? formatDate(judicatura.fechaInauguracion) : 'POR DEFINIR', marginX + 156, metaY);
 
   currentY += 32;
 
@@ -1625,7 +1711,8 @@ export function generateIndividualJudicaturaPDF(
       ['Finalización de Adecuaciones', fechaFin, 'Equipo de Audio', judicatura.equipoAudio === 'Si' ? 'Instalado (Sí)' : 'Pendiente (No)'],
       ['Plazo Total de Adecuación', `${diffDays} días calendario`, 'Cableado Estructurado', judicatura.cableadoEstructurado === 'Si' ? 'Instalado (Sí)' : 'Pendiente (No)'],
       ['Fecha Apertura / Inauguración', judicatura.fechaInauguracion ? formatDate(judicatura.fechaInauguracion) : 'Pendiente de calendarizar', 'Enlace de Datos', judicatura.enlaceDatos === 'Si' ? 'Instalado (Sí)' : 'Pendiente (No)'],
-      ['Estatus Operativo Actual', estatusActual, 'Cobertura Global TIC', `${equipPct}% (${equipCount}/4 componentes listos)`]
+      ['Estatus Operativo Actual', estatusActual, 'Cobertura Global TIC', `${equipPct}% (${equipCount}/4 componentes listos)`],
+      ['Nivel de Priorización', isPriorizado ? 'Priorizado (Alta Prioridad OJ)' : 'Ordinario (No Priorizado)', 'Estado Prioritario', isPriorizado ? 'Atención Prioritaria GIT' : 'Seguimiento Estándar']
     ],
     theme: 'grid',
     headStyles: {
@@ -1636,9 +1723,9 @@ export function generateIndividualJudicaturaPDF(
       halign: 'left',
     },
     styles: {
-      fontSize: 7.5,
+      fontSize: 7.2,
       textColor: [15, 23, 42],
-      cellPadding: 2.2,
+      cellPadding: 2,
       overflow: 'linebreak',
     },
     columnStyles: {
@@ -1768,8 +1855,8 @@ export function generateIndividualJudicaturaPDF(
     currentY = finalIndivTableY + 8;
   }
 
-  const requiredIndivSignHeight = 36;
-  if (currentY + requiredIndivSignHeight > pageHeight - 16) {
+  const requiredIndivSignHeight = 48;
+  if (currentY + requiredIndivSignHeight > pageHeight - 16 || currentY > pageHeight - 48) {
     doc.addPage();
     currentY = 35;
   }

@@ -21,6 +21,9 @@ export interface JudicaturasExecutiveKPIs {
   finalizadoCount: number;
   inauguradosRate: number;
   programadosRate: number;
+  priorizadosCount: number;
+  noPriorizadosCount: number;
+  priorizadosRate: number;
   equip100Count: number;
   equip100Rate: number;
   equipParcialCount: number;
@@ -43,6 +46,7 @@ export function calculateJudicaturasKPIs(judicaturas: JudicaturaRecord[]): {
   ramoChartData: ChartDataItem[];
   coberturaTicChartData: ChartDataItem[];
   componentesTicChartData: ChartDataItem[];
+  priorizadoChartData: ChartDataItem[];
 } {
   const total = judicaturas.length;
 
@@ -56,6 +60,9 @@ export function calculateJudicaturasKPIs(judicaturas: JudicaturaRecord[]): {
   let pendientesCount = 0;
   let trasladoCount = 0;
   let finalizadoCount = 0;
+
+  let priorizadosCount = 0;
+  let noPriorizadosCount = 0;
 
   let equip100Count = 0;
   let equipParcialCount = 0;
@@ -81,6 +88,13 @@ export function calculateJudicaturasKPIs(judicaturas: JudicaturaRecord[]): {
     else if (st === 'finalizado') finalizadoCount++;
     else pendientesCount++;
 
+    // Priorizado
+    if (j.priorizado === 'Si') {
+      priorizadosCount++;
+    } else {
+      noPriorizadosCount++;
+    }
+
     // TIC
     const c = j.equipoComputo === 'Si' ? 1 : 0;
     const a = j.equipoAudio === 'Si' ? 1 : 0;
@@ -101,6 +115,7 @@ export function calculateJudicaturasKPIs(judicaturas: JudicaturaRecord[]): {
   const equip100Rate = total > 0 ? Math.round((equip100Count / total) * 100) : 0;
   const inauguradosRate = total > 0 ? Math.round((inauguradosCount / total) * 100) : 0;
   const programadosRate = total > 0 ? Math.round((programadosCount / total) * 100) : 0;
+  const priorizadosRate = total > 0 ? Math.round((priorizadosCount / total) * 100) : 0;
 
   const kpis: JudicaturasExecutiveKPIs = {
     totalJudicaturas: total,
@@ -115,6 +130,9 @@ export function calculateJudicaturasKPIs(judicaturas: JudicaturaRecord[]): {
     finalizadoCount,
     inauguradosRate,
     programadosRate,
+    priorizadosCount,
+    noPriorizadosCount,
+    priorizadosRate,
     equip100Count,
     equip100Rate,
     equipParcialCount,
@@ -158,12 +176,19 @@ export function calculateJudicaturasKPIs(judicaturas: JudicaturaRecord[]): {
     { name: 'Enlace de Datos / Telecom.', value: enlaceCount, color: '#0284C7', percentage: total > 0 ? Math.round((enlaceCount / total) * 100) : 0, subtext: `${enlaceCount}/${total} sedes` },
   ].filter(d => d.value > 0);
 
+  // 5. Gráfico Circular: Distribución por Priorización Estratégica
+  const priorizadoChartData: ChartDataItem[] = [
+    { name: 'Priorizadas (Sí)', value: priorizadosCount, color: '#D97706', percentage: priorizadosRate, subtext: `${priorizadosCount}/${total} sedes` },
+    { name: 'Ordinarias (No)', value: noPriorizadosCount, color: '#64748B', percentage: total > 0 ? Math.round((noPriorizadosCount / total) * 100) : 0, subtext: `${noPriorizadosCount}/${total} sedes` },
+  ].filter(d => d.value > 0);
+
   return {
     kpis,
     estatusChartData,
     ramoChartData,
     coberturaTicChartData,
     componentesTicChartData,
+    priorizadoChartData,
   };
 }
 
@@ -328,17 +353,17 @@ export function generateJudicaturasExecutiveDashboardImage(judicaturas: Judicatu
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, width, height);
 
-    const { kpis, estatusChartData, ramoChartData, coberturaTicChartData, componentesTicChartData } =
+    const { kpis, estatusChartData, ramoChartData, coberturaTicChartData, componentesTicChartData, priorizadoChartData } =
       calculateJudicaturasKPIs(judicaturas);
 
     // ==========================================
-    // 1. FILA DE 4 TARJETAS EJECUTIVAS DE KPIS
+    // 1. FILA DE 5 TARJETAS EJECUTIVAS DE KPIS
     // ==========================================
     const startX = 40;
     const cardY = 30;
     const cardHeight = 150;
-    const cardGap = 30;
-    const cardWidth = (width - (startX * 2) - (cardGap * 3)) / 4; // ~707px
+    const cardGap = 20;
+    const cardWidth = (width - (startX * 2) - (cardGap * 4)) / 5; // ~568px
 
     const kpiCards = [
       {
@@ -347,6 +372,13 @@ export function generateJudicaturasExecutiveDashboardImage(judicaturas: Judicatu
         sub: `Penal: ${kpis.penalCount} • Civil: ${kpis.civilCount} • Amparos: ${kpis.amparosCount}`,
         borderColor: '#0A0A69',
         accentColor: '#0A0A69',
+      },
+      {
+        title: 'JUDICATURAS PRIORIZADAS (ALTA PRIORIDAD)',
+        value: `${kpis.priorizadosCount} (${kpis.priorizadosRate}%)`,
+        sub: `${kpis.priorizadosCount} sedes priorizadas de ${kpis.totalJudicaturas}`,
+        borderColor: '#D97706',
+        accentColor: '#D97706',
       },
       {
         title: 'CUMPLIMIENTO GLOBAL TIC (100%)',
@@ -365,9 +397,9 @@ export function generateJudicaturasExecutiveDashboardImage(judicaturas: Judicatu
       {
         title: 'PENDIENTES Y REPROGRAMACIONES',
         value: `${kpis.pendientesCount + kpis.reprogramadosCount + kpis.trasladoCount}`,
-        sub: `${kpis.pendientesCount} fecha pendiente • ${kpis.reprogramadosCount} reprog. • ${kpis.trasladoCount} traslados`,
-        borderColor: '#D97706',
-        accentColor: '#D97706',
+        sub: `${kpis.pendientesCount} fecha pendiente • ${kpis.reprogramadosCount} reprog.`,
+        borderColor: '#DC2626',
+        accentColor: '#DC2626',
       },
     ];
 
@@ -393,19 +425,19 @@ export function generateJudicaturasExecutiveDashboardImage(judicaturas: Judicatu
 
       // Título del KPI
       ctx.fillStyle = '#64748B';
-      ctx.font = 'bold 20px Helvetica, Arial, sans-serif';
+      ctx.font = 'bold 17px Helvetica, Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(card.title, cx + 24, cardY + 42);
+      ctx.fillText(card.title, cx + 20, cardY + 42);
 
       // Valor Principal
       ctx.fillStyle = card.accentColor;
-      ctx.font = 'bold 44px Helvetica, Arial, sans-serif';
-      ctx.fillText(card.value, cx + 24, cardY + 92);
+      ctx.font = 'bold 40px Helvetica, Arial, sans-serif';
+      ctx.fillText(card.value, cx + 20, cardY + 92);
 
       // Subtítulo
       ctx.fillStyle = '#475569';
-      ctx.font = 'normal 19px Helvetica, Arial, sans-serif';
-      ctx.fillText(card.sub, cx + 24, cardY + 130);
+      ctx.font = 'normal 17px Helvetica, Arial, sans-serif';
+      ctx.fillText(card.sub, cx + 20, cardY + 130);
     });
 
     // =========================================================================
@@ -448,14 +480,14 @@ export function generateJudicaturasExecutiveDashboardImage(judicaturas: Judicatu
         badgeColor: '#059669',
       },
       {
-        title: 'COBERTURA DE COMPONENTES TIC INSTALADOS',
-        subtitle: 'Disponibilidad de Cómputo, Audio de Sala, Red y Enlace de Datos',
-        data: componentesTicChartData,
-        centerTitle: `${kpis.computoCount + kpis.audioCount + kpis.redCount + kpis.enlaceCount}`,
-        centerSub: 'EQUIPOS',
+        title: 'PRIORIZACIÓN INSTITUCIONAL DE SEDES',
+        subtitle: 'Proporción de judicaturas con Alta Prioridad OJ (Sí) vs Ordinarias (No)',
+        data: priorizadoChartData,
+        centerTitle: `${kpis.priorizadosRate}%`,
+        centerSub: 'PRIORIZADAS',
         col: 1,
         row: 1,
-        badgeColor: '#0284C7',
+        badgeColor: '#D97706',
       },
     ];
 
@@ -561,7 +593,7 @@ export function generateJudicaturasExecutiveDashboardImage(judicaturas: Judicatu
     ctx.fillStyle = '#334155';
     ctx.font = 'normal 19px Helvetica, Arial, sans-serif';
     const diagLine1 = `• Cobertura Integral TIC: De ${kpis.totalJudicaturas} judicaturas registradas, ${kpis.equip100Count} sedes (${kpis.equip100Rate}%) cuentan con la totalidad de los 4 componentes (Cómputo, Audio, Red y Enlace).`;
-    const diagLine2 = `• Estatus de Inauguraciones: Se registran ${kpis.inauguradosCount} judicaturas inauguradas formalmente (${kpis.inauguradosRate}%), ${kpis.programadosCount} sedes programadas (${kpis.programadosRate}%) y ${kpis.pendientesCount} pendientes de fecha oficial.`;
+    const diagLine2 = `• Estatus de Apertura y Priorización: ${kpis.inauguradosCount} judicaturas inauguradas (${kpis.inauguradosRate}%), ${kpis.programadosCount} programadas con fecha (${kpis.programadosRate}%) y ${kpis.priorizadosCount} sedes PRIORIZADAS (${kpis.priorizadosRate}%) de alta prioridad institucional.`;
     const diagLine3 = `• Prioridad de Gestión Técnica: Se recomienda agilizar los trabajos de telecomunicaciones y cableado en las ${kpis.equipParcialCount + kpis.sinEquiparCount} sedes con adecuación parcial para cumplir el calendario oficial.`;
 
     ctx.fillText(diagLine1, startX + 32, bannerY + 70);
@@ -639,33 +671,50 @@ export function generateIndividualJudicaturaGaugeImage(judicatura: JudicaturaRec
       'COBERTURA TIC'
     );
 
-    // 2. Indicadores en 4 tarjetas compactas a la derecha
+    // 2. Indicadores en 5 tarjetas compactas a la derecha
     const startX = 640;
-    const cardGap = 25;
-    const cardWidth = (width - startX - 40 - (cardGap * 3)) / 4;
+    const cardGap = 20;
+    const cardWidth = (width - startX - 40 - (cardGap * 4)) / 5; // ~328px
     const cardHeight = 220;
     const cardY = (height - cardHeight) / 2;
 
+    const isPriorizado = judicatura.priorizado === 'Si';
+
     const components = [
       {
-        name: 'EQUIPO DE CÓMPUTO (PC)',
+        name: 'EQUIPO CÓMPUTO',
         ready: c === 1,
+        statusText: c === 1 ? 'COMPLETADO' : 'PENDIENTE',
         desc: c === 1 ? 'Instalado y operativo' : 'Pendiente de entrega',
+        activeColor: '#059669',
       },
       {
-        name: 'EQUIPO DE AUDIO SALA',
+        name: 'AUDIO DE SALA',
         ready: a === 1,
-        desc: a === 1 ? 'Instalado y calibrado' : 'Pendiente de instalación',
+        statusText: a === 1 ? 'COMPLETADO' : 'PENDIENTE',
+        desc: a === 1 ? 'Instalado y calibrado' : 'Pendiente instalación',
+        activeColor: '#059669',
       },
       {
-        name: 'CABLEADO DE RED',
+        name: 'CABLEADO RED',
         ready: r === 1,
+        statusText: r === 1 ? 'COMPLETADO' : 'PENDIENTE',
         desc: r === 1 ? 'Certificado y probado' : 'Pendiente de tendido',
+        activeColor: '#059669',
       },
       {
         name: 'ENLACE DE DATOS',
         ready: e === 1,
+        statusText: e === 1 ? 'COMPLETADO' : 'PENDIENTE',
         desc: e === 1 ? 'Conectado a red OJ' : 'Sin enlace activo',
+        activeColor: '#059669',
+      },
+      {
+        name: 'PRIORIZACIÓN',
+        ready: isPriorizado,
+        statusText: isPriorizado ? 'PRIORIZADO' : 'ORDINARIO',
+        desc: isPriorizado ? 'Alta prioridad OJ' : 'Trámite estándar',
+        activeColor: '#D97706',
       },
     ];
 
@@ -682,26 +731,26 @@ export function generateIndividualJudicaturaGaugeImage(judicatura: JudicaturaRec
       ctx.stroke();
 
       // Barra superior
-      ctx.fillStyle = comp.ready ? '#059669' : '#D97706';
+      ctx.fillStyle = comp.ready ? comp.activeColor : '#94A3B8';
       ctx.beginPath();
       ctx.roundRect(cx, cardY, cardWidth, 6, [12, 12, 0, 0]);
       ctx.fill();
 
       // Título
       ctx.fillStyle = '#1E293B';
-      ctx.font = 'bold 20px Helvetica, Arial, sans-serif';
+      ctx.font = 'bold 18px Helvetica, Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(comp.name, cx + 18, cardY + 45);
+      ctx.fillText(comp.name, cx + 16, cardY + 45);
 
       // Estado
-      ctx.fillStyle = comp.ready ? '#059669' : '#D97706';
-      ctx.font = 'bold 36px Helvetica, Arial, sans-serif';
-      ctx.fillText(comp.ready ? 'COMPLETADO' : 'PENDIENTE', cx + 18, cardY + 115);
+      ctx.fillStyle = comp.ready ? comp.activeColor : '#64748B';
+      ctx.font = 'bold 30px Helvetica, Arial, sans-serif';
+      ctx.fillText(comp.statusText, cx + 16, cardY + 115);
 
       // Descripción
       ctx.fillStyle = '#64748B';
-      ctx.font = 'normal 18px Helvetica, Arial, sans-serif';
-      ctx.fillText(comp.desc, cx + 18, cardY + 170);
+      ctx.font = 'normal 16px Helvetica, Arial, sans-serif';
+      ctx.fillText(comp.desc, cx + 16, cardY + 170);
     });
 
     return canvas.toDataURL('image/png');

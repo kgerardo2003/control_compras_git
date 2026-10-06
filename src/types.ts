@@ -424,6 +424,7 @@ export interface JudicaturaRecord {
   enlaceDatos: OpcionSiNo;
   fechaInauguracion?: string;       // YYYY-MM-DD (Opcional)
   estadoInauguracion?: EstadoInauguracionJudicatura; // Reprogramado, Pendiente Fecha, Inaugurado
+  priorizado?: OpcionSiNo;          // 'Si' | 'No' (Judicatura Priorizada de Alta Prioridad)
   observaciones: JudicaturaObservacion[];
   documentos?: JudicaturaDocumento[]; // Documentos y expedientes digitalizados adjuntos
   creadoPor: string;

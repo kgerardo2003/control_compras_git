@@ -146,8 +146,22 @@ export const BoletaJudicaturasModal: React.FC<BoletaJudicaturasModalProps> = ({ 
                   <td className="border border-slate-300 p-2 text-slate-800 font-medium">
                     {judicatura.creadoPor || 'Gerencia de Informática'}
                   </td>
+                  <td className="border border-slate-300 p-2 font-bold text-slate-700">Priorizado:</td>
+                  <td className="border border-slate-300 p-2 text-slate-900 font-bold">
+                    {judicatura.priorizado === 'Si' ? (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                        ★ Sí (Alta Prioridad)
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-600">
+                        No (Ordinario)
+                      </span>
+                    )}
+                  </td>
+                </tr>
+                <tr className="bg-slate-50">
                   <td className="border border-slate-300 p-2 font-bold text-slate-700">Fecha de Registro:</td>
-                  <td className="border border-slate-300 p-2 text-slate-800 font-mono">
+                  <td className="border border-slate-300 p-2 text-slate-800 font-mono" colSpan={3}>
                     {judicatura.fechaCreacion ? formatDate(judicatura.fechaCreacion) : '—'}
                   </td>
                 </tr>
