@@ -68,6 +68,8 @@ export const BudgetView: React.FC = () => {
     addPurchaseBitacoraEntry,
     showToast,
     deleteBudgetLine,
+    clearAllBudgetLines,
+    deduplicateBudgetLines,
     deleteBudgetModification,
     approveBudgetModification,
     rejectBudgetModification,
@@ -83,6 +85,10 @@ export const BudgetView: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isModModalOpen, setIsModModalOpen] = useState(false);
   const [modToEdit, setModToEdit] = useState<BudgetModification | null>(null);
+  const [lineToDelete, setLineToDelete] = useState<BudgetLineItem | null>(null);
+  const [isClearMatrixModalOpen, setIsClearMatrixModalOpen] = useState(false);
+  const [isClearingMatrix, setIsClearingMatrix] = useState(false);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
   const [isLineModalOpen, setIsLineModalOpen] = useState(false);
   const [lineToEdit, setLineToEdit] = useState<BudgetLineItem | null>(null);
   const [prefillRenglon, setPrefillRenglon] = useState<OfficialRenglon | null>(null);
@@ -171,6 +177,16 @@ export const BudgetView: React.FC = () => {
       return matchSearch && matchRenglon && matchEstado;
     });
   }, [purchases, purchaseSearchTerm, purchaseFilterRenglon, purchaseFilterEstado]);
+
+  // Conteo de renglones duplicados en la matriz
+  const duplicateCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    budgetAvailability.forEach(l => {
+      const code = String(l.renglonPresupuestario || '').trim();
+      if (code) counts[code] = (counts[code] || 0) + 1;
+    });
+    return Object.values(counts).filter(c => c > 1).reduce((s, c) => s + (c - 1), 0);
+  }, [budgetAvailability]);
 
   const purchaseStats = useMemo(() => {
     const totalCount = purchases.length;
@@ -600,6 +616,19 @@ export const BudgetView: React.FC = () => {
               <span>Nuevo Renglón</span>
             </button>
           )}
+
+          {/* Botón Vaciar / Eliminar Matriz Completa */}
+          {canEditBudget && budgetAvailability.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsClearMatrixModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              title="Eliminar por completo todos los registros de la matriz presupuestaria"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+              <span>Eliminar Matriz</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -773,6 +802,41 @@ export const BudgetView: React.FC = () => {
       {subTab === 'matriz' && (
         <div className="space-y-4">
           
+          {/* Alerta de Detección de Registros Duplicados */}
+          {duplicateCount > 0 && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-500 text-white shrink-0 shadow-2xs">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-amber-950">
+                    Se detectaron {duplicateCount} registros duplicados en la matriz presupuestaria
+                  </h4>
+                  <p className="text-[11px] text-amber-800">
+                    Hay renglones que se han cargado más de una vez. Puede depurarlos automáticamente manteniendo un único registro limpio por código.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsDeduplicating(true);
+                  try {
+                    await deduplicateBudgetLines();
+                  } finally {
+                    setIsDeduplicating(false);
+                  }
+                }}
+                disabled={isDeduplicating}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{isDeduplicating ? 'Depurando Duplicados...' : 'Depurar y Eliminar Duplicados'}</span>
+              </button>
+            </div>
+          )}
+
           {/* Barra de Filtros y Búsqueda */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
@@ -1048,18 +1112,15 @@ export const BudgetView: React.FC = () => {
                               )}
 
                               {/* Eliminar Renglón */}
-                              {isAdmin && (
+                              {canEditBudget && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    if (confirm(`¿Está seguro de eliminar el renglón presupuestario ${line.renglonPresupuestario} - ${line.nombreRenglon}?`)) {
-                                      deleteBudgetLine(line.id);
-                                    }
-                                  }}
-                                  className="p-1 rounded text-slate-400 hover:text-red-700 hover:bg-red-50 transition-colors"
-                                  title="Eliminar renglón"
+                                  onClick={() => setLineToDelete(line)}
+                                  className="p-1 rounded text-slate-400 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+                                  title={`Eliminar renglón ${line.renglonPresupuestario}`}
+                                  aria-label={`Eliminar renglón ${line.renglonPresupuestario}`}
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
                                 </button>
                               )}
                             </div>
@@ -2376,6 +2437,129 @@ export const BudgetView: React.FC = () => {
         lineToEdit={lineToEdit}
         prefillRenglon={prefillRenglon}
       />
+
+      {/* Modal de Confirmación para Eliminar Renglón Individual */}
+      {lineToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-red-50/60">
+              <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
+                <Trash2 className="w-4 h-4" />
+                <span>Eliminar Renglón Presupuestario</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLineToDelete(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-600">
+              <p>
+                ¿Está seguro de eliminar el siguiente renglón de la matriz presupuestaria?
+              </p>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="font-bold text-slate-900 text-sm">
+                  R-{lineToDelete.renglonPresupuestario} • {lineToDelete.nombreRenglon}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {lineToDelete.grupoPresupuestario}
+                </div>
+                <div className="text-[11px] font-mono text-slate-700 pt-1">
+                  Presupuesto Vigente: <strong>{formatCurrency(lineToDelete.presupuestoVigente)}</strong>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Esta acción removerá permanentemente este registro y sus duplicados tanto del sistema local como de la base de datos Firestore.
+              </p>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setLineToDelete(null)}
+                className="px-3.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteBudgetLine(lineToDelete.id);
+                  setLineToDelete(null);
+                }}
+                className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Sí, Eliminar Renglón
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación para Vaciar / Eliminar Matriz Completa */}
+      {isClearMatrixModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-red-50">
+              <div className="flex items-center gap-2.5 text-red-800 font-bold text-sm">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <span>Vaciar / Eliminar Matriz Presupuestaria Completa</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClearMatrixModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-600">
+              <p className="font-semibold text-slate-800">
+                ¿Desea eliminar por completo todos los registros de la matriz presupuestaria?
+              </p>
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1">
+                <div className="font-bold">
+                  Se eliminarán los {budgetAvailability.length} renglones presupuestarios
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Esta acción vaciará por completo la matriz presupuestaria tanto a nivel local como en la base de datos Firestore. Es ideal para limpiar duplicidades y cargar nuevamente su archivo oficial de Excel desde cero.
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-500 italic">
+                Nota: Los expedientes de adquisiciones F56-e registrados permanecerán intactos, pero los renglones de la matriz se eliminarán para que pueda cargarlos limpiamente.
+              </p>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsClearMatrixModalOpen(false)}
+                disabled={isClearingMatrix}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isClearingMatrix}
+                onClick={async () => {
+                  setIsClearingMatrix(true);
+                  try {
+                    await clearAllBudgetLines();
+                    setIsClearMatrixModalOpen(false);
+                  } finally {
+                    setIsClearingMatrix(false);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isClearingMatrix ? 'Eliminando Registros...' : 'Confirmar y Eliminar Todo'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

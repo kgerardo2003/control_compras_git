@@ -433,6 +433,13 @@ export function setBudgetLines(lines: BudgetLineItem[]): BudgetLineItem[] {
   return store.budgetLines;
 }
 
+export function clearAllBudgetLines(): void {
+  const store = initDataStore();
+  store.budgetLines = [];
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+}
+
 export function addBudgetModification(mod: BudgetModification): BudgetModification {
   const store = initDataStore();
   const index = store.budgetModifications.findIndex(m => m.id === mod.id);

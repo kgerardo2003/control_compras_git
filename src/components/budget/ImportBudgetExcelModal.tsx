@@ -12,7 +12,9 @@ import {
   Download, 
   RefreshCw, 
   FileCheck2,
-  HelpCircle
+  HelpCircle,
+  Trash2,
+  ShieldAlert
 } from 'lucide-react';
 
 interface ImportBudgetExcelModalProps {
@@ -21,14 +23,16 @@ interface ImportBudgetExcelModalProps {
 }
 
 export const ImportBudgetExcelModal: React.FC<ImportBudgetExcelModalProps> = ({ isOpen, onClose }) => {
-  const { importBudgetLines, showToast } = useApp();
+  const { importBudgetLines, clearAllBudgetLines, budgetAvailability, showToast } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [parsedLines, setParsedLines] = useState<Omit<BudgetLineItem, 'id' | 'fechaCreacion'>[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [importMode, setImportMode] = useState<'wipe_and_replace' | 'replace' | 'merge'>('wipe_and_replace');
+  const [wipeExistingFirst, setWipeExistingFirst] = useState(true);
+  const [isClearingExisting, setIsClearingExisting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -196,12 +200,42 @@ export const ImportBudgetExcelModal: React.FC<ImportBudgetExcelModalProps> = ({ 
     if (parsedLines.length === 0) return;
     setIsLoading(true);
     try {
-      await importBudgetLines(parsedLines, importMode === 'replace');
+      const shouldWipe = importMode === 'wipe_and_replace' || wipeExistingFirst || importMode === 'replace';
+      await importBudgetLines(parsedLines, importMode === 'replace' || importMode === 'wipe_and_replace', shouldWipe);
       onClose();
     } catch (err: any) {
       setErrorMsg(`Error guardando presupuesto: ${err?.message || 'Error inesperado'}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleClearCurrentRecordsNow = async () => {
+    if (budgetAvailability.length === 0) {
+      showToast({
+        title: 'Matriz ya está vacía',
+        message: 'No hay registros cargados actualmente en la matriz presupuestaria.',
+        type: 'info'
+      });
+      return;
+    }
+    const confirmClear = window.confirm(
+      `¿Está seguro de eliminar por completo los ${budgetAvailability.length} registros actualmente cargados en la matriz presupuestaria?\n\nEsta acción eliminará los renglones existentes tanto en el sistema como en Firestore para permitir una importación limpia sin duplicados.`
+    );
+    if (!confirmClear) return;
+
+    setIsClearingExisting(true);
+    try {
+      await clearAllBudgetLines();
+      showToast({
+        title: 'Registros Eliminados',
+        message: 'Se vació por completo la matriz presupuestaria. Ya puede importar su archivo Excel sin duplicidades.',
+        type: 'success'
+      });
+    } catch (err: any) {
+      setErrorMsg(`Error al vaciar registros: ${err?.message || 'Error desconocido'}`);
+    } finally {
+      setIsClearingExisting(false);
     }
   };
 
@@ -369,47 +403,120 @@ export const ImportBudgetExcelModal: React.FC<ImportBudgetExcelModalProps> = ({ 
                 </div>
               </div>
 
-              {/* Opciones de Fusión vs Reemplazo */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
-                <span className="text-xs font-bold text-slate-800">Modo de Guardado en el Sistema:</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    importMode === 'merge' ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-200 hover:bg-slate-50'
+              {/* Opciones de Fusión vs Reemplazo vs Limpieza Total */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800">Modo de Guardado e Importación en la Matriz:</span>
+                  <span className="text-[11px] text-slate-500">
+                    Registros cargados actualmente: <strong className="text-slate-800">{budgetAvailability.length}</strong> renglones
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Opción 1: Eliminar Todo y Cargar Nuevo (Limpieza Total - Recomendada para evitar duplicados) */}
+                  <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    importMode === 'wipe_and_replace' ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/20' : 'border-slate-200 hover:bg-slate-50'
                   }`}>
                     <input
                       type="radio"
                       name="importMode"
-                      value="merge"
-                      checked={importMode === 'merge'}
-                      onChange={() => setImportMode('merge')}
+                      value="wipe_and_replace"
+                      checked={importMode === 'wipe_and_replace'}
+                      onChange={() => {
+                        setImportMode('wipe_and_replace');
+                        setWipeExistingFirst(true);
+                      }}
                       className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                     />
                     <div>
-                      <div className="text-xs font-bold text-slate-900">Actualizar y Fusionar (Recomendado)</div>
-                      <div className="text-[11px] text-slate-500">
-                        Actualiza los renglones coincidentes y agrega los nuevos sin borrar modificaciones existentes.
+                      <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                        <Trash2 className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Eliminar Todo y Cargar Nuevo</span>
                       </div>
+                      <div className="text-[11px] text-emerald-800/80 font-medium mt-0.5">
+                        (Recomendado • Evita Duplicados)
+                      </div>
+                      <p className="text-[10px] text-slate-600 mt-1 leading-snug">
+                        Elimina por completo todo lo que ya está cargado en la matriz y en la base de datos Firestore antes de importar los nuevos registros.
+                      </p>
                     </div>
                   </label>
 
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    importMode === 'replace' ? 'border-amber-500 bg-amber-50/50' : 'border-slate-200 hover:bg-slate-50'
+                  {/* Opción 2: Reemplazo Directo de Coincidentes */}
+                  <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    importMode === 'replace' ? 'border-amber-600 bg-amber-50/70 ring-2 ring-amber-500/20' : 'border-slate-200 hover:bg-slate-50'
                   }`}>
                     <input
                       type="radio"
                       name="importMode"
                       value="replace"
                       checked={importMode === 'replace'}
-                      onChange={() => setImportMode('replace')}
+                      onChange={() => {
+                        setImportMode('replace');
+                      }}
                       className="mt-0.5 text-amber-600 focus:ring-amber-500"
                     />
                     <div>
-                      <div className="text-xs font-bold text-slate-900">Reemplazo Completo</div>
-                      <div className="text-[11px] text-slate-500">
-                        Sustituye la matriz completa con la lista del archivo Excel cargado.
-                      </div>
+                      <div className="text-xs font-bold text-slate-900">Reemplazo de Coincidentes</div>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                        Sobrescribe los renglones coincidentes del Excel manteniendo otros renglones que no vengan en el archivo.
+                      </p>
                     </div>
                   </label>
+
+                  {/* Opción 3: Actualizar y Fusionar */}
+                  <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    importMode === 'merge' ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20' : 'border-slate-200 hover:bg-slate-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="importMode"
+                      value="merge"
+                      checked={importMode === 'merge'}
+                      onChange={() => {
+                        setImportMode('merge');
+                        setWipeExistingFirst(false);
+                      }}
+                      className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Actualizar y Fusionar</div>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                        Combina los nuevos renglones agregándolos a los existentes sin borrar nada.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Casilla de Verificación Adicional para Garantizar Limpieza Previa */}
+                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={wipeExistingFirst}
+                      onChange={(e) => setWipeExistingFirst(e.target.checked)}
+                      className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                    />
+                    <span className="font-semibold text-slate-900">
+                      Eliminar por completo los registros actuales antes de importar
+                    </span>
+                    <span className="text-[11px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-mono">
+                      (Garantiza 0 registros duplicados)
+                    </span>
+                  </label>
+
+                  {budgetAvailability.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearCurrentRecordsNow}
+                      disabled={isClearingExisting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold transition-colors cursor-pointer"
+                      title="Elimina todos los renglones actualmente cargados en la matriz"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                      <span>{isClearingExisting ? 'Eliminando...' : `Vaciar ${budgetAvailability.length} Renglones Ahora`}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

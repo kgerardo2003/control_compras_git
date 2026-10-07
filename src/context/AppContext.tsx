@@ -85,6 +85,7 @@ import {
   forceFetchPurchasesFromServer,
   saveBudgetLineToFirestore,
   saveBatchBudgetLinesToFirestore,
+  clearAllBudgetLinesFromFirestore,
   removeBudgetLineFromFirestore,
   saveBudgetModificationToFirestore,
   removeBudgetModificationFromFirestore,
@@ -266,7 +267,9 @@ interface AppContextType {
   addBudgetLine: (data: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>) => BudgetLineItem;
   updateBudgetLine: (id: string, data: Partial<BudgetLineItem>) => void;
   deleteBudgetLine: (id: string) => void;
-  importBudgetLines: (lines: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>[], replaceAll?: boolean) => Promise<{ count: number }>;
+  clearAllBudgetLines: () => Promise<void>;
+  deduplicateBudgetLines: () => Promise<{ removed: number; remaining: number }>;
+  importBudgetLines: (lines: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>[], replaceAll?: boolean, wipeExisting?: boolean) => Promise<{ count: number }>;
   addBudgetModification: (mod: Omit<BudgetModification, 'id' | 'correlativo' | 'fechaCreacion'>) => BudgetModification;
   updateBudgetModification: (id: string, data: Partial<BudgetModification>) => void;
   deleteBudgetModification: (id: string) => void;
@@ -3738,8 +3741,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteBudgetLine = (id: string) => {
-    const item = budgetLines.find(l => l.id === id);
-    const updated = budgetLines.filter(l => l.id !== id);
+    const item = budgetLines.find(l => l.id === id || l.renglonPresupuestario === id);
+    const targetRenglon = item?.renglonPresupuestario;
+    const updated = budgetLines.filter(l => l.id !== id && (!targetRenglon || l.renglonPresupuestario !== targetRenglon));
     setBudgetLines(updated);
     try {
       safeSetLocalStorage(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(updated));
@@ -3749,42 +3753,146 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn("Aviso servidor central al eliminar renglón:", err);
     });
 
-    removeBudgetLineFromFirestore(id);
+    removeBudgetLineFromFirestore(id, targetRenglon);
 
     logAudit(
       'ELIMINAR_RENGLON',
       'Presupuesto',
-      `Eliminación del renglón presupuestario: ${item?.renglonPresupuestario} - ${item?.nombreRenglon}`,
+      `Eliminación del renglón presupuestario: ${item?.renglonPresupuestario || id} - ${item?.nombreRenglon || ''}`,
       id,
       item,
       undefined
     );
     showToast({
       title: 'Renglón Eliminado',
-      message: `El renglón ${item?.renglonPresupuestario} fue removido del presupuesto.`,
+      message: `El renglón ${item?.renglonPresupuestario || id} fue removido del presupuesto.`,
       type: 'advertencia'
     });
   };
 
-  const importBudgetLines = async (
-    lines: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>[],
-    replaceAll: boolean = false
-  ): Promise<{ count: number }> => {
-    const formatted: BudgetLineItem[] = lines.map((l, idx) => ({
+  const clearAllBudgetLines = async (): Promise<void> => {
+    const previousCount = budgetLines.length;
+    setBudgetLines([]);
+    try {
+      safeSetLocalStorage(STORAGE_KEYS.BUDGET_LINES, JSON.stringify([]));
+    } catch {}
+
+    fetch('/api/db/budget-lines', { method: 'DELETE' }).catch(err => {
+      console.warn("Aviso servidor central al vaciar renglones:", err);
+    });
+
+    await clearAllBudgetLinesFromFirestore();
+
+    logAudit(
+      'ELIMINAR_PRESUPUESTO_TOTAL',
+      'Presupuesto',
+      `Eliminación y vaciado total de la matriz presupuestaria (${previousCount} renglones eliminados).`
+    );
+
+    showToast({
+      title: 'Matriz Presupuestaria Vaciada',
+      message: `Se eliminaron por completo todos los registros (${previousCount} renglones) de la matriz.`,
+      type: 'advertencia'
+    });
+  };
+
+  const deduplicateBudgetLines = async (): Promise<{ removed: number; remaining: number }> => {
+    const map = new Map<string, BudgetLineItem>();
+    budgetLines.forEach(l => {
+      const code = String(l.renglonPresupuestario || '').trim();
+      if (!code) return;
+      if (!map.has(code)) {
+        map.set(code, l);
+      } else {
+        const existing = map.get(code)!;
+        if ((l.presupuestoVigente || 0) > (existing.presupuestoVigente || 0)) {
+          map.set(code, l);
+        }
+      }
+    });
+
+    const deduplicated = Array.from(map.values()).map(l => ({
       ...l,
-      id: `bl-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-      creadoPor: currentUser?.nombreCompleto || 'Importación Excel',
-      fechaCreacion: new Date().toISOString()
+      id: `bl-${String(l.renglonPresupuestario).trim().replace(/[\/\\]/g, '-')}`
     }));
 
+    const removed = budgetLines.length - deduplicated.length;
+    if (removed <= 0) {
+      showToast({
+        title: 'Sin Duplicados',
+        message: 'No se encontraron renglones duplicados en la matriz presupuestaria.',
+        type: 'info'
+      });
+      return { removed: 0, remaining: budgetLines.length };
+    }
+
+    setBudgetLines(deduplicated);
+    try {
+      safeSetLocalStorage(STORAGE_KEYS.BUDGET_LINES, JSON.stringify(deduplicated));
+    } catch {}
+
+    fetch('/api/db/budget-lines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deduplicated)
+    }).catch(err => console.warn("Aviso servidor central al depurar presupuesto:", err));
+
+    await saveBatchBudgetLinesToFirestore(deduplicated, true);
+
+    logAudit(
+      'DEPURAR_PRESUPUESTO',
+      'Presupuesto',
+      `Depuración de duplicados en presupuesto: se eliminaron ${removed} registros repetidos, conservando ${deduplicated.length} renglones únicos.`
+    );
+
+    showToast({
+      title: 'Duplicados Eliminados',
+      message: `Se depuraron exitosamente ${removed} registros duplicados. La matriz ahora cuenta con ${deduplicated.length} renglones únicos.`,
+      type: 'success'
+    });
+
+    return { removed, remaining: deduplicated.length };
+  };
+
+  const importBudgetLines = async (
+    lines: Omit<BudgetLineItem, 'id' | 'fechaCreacion'>[],
+    replaceAll: boolean = false,
+    wipeExisting: boolean = false
+  ): Promise<{ count: number }> => {
+    // 1. Deduplicar en memoria las líneas entrantes por renglón
+    const incomingMap = new Map<string, Omit<BudgetLineItem, 'id' | 'fechaCreacion'>>();
+    lines.forEach(l => {
+      const code = String(l.renglonPresupuestario || '').trim();
+      if (code) incomingMap.set(code, l);
+    });
+
+    // 2. Asignar ID determinístico basado en el código de renglón para que nunca se duplique en Firestore
+    const formatted: BudgetLineItem[] = Array.from(incomingMap.values()).map((l) => {
+      const cleanCode = String(l.renglonPresupuestario || '').trim().replace(/[\/\\]/g, '-');
+      return {
+        ...l,
+        id: cleanCode ? `bl-${cleanCode}` : `bl-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        creadoPor: currentUser?.nombreCompleto || 'Importación Excel',
+        fechaCreacion: new Date().toISOString()
+      };
+    });
+
+    const shouldWipeAll = replaceAll || wipeExisting;
+
     let resultList: BudgetLineItem[];
-    if (replaceAll) {
+    if (shouldWipeAll) {
       resultList = formatted;
     } else {
       // Reemplaza los existentes con mismo renglonPresupuestario o los agrega
       const map = new Map<string, BudgetLineItem>();
-      budgetLines.forEach(bl => map.set(bl.renglonPresupuestario, bl));
-      formatted.forEach(fl => map.set(fl.renglonPresupuestario, fl));
+      budgetLines.forEach(bl => {
+        const code = String(bl.renglonPresupuestario || '').trim();
+        if (code) map.set(code, bl);
+      });
+      formatted.forEach(fl => {
+        const code = String(fl.renglonPresupuestario || '').trim();
+        if (code) map.set(code, fl);
+      });
       resultList = Array.from(map.values());
     }
 
@@ -3799,12 +3907,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify(resultList)
     }).catch(err => console.warn("Aviso servidor central al importar presupuesto:", err));
 
-    await saveBatchBudgetLinesToFirestore(resultList);
+    // Si es reemplazo total o limpieza previa, eliminar primero toda la colección de Firestore
+    await saveBatchBudgetLinesToFirestore(resultList, shouldWipeAll);
 
     logAudit(
       'IMPORTAR_PRESUPUESTO',
       'Presupuesto',
-      `Importación masiva de presupuesto desde archivo Excel (${formatted.length} renglones procesados, modo: ${replaceAll ? 'Reemplazo total' : 'Actualización/Fusión'}).`
+      `Importación masiva de presupuesto desde archivo Excel (${formatted.length} renglones procesados, modo: ${shouldWipeAll ? 'Limpieza total / Reemplazo' : 'Actualización/Fusión'}).`
     );
 
     addNotification({
@@ -3816,7 +3925,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     showToast({
       title: 'Presupuesto Importado',
-      message: `Se importaron ${formatted.length} renglones presupuestarios correctamente.`,
+      message: `Se importaron ${formatted.length} renglones presupuestarios correctamente${shouldWipeAll ? ' (eliminando registros anteriores sin duplicados)' : ''}.`,
       type: 'exito'
     });
 
@@ -5060,6 +5169,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addBudgetLine,
         updateBudgetLine,
         deleteBudgetLine,
+        clearAllBudgetLines,
+        deduplicateBudgetLines,
         importBudgetLines,
         addBudgetModification,
         updateBudgetModification,

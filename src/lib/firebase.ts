@@ -510,8 +510,11 @@ export async function saveBudgetLineToFirestore(item: BudgetLineItem): Promise<{
   }
 }
 
-export async function saveBatchBudgetLinesToFirestore(lines: BudgetLineItem[]): Promise<{ success: boolean; count: number; error?: string }> {
+export async function saveBatchBudgetLinesToFirestore(lines: BudgetLineItem[], clearExisting: boolean = false): Promise<{ success: boolean; count: number; error?: string }> {
   try {
+    if (clearExisting) {
+      await clearAllBudgetLinesFromFirestore();
+    }
     if (!lines || lines.length === 0) return { success: true, count: 0 };
     const CHUNK_SIZE = 400;
     for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
@@ -519,7 +522,7 @@ export async function saveBatchBudgetLinesToFirestore(lines: BudgetLineItem[]): 
       const batch = writeBatch(db);
       for (const l of chunk) {
         const docRef = doc(db, BUDGET_LINES_COLLECTION, l.id);
-        batch.set(docRef, cleanUndefined(l), { merge: true });
+        batch.set(docRef, cleanUndefined(l));
       }
       await batch.commit();
     }
@@ -530,10 +533,56 @@ export async function saveBatchBudgetLinesToFirestore(lines: BudgetLineItem[]): 
   }
 }
 
-export async function removeBudgetLineFromFirestore(lineId: string): Promise<{ success: boolean; error?: string }> {
+export async function clearAllBudgetLinesFromFirestore(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
+    const colRef = collection(db, BUDGET_LINES_COLLECTION);
+    const snap = await getDocs(colRef);
+    if (snap.empty) return { success: true, count: 0 };
+
+    const CHUNK_SIZE = 400;
+    const docsToDelete = snap.docs;
+    for (let i = 0; i < docsToDelete.length; i += CHUNK_SIZE) {
+      const chunk = docsToDelete.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const d of chunk) {
+        batch.delete(d.ref);
+      }
+      await batch.commit();
+    }
+    return { success: true, count: docsToDelete.length };
+  } catch (err: any) {
+    console.error("Error eliminando todos los renglones presupuestarios en Firestore:", err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
+export async function removeBudgetLineFromFirestore(lineId: string, renglonCodigo?: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Eliminar por ID exacto
     const docRef = doc(db, BUDGET_LINES_COLLECTION, lineId);
     await deleteDoc(docRef);
+
+    // 2. Si se proporciona renglonCodigo, eliminar cualquier documento duplicado que comparta dicho renglón
+    if (renglonCodigo) {
+      try {
+        const colRef = collection(db, BUDGET_LINES_COLLECTION);
+        const snap = await getDocs(colRef);
+        const batch = writeBatch(db);
+        let hasDuplicatesToDelete = false;
+        snap.forEach((d) => {
+          const data = d.data();
+          if (data && String(data.renglonPresupuestario || '').trim() === String(renglonCodigo).trim() && d.id !== lineId) {
+            batch.delete(d.ref);
+            hasDuplicatesToDelete = true;
+          }
+        });
+        if (hasDuplicatesToDelete) {
+          await batch.commit();
+        }
+      } catch (dupErr) {
+        console.warn("Aviso al depurar renglones duplicados en Firestore:", dupErr);
+      }
+    }
     return { success: true };
   } catch (err: any) {
     console.error("Error eliminando renglón presupuestario en Firestore:", err);
