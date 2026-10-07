@@ -26,6 +26,7 @@ import {
   saveBudgetLine,
   deleteBudgetLine,
   setBudgetLines,
+  clearAllBudgetLines,
   addBudgetModification,
   addAuditLog,
   saveJudicatura,
@@ -534,7 +535,18 @@ app.post('/api/db/budget-lines', (req, res) => {
   }
 });
 
-// Eliminar renglón presupuestario
+// Eliminar todos los renglones presupuestarios de la matriz
+app.delete('/api/db/budget-lines', (req, res) => {
+  try {
+    clearAllBudgetLines();
+    notifyChange('budget_lines_cleared');
+    res.json({ success: true, count: 0 });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error vaciando renglones.' });
+  }
+});
+
+// Eliminar renglón presupuestario individual
 app.delete('/api/db/budget-lines/:id', (req, res) => {
   try {
     const deleted = deleteBudgetLine(req.params.id);
