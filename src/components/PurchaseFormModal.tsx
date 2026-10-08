@@ -102,7 +102,7 @@ export const PurchaseFormModal: React.FC = () => {
   const [areaSolicitante, setAreaSolicitante] = useState('Soporte técnico');
   const [categoriaTecnologica, setCategoriaTecnologica] = useState('');
   const [dependenciaSolicitante, setDependenciaSolicitante] = useState('');
-  const [modalidadCompra, setModalidadCompra] = useState('Cotización Pública');
+  const [modalidadCompra, setModalidadCompra] = useState('Compra Directa');
   const [proveedorAdjudicado, setProveedorAdjudicado] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
@@ -151,9 +151,9 @@ export const PurchaseFormModal: React.FC = () => {
   ];
 
   // Cálculo de modalidad y obligatoriedad de NOG
-  const modalidadInfo = getModalidadCompraByMonto(Number(monto) || 0);
+  const modalidadInfo = getModalidadCompraByMonto(Number(monto) || 0, modalidadCompra);
   const currentModalityName = modalidadCompra || modalidadInfo.nombre;
-  const isBajaCuantia = currentModalityName.toLowerCase().includes('baja cuant') || (Number(monto) > 0 && Number(monto) <= 25000);
+  const isBajaCuantia = currentModalityName.toLowerCase().includes('baja cuant');
   const isMandatoryNog = !isBajaCuantia;
 
   // Verificación reactiva en tiempo real si el NOG ya existe en otro registro
@@ -205,7 +205,7 @@ export const PurchaseFormModal: React.FC = () => {
       setAreaSolicitante(purchaseToEdit.areaSolicitante || areaOptions[0] || 'Soporte técnico');
       setCategoriaTecnologica(purchaseToEdit.categoriaTecnologica || categoryOptions[0] || '');
       setDependenciaSolicitante(purchaseToEdit.dependenciaSolicitante || dependencyOptions[0] || '');
-      setModalidadCompra(purchaseToEdit.modalidadCompra || modalityOptions[0] || 'Cotización Pública');
+      setModalidadCompra(purchaseToEdit.modalidadCompra || 'Compra Directa');
       setProveedorAdjudicado(purchaseToEdit.proveedorAdjudicado || '');
       setObservaciones(purchaseToEdit.observaciones || '');
     } else {
@@ -269,7 +269,7 @@ export const PurchaseFormModal: React.FC = () => {
       areaSolicitante,
       categoriaTecnologica,
       dependenciaSolicitante,
-      modalidadCompra: getModalidadCompraByMonto(Number(monto) || 0).nombre,
+      modalidadCompra: modalidadCompra || getModalidadCompraByMonto(Number(monto) || 0, modalidadCompra).nombre,
       proveedorAdjudicado: proveedorAdjudicado.trim() || undefined,
       observaciones: observaciones.trim() || undefined,
       bitacoraCambios: purchaseToEdit?.bitacoraCambios || [],
@@ -534,7 +534,7 @@ export const PurchaseFormModal: React.FC = () => {
       areaSolicitante,
       categoriaTecnologica,
       dependenciaSolicitante,
-      modalidadCompra: getModalidadCompraByMonto(monto).nombre,
+      modalidadCompra: modalidadCompra || getModalidadCompraByMonto(monto, modalidadCompra).nombre,
       proveedorAdjudicado: proveedorAdjudicado.trim() || undefined,
       observaciones: observaciones.trim() || undefined,
       historialEstatus: purchaseToEdit?.historialEstatus,
@@ -1152,20 +1152,27 @@ export const PurchaseFormModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Modalidad asignada automáticamente según Ley de Contrataciones */}
+              {/* Modalidad de Contratación */}
               <div className="mt-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  <label htmlFor="select-purchase-modalidad" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                     Modalidad LCE:
-                  </span>
-                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold border ${getModalidadCompraByMonto(monto).badgeClass}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${getModalidadCompraByMonto(monto).badgeDotColor}`} />
-                    {getModalidadCompraByMonto(monto).nombre}
-                  </span>
+                  </label>
+                  <select
+                    id="select-purchase-modalidad"
+                    value={modalidadCompra}
+                    onChange={(e) => setModalidadCompra(e.target.value)}
+                    className="p-1 text-xs font-bold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 text-slate-800"
+                  >
+                    <option value="Compra Directa">Compra Directa</option>
+                    <option value="Cotización">Cotización</option>
+                    <option value="Licitación">Licitación</option>
+                    <option value="Baja Cuantía">Baja Cuantía</option>
+                  </select>
                 </div>
                 <div className="text-[10px] text-slate-500 sm:text-right">
-                  <span className="font-semibold text-slate-700">{getModalidadCompraByMonto(monto).descripcionRango}</span>
-                  <span className="block text-[9px] text-slate-400 italic">{getModalidadCompraByMonto(monto).fundamentoLegal}</span>
+                  <span className="font-semibold text-slate-700">{getModalidadCompraByMonto(monto, modalidadCompra).descripcionRango}</span>
+                  <span className="block text-[9px] text-slate-400 italic">{getModalidadCompraByMonto(monto, modalidadCompra).fundamentoLegal}</span>
                 </div>
               </div>
 

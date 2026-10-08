@@ -393,7 +393,7 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
                         2. Modalidades de Compra (Ley Contrataciones)
                       </h4>
                       <p className="text-[11px] text-slate-500">
-                        Baja Cuantía, Compra Directa, Cotización, Licitación
+                        Distribución oficial según Ley de Contrataciones del Estado (LCE)
                       </p>
                     </div>
                     <span className="px-2.5 py-1 rounded bg-purple-50 text-purple-700 text-xs font-bold font-mono">

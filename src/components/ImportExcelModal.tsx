@@ -288,13 +288,18 @@ export const ImportExcelModal: React.FC = () => {
     const rawMod = String(getVal(['modalidad de compra', 'modalidad compra', 'modalidad', 'tipo de compra', 'tipo compra', 'procedimiento'])).trim();
     let modalidadCompra = !isValueEmptyOrNA(rawMod) ? rawMod : '';
     if (!modalidadCompra) {
-      if (monto <= 25000) modalidadCompra = 'Baja Cuantía';
-      else if (monto <= 90000) modalidadCompra = 'Compra Directa';
-      else if (monto <= 900000) modalidadCompra = 'Cotización';
-      else modalidadCompra = 'Licitación';
+      if (monto > 900000) modalidadCompra = 'Licitación';
+      else if (monto > 90000) modalidadCompra = 'Cotización';
+      else modalidadCompra = 'Compra Directa';
+    } else {
+      const modLower = modalidadCompra.toLowerCase();
+      if (modLower.includes('directa')) modalidadCompra = 'Compra Directa';
+      else if (modLower.includes('cotiza')) modalidadCompra = 'Cotización';
+      else if (modLower.includes('licita')) modalidadCompra = 'Licitación';
+      else if (modLower.includes('baja cuant')) modalidadCompra = 'Baja Cuantía';
     }
 
-    const isBajaCuantiaRow = modalidadCompra.toLowerCase().includes('baja cuant') || (monto > 0 && monto <= 25000);
+    const isBajaCuantiaRow = modalidadCompra.toLowerCase().includes('baja cuant');
 
     // 1. NOG (Número de Operación Guatecompras)
     // Reglas:

@@ -96,7 +96,23 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     }
 
     // Modalidad
-    const mod = p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre;
+    const rawMod = (p.modalidadCompra || '').trim();
+    let mod: string;
+    if (rawMod.toLowerCase().includes('licita')) {
+      mod = 'Licitación';
+    } else if (rawMod.toLowerCase().includes('cotiza')) {
+      mod = 'Cotización';
+    } else if (rawMod.toLowerCase().includes('baja cuant')) {
+      mod = 'Baja Cuantía';
+    } else if (rawMod.toLowerCase().includes('directa')) {
+      mod = 'Compra Directa';
+    } else if (monto > 900000) {
+      mod = 'Licitación';
+    } else if (monto > 90000) {
+      mod = 'Cotización';
+    } else {
+      mod = 'Compra Directa';
+    }
     if (!modalidadMap[mod]) {
       modalidadMap[mod] = { count: 0, amount: 0 };
     }
@@ -283,11 +299,11 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
   }
 
   const comprasDirectasPct = totalPurchases > 0 ? (kpis.comprasDirectasCount / totalPurchases) * 100 : 0;
-  if (comprasDirectasPct > 40) {
+  if (comprasDirectasPct > 50) {
     recommendations.push({
-      type: 'warning',
-      title: 'Concentración Significativa en Modalidad de Compra Directa',
-      desc: `El ${comprasDirectasPct.toFixed(1)}% de los eventos corresponden a Compra Directa (${formatQuetzales(kpis.comprasDirectasAmount)}). Se aconseja evaluar consolidación de requerimientos para procesos de Cotización y economías de escala.`,
+      type: 'info',
+      title: 'Modalidad Predominante: Compra Directa Institucional',
+      desc: `El ${comprasDirectasPct.toFixed(1)}% de las adquisiciones corresponden a Compra Directa (${formatQuetzales(kpis.comprasDirectasAmount)}) conforme al Art. 43 literal b) de la Ley de Contrataciones del Estado (hasta Q90,000.00 con NOG).`,
     });
   }
 
@@ -566,7 +582,7 @@ export function generateExecutiveDashboardImage(purchases: PurchaseRecord[]): st
       },
       {
         title: '2. MODALIDADES DE COMPRA (LEY DE CONTRATACIONES)',
-        subtitle: 'Baja Cuantía, Compra Directa, Cotización, Licitación',
+        subtitle: 'Distribución oficial según Ley de Contrataciones del Estado (LCE)',
         data: modalidadChartData,
         centerTitle: `${modalidadChartData.length}`,
         centerSubtitle: 'Modalidades',

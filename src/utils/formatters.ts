@@ -118,10 +118,38 @@ export interface ModalidadInfo {
   limiteSuperior?: number;
 }
 
-export function getModalidadCompraByMonto(monto: number | string | undefined | null): ModalidadInfo {
-  const num = typeof monto === 'string' ? parseFloat(monto) : Number(monto);
-  
-  if (isNaN(num) || num <= 25000) {
+export function getModalidadCompraByMonto(
+  monto: number | string | undefined | null,
+  explicitModalidad?: string
+): ModalidadInfo {
+  const norm = (explicitModalidad || '').trim().toLowerCase();
+
+  if (norm.includes('licita')) {
+    return {
+      nombre: 'Licitación',
+      descripcionRango: 'Supera los Q900,000.00',
+      badgeClass: 'bg-purple-50 text-purple-800 border-purple-300',
+      badgeBorderClass: 'border-purple-300 bg-purple-50/70',
+      badgeDotColor: 'bg-purple-500',
+      fundamentoLegal: 'Art. 17 Ley de Contrataciones del Estado',
+      limiteInferior: 900000.01,
+    };
+  }
+
+  if (norm.includes('cotiza')) {
+    return {
+      nombre: 'Cotización',
+      descripcionRango: 'Excede Q90,000.00 hasta Q900,000.00',
+      badgeClass: 'bg-amber-50 text-amber-800 border-amber-300',
+      badgeBorderClass: 'border-amber-300 bg-amber-50/70',
+      badgeDotColor: 'bg-amber-500',
+      fundamentoLegal: 'Art. 38 Ley de Contrataciones del Estado',
+      limiteInferior: 90000.01,
+      limiteSuperior: 900000,
+    };
+  }
+
+  if (norm.includes('baja cuant')) {
     return {
       nombre: 'Baja Cuantía',
       descripcionRango: 'Hasta Q25,000.00',
@@ -134,15 +162,31 @@ export function getModalidadCompraByMonto(monto: number | string | undefined | n
     };
   }
 
-  if (num <= 90000) {
+  if (norm.includes('directa')) {
     return {
       nombre: 'Compra Directa',
-      descripcionRango: 'De Q25,000.01 hasta Q90,000.00',
+      descripcionRango: 'Hasta Q90,000.00 con NOG / Oferta Electrónica',
       badgeClass: 'bg-blue-50 text-blue-800 border-blue-300',
       badgeBorderClass: 'border-blue-300 bg-blue-50/70',
       badgeDotColor: 'bg-blue-500',
       fundamentoLegal: 'Art. 43 literal b) Ley de Contrataciones del Estado',
-      limiteInferior: 25000.01,
+      limiteInferior: 0,
+      limiteSuperior: 90000,
+    };
+  }
+
+  // Si no se especifica explícitamente, deducir por el monto
+  const num = typeof monto === 'string' ? parseFloat(monto) : Number(monto);
+  
+  if (isNaN(num) || num <= 90000) {
+    return {
+      nombre: 'Compra Directa',
+      descripcionRango: 'Hasta Q90,000.00',
+      badgeClass: 'bg-blue-50 text-blue-800 border-blue-300',
+      badgeBorderClass: 'border-blue-300 bg-blue-50/70',
+      badgeDotColor: 'bg-blue-500',
+      fundamentoLegal: 'Art. 43 literal b) Ley de Contrataciones del Estado',
+      limiteInferior: 0,
       limiteSuperior: 90000,
     };
   }

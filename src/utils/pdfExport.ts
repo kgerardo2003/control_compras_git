@@ -296,6 +296,8 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
 
     const f56Text = `${p.f56e || '-'}\nFísico: ${p.f56 || '-'}`;
 
+    const modName = p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre;
+
     return [
       (index + 1).toString(),
       p.nog || '-',
@@ -304,7 +306,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
       p.areaSolicitante || 'Soporte técnico',
       dictamenText,
       p.estatusEvento || 'Evaluación',
-      `${formatQuetzales(p.monto || 0)}\n(${getModalidadCompraByMonto(p.monto).nombre})`,
+      `${formatQuetzales(p.monto || 0)}\n(${modName})`,
       p.proveedorAdjudicado || (p.estatusEvento === 'Adjudicación' ? 'Sin registrar' : 'N/A'),
     ];
   });
