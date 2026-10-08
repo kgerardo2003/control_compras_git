@@ -129,7 +129,15 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     }
 
     // Área
-    const area = p.areaSolicitante || 'Soporte técnico';
+    let area = (p.areaSolicitante || '').trim() || 'Soporte Técnico';
+    const lowerArea = area.toLowerCase();
+    if (lowerArea === 'soporte técnico' || lowerArea === 'soporte tecnico') {
+      area = 'Soporte Técnico';
+    } else if (lowerArea === 'soporte técnico remoto' || lowerArea === 'soporte tecnico remoto') {
+      area = 'Soporte Técnico Remoto';
+    } else if (lowerArea === 'estadistica' || lowerArea === 'estadística') {
+      area = 'Estadística';
+    }
     if (!areaMap[area]) {
       areaMap[area] = { count: 0, amount: 0 };
     }
@@ -243,29 +251,28 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     },
   ].filter(d => d.value > 0);
 
-  const areaPalette = ['#0A0A69', '#2563EB', '#0D9488', '#D97706', '#7C3AED', '#DB2777', '#475569'];
-  const top4Areas = sortedAreas.slice(0, 4);
-  const remainingAreas = sortedAreas.slice(4);
-  const othersAmount = remainingAreas.reduce((acc, [_, d]) => acc + d.amount, 0);
-  const othersCount = remainingAreas.reduce((acc, [_, d]) => acc + d.count, 0);
+  const areaPalette = [
+    '#0A0A69', // Navy OJ
+    '#2563EB', // Blue 600
+    '#0D9488', // Teal 600
+    '#D97706', // Amber 600
+    '#7C3AED', // Violet 600
+    '#DB2777', // Rose 600
+    '#059669', // Emerald 600
+    '#EA580C', // Orange 600
+    '#4F46E5', // Indigo 600
+    '#0284C7', // Sky 600
+    '#64748B', // Slate 500
+  ];
 
-  const areaChartData: ChartDataItem[] = top4Areas.map(([name, data], idx) => ({
-    name: name.length > 25 ? name.substring(0, 23) + '...' : name,
+  // Desglose de todas las áreas solicitantes reales (sin categorías artificiales como 'Otras Dependencias')
+  const areaChartData: ChartDataItem[] = sortedAreas.map(([name, data], idx) => ({
+    name,
     value: data.count,
     amount: data.amount,
     color: areaPalette[idx % areaPalette.length],
     percentage: totalAmount > 0 ? Math.round((data.amount / totalAmount) * 100) : 0,
   }));
-
-  if (othersCount > 0) {
-    areaChartData.push({
-      name: 'Otras Dependencias',
-      value: othersCount,
-      amount: othersAmount,
-      color: '#94A3B8',
-      percentage: totalAmount > 0 ? Math.round((othersAmount / totalAmount) * 100) : 0,
-    });
-  }
 
   // Hallazgos y recomendaciones para toma de decisiones
   const recommendations: Array<{ type: 'success' | 'warning' | 'info'; title: string; desc: string }> = [];
@@ -390,6 +397,7 @@ function drawDonutChart(
 /**
  * Dibuja la leyenda detallada y nítida al lado derecho del gráfico
  * con tipografía grande, nombres completos, porcentajes y montos en Quetzales de alto contraste.
+ * Ajusta dinámicamente la escala para que cuando haya hasta 9 o más áreas, todas encajen con perfecta legibilidad.
  */
 function drawSpaciousChartLegend(
   ctx: CanvasRenderingContext2D,
@@ -400,21 +408,28 @@ function drawSpaciousChartLegend(
   maxAvailableWidth: number
 ) {
   let currentY = startY;
-  const rowHeight = 52;
+  const count = data.length;
+  const isCompact = count > 5;
+  const rowHeight = isCompact ? Math.max(34, Math.floor(365 / count)) : 52;
+  const nameFontSize = count > 7 ? 17 : (isCompact ? 19 : 22);
+  const badgeFontSize = count > 7 ? 14 : (isCompact ? 15 : 18);
+  const amountFontSize = count > 7 ? 18 : (isCompact ? 20 : 24);
+  const boxSize = isCompact ? 16 : 20;
+  const badgeHeight = isCompact ? 24 : 28;
 
   data.forEach((item) => {
     const pct = totalCount > 0 ? Math.round((item.value / totalCount) * 100) : 0;
 
-    // Caja de color grande (20 x 20)
+    // Caja de color
     ctx.fillStyle = item.color;
     ctx.beginPath();
-    ctx.roundRect(startX, currentY - 10, 20, 20, 5);
+    ctx.roundRect(startX, currentY - boxSize / 2, boxSize, boxSize, 4);
     ctx.fill();
 
     // Nombre de la categoría ajustado con ancho máximo para evitar colisiones
-    const maxNameWidth = 330;
+    const maxNameWidth = 340;
     let displayName = item.name;
-    ctx.font = 'bold 22px Helvetica, Arial, sans-serif';
+    ctx.font = `bold ${nameFontSize}px Helvetica, Arial, sans-serif`;
     if (ctx.measureText(displayName).width > maxNameWidth) {
       while (displayName.length > 4 && ctx.measureText(displayName + '…').width > maxNameWidth) {
         displayName = displayName.slice(0, -1);
@@ -424,36 +439,36 @@ function drawSpaciousChartLegend(
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#0F172A';
-    ctx.fillText(displayName, startX + 30, currentY);
+    ctx.fillText(displayName, startX + boxSize + 10, currentY);
 
     // Badge de conteo y porcentaje
     const badgeX = startX + 370;
     ctx.fillStyle = '#F1F5F9';
     ctx.beginPath();
-    ctx.roundRect(badgeX, currentY - 14, 140, 28, 6);
+    ctx.roundRect(badgeX, currentY - badgeHeight / 2, 135, badgeHeight, 5);
     ctx.fill();
     ctx.strokeStyle = '#CBD5E1';
     ctx.lineWidth = 1;
     ctx.stroke();
 
     ctx.fillStyle = '#334155';
-    ctx.font = 'bold 18px Helvetica, Arial, sans-serif';
+    ctx.font = `bold ${badgeFontSize}px Helvetica, Arial, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(`${item.value} ev. (${pct}%)`, badgeX + 70, currentY);
+    ctx.fillText(`${item.value} ev. (${pct}%)`, badgeX + 67, currentY);
 
     // Monto en Quetzales alineado a la derecha en negrita y tipografía nítida
     const amountX = startX + maxAvailableWidth - 10;
     ctx.textAlign = 'right';
     ctx.fillStyle = '#0A0A69';
-    ctx.font = 'bold 24px Courier, monospace, sans-serif';
+    ctx.font = `bold ${amountFontSize}px Courier, monospace, sans-serif`;
     ctx.fillText(formatQuetzales(item.amount), amountX, currentY);
 
     // Línea separadora sutil
     ctx.strokeStyle = '#F1F5F9';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(startX, currentY + 22);
-    ctx.lineTo(startX + maxAvailableWidth, currentY + 22);
+    ctx.moveTo(startX, currentY + rowHeight / 2);
+    ctx.lineTo(startX + maxAvailableWidth, currentY + rowHeight / 2);
     ctx.stroke();
 
     currentY += rowHeight;
@@ -659,7 +674,7 @@ export function generateExecutiveDashboardImage(purchases: PurchaseRecord[]): st
 
       // Dibuja la leyenda detallada con amplio espacio a la derecha
       const legendStartX = bx + 370;
-      const legendStartY = by + 130;
+      const legendStartY = by + (box.data.length > 5 ? 100 : 130);
       const legendWidth = boxWidth - 400;
 
       drawSpaciousChartLegend(

@@ -537,13 +537,13 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
                       </p>
                     </div>
                     <span className="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-bold font-mono">
-                      Top Áreas
+                      {areaChartData.length} Áreas
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
                     {/* Gráfica Donut */}
-                    <div className="sm:col-span-5 h-48 relative flex items-center justify-center">
+                    <div className="sm:col-span-5 h-56 relative flex items-center justify-center">
                       {areaChartData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -574,7 +574,7 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
                     </div>
 
                     {/* Desglose Nítido y Legible */}
-                    <div className="sm:col-span-7 space-y-1.5 overflow-y-auto max-h-48 pr-1">
+                    <div className="sm:col-span-7 space-y-1.5 overflow-y-auto max-h-56 pr-1">
                       {areaChartData.map((item) => (
                         <div key={item.name} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs">
                           <div className="flex items-center gap-2 min-w-0 pr-1">
