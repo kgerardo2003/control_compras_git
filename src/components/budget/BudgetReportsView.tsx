@@ -643,12 +643,12 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
     });
 
     const titleMap: Record<BudgetReportVariant, string> = {
-      matriz_consolidada: 'ESTADO DE DISPONIBILIDAD PRESUPUESTARIA CONSOLIDADO (12 COLUMNAS)',
+      matriz_consolidada: 'INFORME DE PRESUPUESTO ANALÍTICO DE RENGLONES Y DISPONIBILIDADES PRESUPUESTARIAS',
       compras_por_renglon: 'EJECUCIÓN DE ADQUISICIONES INSTITUCIONALES (FORMA F56-E Y NOG) POR RENGLÓN',
       comprometido_pendiente: 'RELACIÓN DE ADQUISICIONES EN COMPROMETIDO PENDIENTE DE PAGO',
       pagado_devengado: 'INFORME DE ADQUISICIONES PAGADAS / DEVENGADAS CON IMPACTO EN DISPONIBLE REAL',
       alertas_deficit: 'DICTAMEN DE RENGLONES EN ALERTA DE DISPONIBILIDAD Y DÉFICIT PROYECTADO',
-      gasto_grupo_renglon: 'REPORTE ANALÍTICO DE GASTO POR GRUPO Y RENGLÓN PRESUPUESTARIO'
+      gasto_grupo_renglon: 'INFORME OFICIAL CONSOLIDADO POR GRUPO PRESUPUESTARIO (GRUPOS 100, 200 Y 300)'
     };
 
     // Encabezado Institucional con Logo Oficial del Organismo Judicial
@@ -1047,8 +1047,22 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
             }`}
           >
             <span className="block text-[10px] text-blue-700 uppercase font-mono font-black">Variante 1</span>
-            <span>Matriz 12 Columnas</span>
-            <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Disponibilidad total</span>
+            <span>Presupuesto Analítico</span>
+            <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Renglones y disponibilidades</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveVariant('gasto_grupo_renglon')}
+            className={`p-2.5 rounded-lg text-xs font-bold text-left transition-all border cursor-pointer ${
+              activeVariant === 'gasto_grupo_renglon'
+                ? 'bg-purple-50 border-purple-400 text-purple-950 shadow-2xs'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <span className="block text-[10px] text-purple-700 uppercase font-mono font-black">Variante 2</span>
+            <span>Reporte por Grupo</span>
+            <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Grupos 100, 200 y 300</span>
           </button>
 
           <button
@@ -1060,7 +1074,7 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
-            <span className="block text-[10px] text-blue-700 uppercase font-mono font-black">Variante 2</span>
+            <span className="block text-[10px] text-blue-700 uppercase font-mono font-black">Variante 3</span>
             <span>Compras F56 por Renglón</span>
             <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Cruce F56 + NOG</span>
           </button>
@@ -1074,7 +1088,7 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
-            <span className="block text-[10px] text-amber-700 uppercase font-mono font-black">Variante 3</span>
+            <span className="block text-[10px] text-amber-700 uppercase font-mono font-black">Variante 4</span>
             <span>Comprometido en Trámite</span>
             <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Afecta Proyectado</span>
           </button>
@@ -1088,7 +1102,7 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
-            <span className="block text-[10px] text-emerald-700 uppercase font-mono font-black">Variante 4</span>
+            <span className="block text-[10px] text-emerald-700 uppercase font-mono font-black">Variante 5</span>
             <span>Pagado / Devengado</span>
             <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Rebaja Saldo Real</span>
           </button>
@@ -1102,23 +1116,9 @@ export const BudgetReportsView: React.FC<BudgetReportsViewProps> = ({
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
-            <span className="block text-[10px] text-rose-700 uppercase font-mono font-black">Variante 5</span>
+            <span className="block text-[10px] text-rose-700 uppercase font-mono font-black">Variante 6</span>
             <span>Alertas y Déficit</span>
             <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Sobregiro proyectado</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveVariant('gasto_grupo_renglon')}
-            className={`p-2.5 rounded-lg text-xs font-bold text-left transition-all border cursor-pointer ${
-              activeVariant === 'gasto_grupo_renglon'
-                ? 'bg-purple-50 border-purple-400 text-purple-950 shadow-2xs'
-                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            <span className="block text-[10px] text-purple-700 uppercase font-mono font-black">Variante 6</span>
-            <span>Gasto por Grupo/Renglón</span>
-            <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Analítico jerárquico</span>
           </button>
         </div>
       </div>

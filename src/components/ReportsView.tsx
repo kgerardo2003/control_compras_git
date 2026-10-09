@@ -22,9 +22,22 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  Clock
+  Clock,
+  Search,
+  BarChart3,
+  AlertTriangle,
+  XCircle,
+  LayoutGrid,
+  Table as TableIcon,
+  Activity,
+  Percent,
+  ArrowUpDown,
+  SlidersHorizontal
 } from 'lucide-react';
-import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { OJ_LOGO_DATA_URI } from '../utils/ojLogoAsset';
+import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto, formatDateTime } from '../utils/formatters';
 import { generatePurchasesPDF } from '../utils/pdfExport';
 import { calculateExecutiveKPIs } from '../utils/pdfChartRenderer';
 import { 
@@ -45,7 +58,7 @@ import {
 import { InstitutionalReportModal } from './InstitutionalReportModal';
 import { BudgetExecutionKPI } from './budget/BudgetExecutionKPI';
 import { OFFICIAL_BUDGET_GROUPS, OFFICIAL_RENGLONES, getGrupoFullName } from '../data/budgetStandardCatalog';
-import { PurchaseRecord } from '../types';
+import { PurchaseRecord, BudgetLineItem } from '../types';
 
 export interface AnaliticoRenglonNode {
   renglon: string;
@@ -72,7 +85,7 @@ export const ReportsView: React.FC = () => {
 
   // Estado del tipo de informe activo
   const [selectedReportType, setSelectedReportType] = useState<
-    'consolidado' | 'adjudicados' | 'git' | 'balance' | 'analitico'
+    'consolidado' | 'adjudicados' | 'git' | 'presupuesto_analitico' | 'reporte_grupo' | 'metricas_ejecucion' | 'balance' | 'analitico'
   >('consolidado');
 
   // Filtro de área específico (solo disponible para administradores)
@@ -89,11 +102,12 @@ export const ReportsView: React.FC = () => {
     }
     // Si es administrador y seleccionó un filtro de área específico
     if (adminAreaFilter !== 'todas') {
-      const lowerFilter = adminAreaFilter.toLowerCase();
+      const clean = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const lowerFilter = clean(adminAreaFilter);
       return purchases.filter(p => {
-        const pArea = (p.areaSolicitante || '').toLowerCase();
-        const pDep = (p.dependenciaSolicitante || '').toLowerCase();
-        return pArea.includes(lowerFilter) || pDep.includes(lowerFilter);
+        const pArea = clean(p.areaSolicitante || '');
+        const pDep = clean(p.dependenciaSolicitante || '');
+        return pArea === lowerFilter || pDep === lowerFilter;
       });
     }
     // Administrador con todas las áreas
@@ -128,6 +142,28 @@ export const ReportsView: React.FC = () => {
   const [showGitCharts, setShowGitCharts] = useState(true);
   const [showBalanceCharts, setShowBalanceCharts] = useState(true);
   const [showAnaliticoCharts, setShowAnaliticoCharts] = useState(true);
+  const [showPresupuestoAnaliticoCharts, setShowPresupuestoAnaliticoCharts] = useState(true);
+  const [showReporteGrupoCharts, setShowReporteGrupoCharts] = useState(true);
+
+  // Filtros interactivos para Presupuesto Analítico de Renglones
+  const [budgetRenglonSearch, setBudgetRenglonSearch] = useState('');
+  const [budgetGroupFilter, setBudgetGroupFilter] = useState('todos');
+  const [budgetStatusFilter, setBudgetStatusFilter] = useState('todos');
+
+  // Estado de grupos expandidos en Reporte por Grupo Presupuestario
+  const [expandedReportGroups, setExpandedReportGroups] = useState<Record<string, boolean>>({
+    '100': true,
+    '200': true,
+    '300': true
+  });
+
+  // Estados específicos para Dashboard de Métricas de Ejecución Presupuestaria (Gráficos de Dona)
+  const [showMetricasCharts, setShowMetricasCharts] = useState(true);
+  const [metricasSearch, setMetricasSearch] = useState('');
+  const [metricasGroupFilter, setMetricasGroupFilter] = useState('todos');
+  const [metricasTierFilter, setMetricasTierFilter] = useState('todos');
+  const [metricasSortBy, setMetricasSortBy] = useState<'renglon' | 'mayor_ejecucion' | 'menor_ejecucion' | 'mayor_vigente' | 'mayor_disponible'>('renglon');
+  const [metricasViewMode, setMetricasViewMode] = useState<'grid' | 'table'>('grid');
 
   // Datasets de Gráficas Circulares para Adjudicados
   const adjudicadosModalidadChartData = useMemo(() => {
@@ -414,6 +450,446 @@ export const ReportsView: React.FC = () => {
     return result;
   }, [analiticoTree]);
 
+  // ==========================================================
+  // INFORME DE PRESUPUESTO ANALÍTICO (TODOS LOS RENGLONES Y DISPONIBILIDADES)
+  // ==========================================================
+  const analiticoRenglonesData = useMemo(() => {
+    return budgetAvailability.filter(l => {
+      const matchSearch = budgetRenglonSearch === '' ||
+        l.renglonPresupuestario.includes(budgetRenglonSearch) ||
+        l.nombreRenglon.toLowerCase().includes(budgetRenglonSearch.toLowerCase()) ||
+        l.grupoPresupuestario.toLowerCase().includes(budgetRenglonSearch.toLowerCase());
+
+      const matchGroup = budgetGroupFilter === 'todos' ||
+        l.grupoPresupuestario.includes(budgetGroupFilter) ||
+        l.renglonPresupuestario.startsWith(budgetGroupFilter[0]);
+
+      const matchStatus = budgetStatusFilter === 'todos' || l.estatusDisponibilidad === budgetStatusFilter;
+
+      return matchSearch && matchGroup && matchStatus;
+    });
+  }, [budgetAvailability, budgetRenglonSearch, budgetGroupFilter, budgetStatusFilter]);
+
+  const analiticoRenglonesTotals = useMemo(() => {
+    return analiticoRenglonesData.reduce((acc, l) => {
+      acc.inicial += Number(l.presupuestoInicial) || 0;
+      acc.modificaciones += Number(l.modificacionesAprobadas) || 0;
+      acc.vigente += Number(l.presupuestoVigente) || 0;
+      acc.pagado += Number(l.pagadoQueRebaja) || 0;
+      acc.disponibleReal += Number(l.disponibleReal) || 0;
+      acc.comprometido += Number(l.comprometidoPendiente) || 0;
+      acc.disponibleProyectado += Number(l.disponibleProyectado) || 0;
+      acc.totalGasto += (Number(l.pagadoQueRebaja) || 0) + (Number(l.comprometidoPendiente) || 0);
+      return acc;
+    }, {
+      inicial: 0,
+      modificaciones: 0,
+      vigente: 0,
+      pagado: 0,
+      disponibleReal: 0,
+      comprometido: 0,
+      disponibleProyectado: 0,
+      totalGasto: 0
+    });
+  }, [analiticoRenglonesData]);
+
+  const analiticoSaludStats = useMemo(() => {
+    const saludable = analiticoRenglonesData.filter(l => l.estatusDisponibilidad === 'Con Disponibilidad').length;
+    const alerta = analiticoRenglonesData.filter(l => l.estatusDisponibilidad === 'Alerta Disponibilidad Baja').length;
+    const deficit = analiticoRenglonesData.filter(l => l.estatusDisponibilidad === 'Sin Disponibilidad').length;
+    return { saludable, alerta, deficit, total: analiticoRenglonesData.length };
+  }, [analiticoRenglonesData]);
+
+  const analiticoDistribucionChartData = useMemo(() => {
+    if (analiticoRenglonesTotals.vigente <= 0) return [];
+    return [
+      { name: 'Pagado Devengado', value: analiticoRenglonesTotals.pagado, color: '#2563eb' },
+      { name: 'Comprometido Trámite', value: analiticoRenglonesTotals.comprometido, color: '#f59e0b' },
+      { name: 'Saldo Disponible', value: Math.max(0, analiticoRenglonesTotals.disponibleProyectado), color: '#10b981' }
+    ].filter(d => d.value > 0);
+  }, [analiticoRenglonesTotals]);
+
+  const analiticoSemaforoChartData = useMemo(() => {
+    return [
+      { name: 'Con Disponibilidad', value: analiticoSaludStats.saludable, color: '#10b981' },
+      { name: 'Alerta Preventiva', value: analiticoSaludStats.alerta, color: '#f59e0b' },
+      { name: 'Déficit / Sin Saldo', value: analiticoSaludStats.deficit, color: '#ef4444' }
+    ].filter(d => d.value > 0);
+  }, [analiticoSaludStats]);
+
+  // ==========================================================
+  // INFORME CONSOLIDADO POR GRUPO PRESUPUESTARIO (GRUPOS 100, 200, 300)
+  // ==========================================================
+  const dataReporteGrupo = useMemo(() => {
+    const groupDefinitions = [
+      { id: '100', name: 'Grupo 100 - Servicios No Personales' },
+      { id: '200', name: 'Grupo 200 - Materiales y Suministros' },
+      { id: '300', name: 'Grupo 300 - Propiedad, Planta, Equipo e Intangibles' }
+    ];
+
+    const groupMap = new Map<string, {
+      id: string;
+      nombreGrupo: string;
+      presupuestoInicial: number;
+      modificaciones: number;
+      presupuestoVigente: number;
+      pagadoQueRebaja: number;
+      comprometidoPendiente: number;
+      gastoTotal: number;
+      disponibleReal: number;
+      disponibleProyectado: number;
+      comprasCount: number;
+      renglonesCount: number;
+      ejecucionPct: number;
+      renglones: Array<BudgetLineItem & { gastoTotal: number; comprasCount: number }>;
+    }>();
+
+    groupDefinitions.forEach(def => {
+      groupMap.set(def.id, {
+        id: def.id,
+        nombreGrupo: def.name,
+        presupuestoInicial: 0,
+        modificaciones: 0,
+        presupuestoVigente: 0,
+        pagadoQueRebaja: 0,
+        comprometidoPendiente: 0,
+        gastoTotal: 0,
+        disponibleReal: 0,
+        disponibleProyectado: 0,
+        comprasCount: 0,
+        renglonesCount: 0,
+        ejecucionPct: 0,
+        renglones: []
+      });
+    });
+
+    budgetAvailability.forEach(l => {
+      let gId = '100';
+      if (l.grupoPresupuestario.includes('200') || l.renglonPresupuestario.startsWith('2')) gId = '200';
+      else if (l.grupoPresupuestario.includes('300') || l.renglonPresupuestario.startsWith('3')) gId = '300';
+      else if (l.grupoPresupuestario.includes('100') || l.renglonPresupuestario.startsWith('1')) gId = '100';
+      else gId = l.grupoPresupuestario.slice(0, 3) || '100';
+
+      if (!groupMap.has(gId)) {
+        groupMap.set(gId, {
+          id: gId,
+          nombreGrupo: l.grupoPresupuestario || `Grupo ${gId}`,
+          presupuestoInicial: 0,
+          modificaciones: 0,
+          presupuestoVigente: 0,
+          pagadoQueRebaja: 0,
+          comprometidoPendiente: 0,
+          gastoTotal: 0,
+          disponibleReal: 0,
+          disponibleProyectado: 0,
+          comprasCount: 0,
+          renglonesCount: 0,
+          ejecucionPct: 0,
+          renglones: []
+        });
+      }
+
+      const g = groupMap.get(gId)!;
+      const gastoRenglon = (Number(l.pagadoQueRebaja) || 0) + (Number(l.comprometidoPendiente) || 0);
+      const comprasLinked = basePurchases.filter(p => p.renglonPresupuestario === l.renglonPresupuestario).length;
+
+      g.presupuestoInicial += Number(l.presupuestoInicial) || 0;
+      g.modificaciones += Number(l.modificacionesAprobadas) || 0;
+      g.presupuestoVigente += Number(l.presupuestoVigente) || 0;
+      g.pagadoQueRebaja += Number(l.pagadoQueRebaja) || 0;
+      g.comprometidoPendiente += Number(l.comprometidoPendiente) || 0;
+      g.gastoTotal += gastoRenglon;
+      g.disponibleReal += Number(l.disponibleReal) || 0;
+      g.disponibleProyectado += Number(l.disponibleProyectado) || 0;
+      g.comprasCount += comprasLinked;
+      g.renglonesCount += 1;
+
+      g.renglones.push({
+        ...l,
+        gastoTotal: gastoRenglon,
+        comprasCount: comprasLinked
+      });
+    });
+
+    const result = Array.from(groupMap.values()).map(g => {
+      g.ejecucionPct = g.presupuestoVigente > 0 ? (g.gastoTotal / g.presupuestoVigente) * 100 : 0;
+      g.renglones.sort((a, b) => a.renglonPresupuestario.localeCompare(b.renglonPresupuestario));
+      return g;
+    }).filter(g => g.renglonesCount > 0);
+
+    return result.sort((a, b) => a.id.localeCompare(b.id));
+  }, [budgetAvailability, basePurchases]);
+
+  const totalesReporteGrupos = useMemo(() => {
+    return dataReporteGrupo.reduce((acc, g) => {
+      acc.inicial += g.presupuestoInicial;
+      acc.modificaciones += g.modificaciones;
+      acc.vigente += g.presupuestoVigente;
+      acc.pagado += g.pagadoQueRebaja;
+      acc.comprometido += g.comprometidoPendiente;
+      acc.gastoTotal += g.gastoTotal;
+      acc.disponibleReal += g.disponibleReal;
+      acc.disponibleProyectado += g.disponibleProyectado;
+      acc.comprasCount += g.comprasCount;
+      acc.renglonesCount += g.renglonesCount;
+      return acc;
+    }, {
+      inicial: 0,
+      modificaciones: 0,
+      vigente: 0,
+      pagado: 0,
+      comprometido: 0,
+      gastoTotal: 0,
+      disponibleReal: 0,
+      disponibleProyectado: 0,
+      comprasCount: 0,
+      renglonesCount: 0
+    });
+  }, [dataReporteGrupo]);
+
+  const grupoVigenteChartData = useMemo(() => {
+    const palette = ['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'];
+    return dataReporteGrupo.map((g, idx) => ({
+      name: `G-${g.id}`,
+      fullName: g.nombreGrupo,
+      value: g.presupuestoVigente,
+      color: palette[idx % palette.length]
+    })).filter(d => d.value > 0);
+  }, [dataReporteGrupo]);
+
+  const grupoGastoChartData = useMemo(() => {
+    const palette = ['#2563eb', '#7c3aed', '#db2777', '#0891b2'];
+    return dataReporteGrupo.map((g, idx) => ({
+      name: `G-${g.id}`,
+      fullName: g.nombreGrupo,
+      value: g.gastoTotal,
+      color: palette[idx % palette.length]
+    })).filter(d => d.value > 0);
+  }, [dataReporteGrupo]);
+
+  // ==========================================================
+  // DASHBOARD DE MÉTRICAS DE EJECUCIÓN PRESUPUESTARIA (GRÁFICOS DE DONA)
+  // ==========================================================
+  const rawMetricasEjecucionData = useMemo(() => {
+    return budgetAvailability.map(l => {
+      const inicial = Number(l.presupuestoInicial) || 0;
+      const modificaciones = Number(l.modificacionesAprobadas) || 0;
+      const vigente = Number(l.presupuestoVigente) || 0;
+      const pagado = Number(l.pagadoQueRebaja) || 0;
+      const comprometido = Number(l.comprometidoPendiente) || 0;
+      const gastoTotal = pagado + comprometido;
+      const disponibleReal = Number(l.disponibleReal) || 0;
+      const disponibleProyectado = Number(l.disponibleProyectado) || 0;
+      const disponibleConsolidado = Math.max(0, disponibleProyectado);
+      
+      const pctEjecucion = vigente > 0 ? (gastoTotal / vigente) * 100 : 0;
+      const pctDisponible = vigente > 0 ? (disponibleConsolidado / vigente) * 100 : 0;
+      const pctPagado = vigente > 0 ? (pagado / vigente) * 100 : 0;
+      const pctComprometido = vigente > 0 ? (comprometido / vigente) * 100 : 0;
+
+      const comprasLinked = basePurchases.filter(p => p.renglonPresupuestario === l.renglonPresupuestario);
+
+      // Datos para gráfico de dona individual
+      const donutData: Array<{ name: string; value: number; color: string; pct: number }> = [];
+      if (vigente > 0) {
+        if (pagado > 0) {
+          donutData.push({
+            name: 'Pagado (Devengado)',
+            value: pagado,
+            color: '#2563eb', // blue-600
+            pct: pctPagado
+          });
+        }
+        if (comprometido > 0) {
+          donutData.push({
+            name: 'Comprometido en Trámite',
+            value: comprometido,
+            color: '#f59e0b', // amber-500
+            pct: pctComprometido
+          });
+        }
+        if (disponibleProyectado > 0) {
+          donutData.push({
+            name: 'Disponible Consolidado',
+            value: disponibleProyectado,
+            color: '#10b981', // emerald-500
+            pct: pctDisponible
+          });
+        } else if (disponibleProyectado < 0) {
+          donutData.push({
+            name: 'Déficit Presupuestario',
+            value: Math.abs(disponibleProyectado),
+            color: '#ef4444', // red-500
+            pct: Math.abs((disponibleProyectado / vigente) * 100)
+          });
+        }
+      }
+
+      if (donutData.length === 0) {
+        donutData.push({
+          name: 'Sin Techo Asignado',
+          value: 1,
+          color: '#cbd5e1',
+          pct: 0
+        });
+      }
+
+      return {
+        ...l,
+        inicial,
+        modificaciones,
+        vigente,
+        pagado,
+        comprometido,
+        gastoTotal,
+        disponibleReal,
+        disponibleProyectado,
+        disponibleConsolidado,
+        pctEjecucion,
+        pctDisponible,
+        pctPagado,
+        pctComprometido,
+        comprasCount: comprasLinked.length,
+        comprasLinked,
+        donutData
+      };
+    });
+  }, [budgetAvailability, basePurchases]);
+
+  // Filtros y ordenamiento aplicados a las Métricas de Ejecución
+  const filteredMetricasEjecucionData = useMemo(() => {
+    let result = rawMetricasEjecucionData.filter(item => {
+      const matchSearch = metricasSearch === '' ||
+        item.renglonPresupuestario.includes(metricasSearch) ||
+        item.nombreRenglon.toLowerCase().includes(metricasSearch.toLowerCase()) ||
+        item.grupoPresupuestario.toLowerCase().includes(metricasSearch.toLowerCase());
+
+      const matchGroup = metricasGroupFilter === 'todos' ||
+        item.grupoPresupuestario.includes(metricasGroupFilter) ||
+        item.renglonPresupuestario.startsWith(metricasGroupFilter[0]);
+
+      let matchTier = true;
+      if (metricasTierFilter === 'alta') {
+        matchTier = item.pctEjecucion > 85;
+      } else if (metricasTierFilter === 'media') {
+        matchTier = item.pctEjecucion >= 50 && item.pctEjecucion <= 85;
+      } else if (metricasTierFilter === 'baja') {
+        matchTier = item.pctEjecucion < 50;
+      } else if (metricasTierFilter === 'alerta') {
+        matchTier = item.estatusDisponibilidad !== 'Con Disponibilidad' || item.disponibleProyectado <= 0;
+      }
+
+      return matchSearch && matchGroup && matchTier;
+    });
+
+    result.sort((a, b) => {
+      if (metricasSortBy === 'mayor_ejecucion') {
+        return b.pctEjecucion - a.pctEjecucion;
+      }
+      if (metricasSortBy === 'menor_ejecucion') {
+        return a.pctEjecucion - b.pctEjecucion;
+      }
+      if (metricasSortBy === 'mayor_vigente') {
+        return b.vigente - a.vigente;
+      }
+      if (metricasSortBy === 'mayor_disponible') {
+        return b.disponibleProyectado - a.disponibleProyectado;
+      }
+      return a.renglonPresupuestario.localeCompare(b.renglonPresupuestario);
+    });
+
+    return result;
+  }, [rawMetricasEjecucionData, metricasSearch, metricasGroupFilter, metricasTierFilter, metricasSortBy]);
+
+  // Totales institucionales consolidados para Métricas de Ejecución
+  const totalesMetricasEjecucion = useMemo(() => {
+    const sum = rawMetricasEjecucionData.reduce((acc, item) => {
+      acc.inicial += item.inicial;
+      acc.modificaciones += item.modificaciones;
+      acc.vigente += item.vigente;
+      acc.pagado += item.pagado;
+      acc.comprometido += item.comprometido;
+      acc.gastoTotal += item.gastoTotal;
+      acc.disponibleReal += item.disponibleReal;
+      acc.disponibleProyectado += item.disponibleProyectado;
+      acc.comprasCount += item.comprasCount;
+      return acc;
+    }, {
+      inicial: 0,
+      modificaciones: 0,
+      vigente: 0,
+      pagado: 0,
+      comprometido: 0,
+      gastoTotal: 0,
+      disponibleReal: 0,
+      disponibleProyectado: 0,
+      comprasCount: 0
+    });
+
+    const pctGlobalEjecucion = sum.vigente > 0 ? (sum.gastoTotal / sum.vigente) * 100 : 0;
+    const pctGlobalDisponible = sum.vigente > 0 ? (Math.max(0, sum.disponibleProyectado) / sum.vigente) * 100 : 0;
+
+    const donutGlobal: Array<{ name: string; value: number; color: string; pct: number }> = [];
+    if (sum.vigente > 0) {
+      if (sum.pagado > 0) {
+        donutGlobal.push({ 
+          name: 'Pagado (Devengado)', 
+          value: sum.pagado, 
+          color: '#2563eb',
+          pct: (sum.pagado / sum.vigente) * 100 
+        });
+      }
+      if (sum.comprometido > 0) {
+        donutGlobal.push({ 
+          name: 'Comprometido en Trámite', 
+          value: sum.comprometido, 
+          color: '#f59e0b',
+          pct: (sum.comprometido / sum.vigente) * 100 
+        });
+      }
+      if (sum.disponibleProyectado > 0) {
+        donutGlobal.push({ 
+          name: 'Disponible Consolidado', 
+          value: sum.disponibleProyectado, 
+          color: '#10b981',
+          pct: pctGlobalDisponible 
+        });
+      } else if (sum.disponibleProyectado < 0) {
+        donutGlobal.push({ 
+          name: 'Déficit Presupuestario', 
+          value: Math.abs(sum.disponibleProyectado), 
+          color: '#ef4444',
+          pct: Math.abs((sum.disponibleProyectado / sum.vigente) * 100) 
+        });
+      }
+    }
+
+    const renglonesAlta = rawMetricasEjecucionData.filter(i => i.pctEjecucion > 85).length;
+    const renglonesMedia = rawMetricasEjecucionData.filter(i => i.pctEjecucion >= 50 && i.pctEjecucion <= 85).length;
+    const renglonesBaja = rawMetricasEjecucionData.filter(i => i.pctEjecucion < 50).length;
+    const renglonesAlerta = rawMetricasEjecucionData.filter(i => i.estatusDisponibilidad !== 'Con Disponibilidad' || i.disponibleProyectado <= 0).length;
+
+    const semaforoDonutData = [
+      { name: 'Baja Ejecución (<50%)', value: renglonesBaja, color: '#10b981' },
+      { name: 'Media Ejecución (50-85%)', value: renglonesMedia, color: '#3b82f6' },
+      { name: 'Alta Ejecución (>85%)', value: renglonesAlta, color: '#f59e0b' },
+      { name: 'Alerta / Déficit', value: renglonesAlerta, color: '#ef4444' }
+    ].filter(d => d.value > 0);
+
+    return {
+      ...sum,
+      pctGlobalEjecucion,
+      pctGlobalDisponible,
+      donutGlobal,
+      semaforoDonutData,
+      renglonesAlta,
+      renglonesMedia,
+      renglonesBaja,
+      renglonesAlerta,
+      totalRenglones: rawMetricasEjecucionData.length
+    };
+  }, [rawMetricasEjecucionData]);
+
   // Acciones de Impresión y Exportación
   const handlePrint = () => {
     window.print();
@@ -423,7 +899,121 @@ export const ReportsView: React.FC = () => {
     let rows: Record<string, any>[] = [];
     let filename = '';
 
-    if (selectedReportType === 'consolidado') {
+    if (selectedReportType === 'presupuesto_analitico') {
+      filename = `Presupuesto_Analitico_Renglones_Disponibilidades_OJ_${new Date().toISOString().slice(0, 10)}`;
+      rows = analiticoRenglonesData.map((l) => ({
+        'Grupo Presupuestario': l.grupoPresupuestario,
+        'Renglón': l.renglonPresupuestario,
+        'Nombre del Renglón': l.nombreRenglon,
+        'Presupuesto Inicial (GTQ)': l.presupuestoInicial,
+        'Modificaciones (+/-) (GTQ)': l.modificacionesAprobadas,
+        'Presupuesto Vigente (GTQ)': l.presupuestoVigente,
+        'Pagado que Rebaja (GTQ)': l.pagadoQueRebaja,
+        'Disponible Real (GTQ)': l.disponibleReal,
+        'Comprometido Pendiente (GTQ)': l.comprometidoPendiente,
+        'Disponible Proyectado (GTQ)': l.disponibleProyectado,
+        '% Usado/Comprometido': `${l.porcentajeUsadoComprometido}%`,
+        'Estatus Disponibilidad': l.estatusDisponibilidad,
+      }));
+      rows.push({
+        'Grupo Presupuestario': 'TOTALES CONSOLIDADOS',
+        'Renglón': `(${analiticoRenglonesData.length} Renglones)`,
+        'Nombre del Renglón': 'SUMATORIA CONSOLIDADA DE DISPONIBILIDADES',
+        'Presupuesto Inicial (GTQ)': analiticoRenglonesTotals.inicial,
+        'Modificaciones (+/-) (GTQ)': analiticoRenglonesTotals.modificaciones,
+        'Presupuesto Vigente (GTQ)': analiticoRenglonesTotals.vigente,
+        'Pagado que Rebaja (GTQ)': analiticoRenglonesTotals.pagado,
+        'Disponible Real (GTQ)': analiticoRenglonesTotals.disponibleReal,
+        'Comprometido Pendiente (GTQ)': analiticoRenglonesTotals.comprometido,
+        'Disponible Proyectado (GTQ)': analiticoRenglonesTotals.disponibleProyectado,
+        '% Usado/Comprometido': analiticoRenglonesTotals.vigente > 0 ? `${((analiticoRenglonesTotals.totalGasto / analiticoRenglonesTotals.vigente) * 100).toFixed(1)}%` : '0%',
+        'Estatus Disponibilidad': 'CONSOLIDADO',
+      });
+    } else if (selectedReportType === 'reporte_grupo') {
+      filename = `Reporte_Ejecucion_Grupos_Presupuestarios_OJ_${new Date().toISOString().slice(0, 10)}`;
+      dataReporteGrupo.forEach(grp => {
+        rows.push({
+          'Grupo Presupuestario': grp.nombreGrupo.toUpperCase(),
+          'Renglón': `SUBTOTAL ${grp.id}`,
+          'Descripción': `Consolidado de ${grp.renglonesCount} renglones`,
+          'Presupuesto Inicial (GTQ)': grp.presupuestoInicial,
+          'Modificaciones (+/-) (GTQ)': grp.modificaciones,
+          'Presupuesto Vigente (GTQ)': grp.presupuestoVigente,
+          'Pagado que Rebaja (GTQ)': grp.pagadoQueRebaja,
+          'Comprometido Pendiente (GTQ)': grp.comprometidoPendiente,
+          'Gasto Total (GTQ)': grp.gastoTotal,
+          'Disponible Proyectado (GTQ)': grp.disponibleProyectado,
+          '% Ejecución': `${grp.ejecucionPct.toFixed(1)}%`,
+          'Eventos': grp.comprasCount
+        });
+        grp.renglones.forEach(l => {
+          rows.push({
+            'Grupo Presupuestario': grp.nombreGrupo,
+            'Renglón': l.renglonPresupuestario,
+            'Descripción': l.nombreRenglon,
+            'Presupuesto Inicial (GTQ)': l.presupuestoInicial,
+            'Modificaciones (+/-) (GTQ)': l.modificacionesAprobadas,
+            'Presupuesto Vigente (GTQ)': l.presupuestoVigente,
+            'Pagado que Rebaja (GTQ)': l.pagadoQueRebaja,
+            'Comprometido Pendiente (GTQ)': l.comprometidoPendiente,
+            'Gasto Total (GTQ)': l.gastoTotal,
+            'Disponible Proyectado (GTQ)': l.disponibleProyectado,
+            '% Ejecución': `${l.porcentajeUsadoComprometido}%`,
+            'Eventos': l.comprasCount
+          });
+        });
+      });
+      rows.push({
+        'Grupo Presupuestario': 'GRAN TOTAL INSTITUCIONAL',
+        'Renglón': `(${dataReporteGrupo.length} Grupos)`,
+        'Descripción': 'SUMATORIA GENERAL DE GRUPOS PRESUPUESTARIOS',
+        'Presupuesto Inicial (GTQ)': totalesReporteGrupos.inicial,
+        'Modificaciones (+/-) (GTQ)': totalesReporteGrupos.modificaciones,
+        'Presupuesto Vigente (GTQ)': totalesReporteGrupos.vigente,
+        'Pagado que Rebaja (GTQ)': totalesReporteGrupos.pagado,
+        'Comprometido Pendiente (GTQ)': totalesReporteGrupos.comprometido,
+        'Gasto Total (GTQ)': totalesReporteGrupos.gastoTotal,
+        'Disponible Proyectado (GTQ)': totalesReporteGrupos.disponibleProyectado,
+        '% Ejecución': totalesReporteGrupos.vigente > 0 ? `${((totalesReporteGrupos.gastoTotal / totalesReporteGrupos.vigente) * 100).toFixed(1)}%` : '0%',
+        'Eventos': totalesReporteGrupos.comprasCount
+      });
+    } else if (selectedReportType === 'metricas_ejecucion') {
+      filename = `Metricas_Ejecucion_Presupuestaria_Donas_OJ_${new Date().toISOString().slice(0, 10)}`;
+      rows = filteredMetricasEjecucionData.map((l) => ({
+        'Grupo Presupuestario': l.grupoPresupuestario,
+        'Renglón': l.renglonPresupuestario,
+        'Nombre del Renglón': l.nombreRenglon,
+        'Presupuesto Inicial (GTQ)': l.inicial,
+        'Modificaciones (+/-) (GTQ)': l.modificaciones,
+        'Presupuesto Vigente (GTQ)': l.vigente,
+        'Gasto Pagado Devengado (GTQ)': l.pagado,
+        'Comprometido en Trámite (GTQ)': l.comprometido,
+        'Gasto Total Ejecutado (GTQ)': l.gastoTotal,
+        '% Ejecución': `${l.pctEjecucion.toFixed(1)}%`,
+        'Disponible Real (GTQ)': l.disponibleReal,
+        'Saldo Disponible Consolidado (GTQ)': l.disponibleProyectado,
+        '% Disponible Consolidado': `${l.pctDisponible.toFixed(1)}%`,
+        'Estatus Oficial': l.estatusDisponibilidad,
+        'Adquisiciones Vinculadas (F56-e/NOG)': l.comprasCount
+      }));
+      rows.push({
+        'Grupo Presupuestario': 'TOTALES CONSOLIDADOS',
+        'Renglón': `(${filteredMetricasEjecucionData.length} Renglones)`,
+        'Nombre del Renglón': 'SUMATORIA CONSOLIDADA DE MÉTRICAS DE EJECUCIÓN',
+        'Presupuesto Inicial (GTQ)': totalesMetricasEjecucion.inicial,
+        'Modificaciones (+/-) (GTQ)': totalesMetricasEjecucion.modificaciones,
+        'Presupuesto Vigente (GTQ)': totalesMetricasEjecucion.vigente,
+        'Gasto Pagado Devengado (GTQ)': totalesMetricasEjecucion.pagado,
+        'Comprometido en Trámite (GTQ)': totalesMetricasEjecucion.comprometido,
+        'Gasto Total Ejecutado (GTQ)': totalesMetricasEjecucion.gastoTotal,
+        '% Ejecución': `${totalesMetricasEjecucion.pctGlobalEjecucion.toFixed(1)}%`,
+        'Disponible Real (GTQ)': totalesMetricasEjecucion.disponibleReal,
+        'Saldo Disponible Consolidado (GTQ)': totalesMetricasEjecucion.disponibleProyectado,
+        '% Disponible Consolidado': `${totalesMetricasEjecucion.pctGlobalDisponible.toFixed(1)}%`,
+        'Estatus Oficial': 'CONSOLIDADO INSTITUCIONAL',
+        'Adquisiciones Vinculadas (F56-e/NOG)': totalesMetricasEjecucion.comprasCount
+      });
+    } else if (selectedReportType === 'consolidado') {
       filename = `Informe_Consolidado_Adquisiciones_OJ_${new Date().toISOString().slice(0, 10)}`;
       rows = basePurchases.map((p, idx) => ({
         '#': idx + 1,
@@ -598,6 +1188,365 @@ export const ReportsView: React.FC = () => {
   };
 
   const handleExportReportPDF = () => {
+    if (selectedReportType === 'presupuesto_analitico') {
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+      const nowStr = formatDateTime(new Date().toISOString());
+      try {
+        doc.setFillColor(15, 23, 42); // slate-900 institucional
+        doc.rect(14, 6, 251, 23, 'F');
+        doc.setFillColor(30, 64, 175); // blue-800 acento
+        doc.rect(14, 6, 3.5, 23, 'F');
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(20, 7.5, 19, 19, 2, 2, 'F');
+        doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 21, 8.5, 17, 17);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 43, 12);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(226, 232, 240);
+        doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • AUDITORÍA Y CONTROL FINANCIERO', 43, 17);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        doc.text('INFORME DE PRESUPUESTO ANALÍTICO DE RENGLONES Y DISPONIBILIDADES PRESUPUESTARIAS', 43, 23);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(226, 232, 240);
+        doc.text(`Fecha Emisión: ${nowStr} | Ejercicio Fiscal: 2026`, 260, 12, { align: 'right' });
+        doc.text(`Total Renglones: ${analiticoRenglonesData.length}`, 260, 17, { align: 'right' });
+      } catch (e) {
+        console.warn('Error insertando membrete en PDF analítico', e);
+      }
+
+      const head = [[
+        'Renglón',
+        'Nombre del Renglón Presupuestario',
+        'Grupo',
+        'Inicial (Q)',
+        'Modif. (Q)',
+        'Vigente (Q)',
+        'Pagado (Q)',
+        'Disp. Real (Q)',
+        'Comprometido (Q)',
+        'Disp. Proy. (Q)',
+        '% Usado',
+        'Estatus'
+      ]];
+
+      const body = analiticoRenglonesData.map(l => [
+        l.renglonPresupuestario,
+        l.nombreRenglon.slice(0, 32),
+        l.grupoPresupuestario.replace('Grupo ', 'G-'),
+        Number(l.presupuestoInicial).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        (Number(l.modificacionesAprobadas) >= 0 ? '+' : '') + Number(l.modificacionesAprobadas).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.presupuestoVigente).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.pagadoQueRebaja).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.disponibleReal).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.comprometidoPendiente).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.disponibleProyectado).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        `${l.porcentajeUsadoComprometido}%`,
+        l.estatusDisponibilidad === 'Con Disponibilidad' ? 'DISPONIBLE' : (l.disponibleProyectado <= 0 ? 'DÉFICIT' : 'ALERTA')
+      ]);
+
+      const foot = [[
+        'TOTALES',
+        `Consolidado Oficial (${analiticoRenglonesData.length} Renglones)`,
+        '-',
+        analiticoRenglonesTotals.inicial.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        (analiticoRenglonesTotals.modificaciones >= 0 ? '+' : '') + analiticoRenglonesTotals.modificaciones.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        analiticoRenglonesTotals.vigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        analiticoRenglonesTotals.pagado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        analiticoRenglonesTotals.disponibleReal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        analiticoRenglonesTotals.comprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        analiticoRenglonesTotals.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        analiticoRenglonesTotals.vigente > 0 ? `${(((analiticoRenglonesTotals.pagado + analiticoRenglonesTotals.comprometido) / analiticoRenglonesTotals.vigente) * 100).toFixed(1)}%` : '0%',
+        'CONSOLIDADO'
+      ]];
+
+      autoTable(doc, {
+        startY: 33,
+        head,
+        body,
+        foot,
+        theme: 'grid',
+        headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
+        footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, fontStyle: 'bold' },
+        styles: { fontSize: 6.5, cellPadding: 1.2 },
+        alternateRowStyles: { fillColor: [248, 250, 252] }
+      });
+
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text(`Página ${i} de ${pageCount} • Presupuesto Analítico de Renglones y Disponibilidades • Organismo Judicial`, 14, 205);
+        if (i === pageCount) {
+          doc.line(20, 185, 80, 185);
+          doc.text('Elaborado: Analista Financiero GIT', 20, 189);
+          doc.line(110, 185, 170, 185);
+          doc.text('Revisado: Encargado de Compras IT', 110, 189);
+          doc.line(200, 185, 260, 185);
+          doc.text('Autorizado: Gerente de Informática', 200, 189);
+        }
+      }
+
+      const filename = `Presupuesto_Analitico_Renglones_OJ_${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(filename);
+      logAudit('EXPORTAR_DATOS', 'Reportes', 'Exportación PDF de Informe de Presupuesto Analítico de Renglones.');
+      showToast({
+        type: 'success',
+        title: 'Reporte PDF Generado Exitosamente',
+        message: `Informe descargado con cabecera oficial y firmas: ${filename}`,
+        duration: 5000,
+      });
+      return;
+    }
+
+    if (selectedReportType === 'reporte_grupo') {
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+      const nowStr = formatDateTime(new Date().toISOString());
+      try {
+        doc.setFillColor(15, 23, 42);
+        doc.rect(14, 6, 251, 23, 'F');
+        doc.setFillColor(30, 64, 175);
+        doc.rect(14, 6, 3.5, 23, 'F');
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(20, 7.5, 19, 19, 2, 2, 'F');
+        doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 21, 8.5, 17, 17);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 43, 12);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(226, 232, 240);
+        doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • AUDITORÍA Y CONTROL FINANCIERO', 43, 17);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        doc.text('INFORME CONSOLIDADO POR GRUPO PRESUPUESTARIO (GRUPOS 100, 200 Y 300)', 43, 23);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(226, 232, 240);
+        doc.text(`Fecha Emisión: ${nowStr} | Ejercicio Fiscal: 2026`, 260, 12, { align: 'right' });
+        doc.text(`Grupos Analizados: ${dataReporteGrupo.length}`, 260, 17, { align: 'right' });
+      } catch (e) {
+        console.warn('Error insertando membrete en PDF de grupos', e);
+      }
+
+      const head = [[
+        'Grupo / Renglón',
+        'Descripción Presupuestaria',
+        'P. Vigente (Q)',
+        'Gasto Pagado (Q)',
+        'Comprometido (Q)',
+        'Gasto Total (Q)',
+        'Disponible Proy. (Q)',
+        '% Ejecución',
+        'Eventos'
+      ]];
+
+      const body: any[][] = [];
+      dataReporteGrupo.forEach(grp => {
+        body.push([
+          `>> ${grp.nombreGrupo.split('-')[0].trim()}`,
+          `SUBTOTAL ${grp.nombreGrupo.toUpperCase()}`,
+          grp.presupuestoVigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.pagadoQueRebaja.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.comprometidoPendiente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.gastoTotal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          grp.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+          `${grp.ejecucionPct.toFixed(1)}%`,
+          `${grp.comprasCount} f56/nog`
+        ]);
+
+        grp.renglones.forEach(l => {
+          body.push([
+            `    R-${l.renglonPresupuestario}`,
+            l.nombreRenglon.slice(0, 38),
+            Number(l.presupuestoVigente).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            Number(l.pagadoQueRebaja).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            Number(l.comprometidoPendiente).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            l.gastoTotal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            Number(l.disponibleProyectado).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+            `${l.porcentajeUsadoComprometido}%`,
+            `${l.comprasCount}`
+          ]);
+        });
+      });
+
+      const foot = [[
+        'TOTAL INSTITUCIONAL',
+        `Suma Consolidada de ${dataReporteGrupo.length} Grupos Presupuestarios`,
+        totalesReporteGrupos.vigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesReporteGrupos.pagado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesReporteGrupos.comprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesReporteGrupos.gastoTotal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesReporteGrupos.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesReporteGrupos.vigente > 0 ? `${((totalesReporteGrupos.gastoTotal / totalesReporteGrupos.vigente) * 100).toFixed(1)}%` : '0%',
+        `${totalesReporteGrupos.comprasCount} Eventos`
+      ]];
+
+      autoTable(doc, {
+        startY: 33,
+        head,
+        body,
+        foot,
+        theme: 'grid',
+        headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
+        footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, fontStyle: 'bold' },
+        styles: { fontSize: 6.5, cellPadding: 1.2 },
+        alternateRowStyles: { fillColor: [248, 250, 252] }
+      });
+
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text(`Página ${i} de ${pageCount} • Informe de Ejecución por Grupo Presupuestario • Organismo Judicial`, 14, 205);
+        if (i === pageCount) {
+          doc.line(20, 185, 80, 185);
+          doc.text('Elaborado: Analista Financiero GIT', 20, 189);
+          doc.line(110, 185, 170, 185);
+          doc.text('Revisado: Encargado de Compras IT', 110, 189);
+          doc.line(200, 185, 260, 185);
+          doc.text('Autorizado: Gerente de Informática', 200, 189);
+        }
+      }
+
+      const filename = `Reporte_Grupos_Presupuestarios_OJ_${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(filename);
+      logAudit('EXPORTAR_DATOS', 'Reportes', 'Exportación PDF de Informe de Grupos Presupuestarios.');
+      showToast({
+        type: 'success',
+        title: 'Reporte PDF Generado Exitosamente',
+        message: `Informe descargado con cabecera oficial y firmas: ${filename}`,
+        duration: 5000,
+      });
+      return;
+    }
+
+    if (selectedReportType === 'metricas_ejecucion') {
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+      const nowStr = formatDateTime(new Date().toISOString());
+      try {
+        doc.setFillColor(15, 23, 42); // slate-900 institucional
+        doc.rect(14, 6, 251, 23, 'F');
+        doc.setFillColor(30, 64, 175); // blue-800 acento
+        doc.rect(14, 6, 3.5, 23, 'F');
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(20, 7.5, 19, 19, 2, 2, 'F');
+        doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 21, 8.5, 17, 17);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 43, 12);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(226, 232, 240);
+        doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • CONTROL PRESUPUESTARIO Y AUDITORÍA', 43, 17);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        doc.text('DASHBOARD DE MÉTRICAS DE EJECUCIÓN PRESUPUESTARIA (PORCENTAJE DE EJECUCIÓN VS DISPONIBLE)', 43, 23);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(226, 232, 240);
+        doc.text(`Fecha Emisión: ${nowStr} | Ejercicio Fiscal: 2026`, 260, 12, { align: 'right' });
+        doc.text(`Renglones Analizados: ${filteredMetricasEjecucionData.length}`, 260, 17, { align: 'right' });
+      } catch (e) {
+        console.warn('Error insertando membrete en PDF de métricas', e);
+      }
+
+      const head = [[
+        'Renglón',
+        'Nombre del Renglón Presupuestario',
+        'Grupo',
+        'P. Vigente (Q)',
+        'Pagado (Q)',
+        'Comprometido (Q)',
+        'Total Ejecutado (Q)',
+        '% Ejecución',
+        'Disp. Consolidado (Q)',
+        '% Disponible',
+        'Estatus',
+        'Compras'
+      ]];
+
+      const body = filteredMetricasEjecucionData.map(l => [
+        l.renglonPresupuestario,
+        l.nombreRenglon.slice(0, 32),
+        l.grupoPresupuestario.replace('Grupo ', 'G-'),
+        Number(l.vigente).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.pagado).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.comprometido).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        Number(l.gastoTotal).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        `${l.pctEjecucion.toFixed(1)}%`,
+        Number(l.disponibleProyectado).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        `${l.pctDisponible.toFixed(1)}%`,
+        l.estatusDisponibilidad === 'Con Disponibilidad' ? 'DISPONIBLE' : (l.disponibleProyectado <= 0 ? 'DÉFICIT' : 'ALERTA'),
+        `${l.comprasCount}`
+      ]);
+
+      const foot = [[
+        'TOTALES',
+        `Consolidado Institucional (${filteredMetricasEjecucionData.length} Renglones)`,
+        '-',
+        totalesMetricasEjecucion.vigente.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesMetricasEjecucion.pagado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesMetricasEjecucion.comprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        totalesMetricasEjecucion.gastoTotal.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        `${totalesMetricasEjecucion.pctGlobalEjecucion.toFixed(1)}%`,
+        totalesMetricasEjecucion.disponibleProyectado.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        `${totalesMetricasEjecucion.pctGlobalDisponible.toFixed(1)}%`,
+        'CONSOLIDADO',
+        `${totalesMetricasEjecucion.comprasCount}`
+      ]];
+
+      autoTable(doc, {
+        startY: 33,
+        head,
+        body,
+        foot,
+        theme: 'grid',
+        headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
+        footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, fontStyle: 'bold' },
+        styles: { fontSize: 6.5, cellPadding: 1.2 },
+        alternateRowStyles: { fillColor: [248, 250, 252] }
+      });
+
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text(`Página ${i} de ${pageCount} • Dashboard de Métricas de Ejecución Presupuestaria • Organismo Judicial`, 14, 205);
+        if (i === pageCount) {
+          doc.line(20, 185, 80, 185);
+          doc.text('Elaborado: Analista Financiero GIT', 20, 189);
+          doc.line(110, 185, 170, 185);
+          doc.text('Revisado: Encargado de Compras IT', 110, 189);
+          doc.line(200, 185, 260, 185);
+          doc.text('Autorizado: Gerente de Informática', 200, 189);
+        }
+      }
+
+      const filename = `Metricas_Ejecucion_Presupuestaria_OJ_${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(filename);
+      logAudit('EXPORTAR_DATOS', 'Reportes', 'Exportación PDF de Dashboard de Métricas de Ejecución Presupuestaria.');
+      showToast({
+        type: 'success',
+        title: 'Reporte PDF Generado Exitosamente',
+        message: `Dashboard descargado con cabecera oficial y firmas: ${filename}`,
+        duration: 5000,
+      });
+      return;
+    }
+
     let dataset = basePurchases;
     let reportTitle = 'CONSOLIDADO GENERAL DE ADQUISICIONES';
     let subtitle = isAdmin 
@@ -767,25 +1716,25 @@ export const ReportsView: React.FC = () => {
         userAssignedArea={userAssignedArea}
       />
 
-      {/* 3. Selector de Pestañas de Informe (5 Pestañas Completas) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 print:hidden">
+      {/* 3. Selector de Pestañas de Informe */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 print:hidden">
         
         {/* Pestaña 1: Consolidado General */}
         <button
           id="tab-report-consolidado"
           type="button"
           onClick={() => setSelectedReportType('consolidado')}
-          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
             selectedReportType === 'consolidado'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-800'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold">Consolidado General</span>
-            <FileText className={`w-4 h-4 ${selectedReportType === 'consolidado' ? 'text-amber-400' : 'text-slate-400'}`} />
+            <FileText className={`w-3.5 h-3.5 ${selectedReportType === 'consolidado' ? 'text-amber-400' : 'text-slate-400'}`} />
           </div>
-          <p className={`text-[11px] mt-1 ${selectedReportType === 'consolidado' ? 'text-slate-300' : 'text-slate-400'}`}>
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'consolidado' ? 'text-slate-300' : 'text-slate-400'}`}>
             {basePurchases.length} eventos • {formatQuetzales(totalMontoConsolidado)}
           </p>
         </button>
@@ -795,17 +1744,17 @@ export const ReportsView: React.FC = () => {
           id="tab-report-adjudicados"
           type="button"
           onClick={() => setSelectedReportType('adjudicados')}
-          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
             selectedReportType === 'adjudicados'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-800'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold">Adjudicados</span>
-            <CheckCircle2 className={`w-4 h-4 ${selectedReportType === 'adjudicados' ? 'text-amber-400' : 'text-slate-400'}`} />
+            <CheckCircle2 className={`w-3.5 h-3.5 ${selectedReportType === 'adjudicados' ? 'text-amber-400' : 'text-slate-400'}`} />
           </div>
-          <p className={`text-[11px] mt-1 ${selectedReportType === 'adjudicados' ? 'text-slate-300' : 'text-slate-400'}`}>
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'adjudicados' ? 'text-slate-300' : 'text-slate-400'}`}>
             {adjudicados.length} adjudicados • {formatQuetzales(totalMontoAdjudicado)}
           </p>
         </button>
@@ -815,58 +1764,104 @@ export const ReportsView: React.FC = () => {
           id="tab-report-git"
           type="button"
           onClick={() => setSelectedReportType('git')}
-          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
             selectedReportType === 'git'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-800'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold">Dictámenes GIT</span>
-            <FileCheck2 className={`w-4 h-4 ${selectedReportType === 'git' ? 'text-amber-400' : 'text-slate-400'}`} />
+            <FileCheck2 className={`w-3.5 h-3.5 ${selectedReportType === 'git' ? 'text-amber-400' : 'text-slate-400'}`} />
           </div>
-          <p className={`text-[11px] mt-1 ${selectedReportType === 'git' ? 'text-slate-300' : 'text-slate-400'}`}>
-            {evaluadosGIT.length} dictaminados • {formatQuetzales(totalMontoDictaminado)}
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'git' ? 'text-slate-300' : 'text-slate-400'}`}>
+            {evaluadosGIT.length} expedientes • {formatQuetzales(totalMontoDictaminado)}
           </p>
         </button>
 
-        {/* Pestaña 4: Balance Financiero */}
+        {/* Pestaña 4: Presupuesto Analítico (Renglones y Disponibilidades) */}
         <button
-          id="tab-report-balance"
+          id="tab-report-presupuesto-analitico"
           type="button"
-          onClick={() => setSelectedReportType('balance')}
-          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-            selectedReportType === 'balance'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+          onClick={() => setSelectedReportType('presupuesto_analitico')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            selectedReportType === 'presupuesto_analitico'
+              ? 'bg-blue-900 text-white border-blue-900 shadow-xs ring-2 ring-blue-500'
+              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-blue-300'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold">Balance Financiero</span>
-            <DollarSign className={`w-4 h-4 ${selectedReportType === 'balance' ? 'text-amber-400' : 'text-slate-400'}`} />
+            <span className="text-xs font-bold text-blue-900 group-hover:text-blue-700" style={{ color: selectedReportType === 'presupuesto_analitico' ? '#fff' : '#1e3a8a' }}>
+              Presupuesto Analítico
+            </span>
+            <Layers className={`w-3.5 h-3.5 ${selectedReportType === 'presupuesto_analitico' ? 'text-amber-400' : 'text-blue-600'}`} />
           </div>
-          <p className={`text-[11px] mt-1 ${selectedReportType === 'balance' ? 'text-slate-300' : 'text-slate-400'}`}>
-            Comprometido: {formatQuetzales(totalBalanceComprometido)}
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'presupuesto_analitico' ? 'text-blue-200' : 'text-slate-400'}`}>
+            {budgetAvailability.length} Renglones • Disponibilidades
           </p>
         </button>
 
-        {/* Pestaña 5: Analítico por Grupo y Renglón (Solicitado por el usuario) */}
+        {/* Pestaña 5: Reporte por Grupo Presupuestario */}
+        <button
+          id="tab-report-grupo"
+          type="button"
+          onClick={() => setSelectedReportType('reporte_grupo')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            selectedReportType === 'reporte_grupo'
+              ? 'bg-purple-900 text-white border-purple-900 shadow-xs ring-2 ring-purple-500'
+              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-purple-300'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold" style={{ color: selectedReportType === 'reporte_grupo' ? '#fff' : '#581c87' }}>
+              Reporte por Grupo
+            </span>
+            <FolderTree className={`w-3.5 h-3.5 ${selectedReportType === 'reporte_grupo' ? 'text-amber-400' : 'text-purple-600'}`} />
+          </div>
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'reporte_grupo' ? 'text-purple-200' : 'text-slate-400'}`}>
+            {dataReporteGrupo.length} Grupos (100, 200, 300)
+          </p>
+        </button>
+
+        {/* Pestaña 6: Dashboard de Métricas de Ejecución (Gráficos de Dona) */}
+        <button
+          id="tab-report-metricas-ejecucion"
+          type="button"
+          onClick={() => setSelectedReportType('metricas_ejecucion')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            selectedReportType === 'metricas_ejecucion'
+              ? 'bg-emerald-900 text-white border-emerald-900 shadow-xs ring-2 ring-emerald-500'
+              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-emerald-300'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold" style={{ color: selectedReportType === 'metricas_ejecucion' ? '#fff' : '#065f46' }}>
+              Métricas de Ejecución
+            </span>
+            <PieChartIcon className={`w-3.5 h-3.5 ${selectedReportType === 'metricas_ejecucion' ? 'text-amber-400' : 'text-emerald-600'}`} />
+          </div>
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'metricas_ejecucion' ? 'text-emerald-200' : 'text-slate-400'}`}>
+            Donas % Ejecución vs Disponible
+          </p>
+        </button>
+
+        {/* Pestaña 7: Analítico de Compras por Renglón */}
         <button
           id="tab-report-analitico"
           type="button"
           onClick={() => setSelectedReportType('analitico')}
-          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
             selectedReportType === 'analitico'
-              ? 'bg-blue-900 text-white border-blue-900 shadow-xs ring-2 ring-blue-500/20'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-800'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold">Analítico Grupo/Renglón</span>
-            <ListTree className={`w-4 h-4 ${selectedReportType === 'analitico' ? 'text-amber-400' : 'text-blue-600'}`} />
+            <span className="text-xs font-bold">Compras por Renglón</span>
+            <ListTree className={`w-3.5 h-3.5 ${selectedReportType === 'analitico' ? 'text-amber-400' : 'text-slate-500'}`} />
           </div>
-          <p className={`text-[11px] mt-1 ${selectedReportType === 'analitico' ? 'text-blue-200' : 'text-slate-400'}`}>
-            {isAdmin ? 'Todas las Áreas' : (userAssignedArea || 'Área Asignada')}
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'analitico' ? 'text-slate-300' : 'text-slate-400'}`}>
+            Jerarquía F56-e y NOG
           </p>
         </button>
 
@@ -912,23 +1907,29 @@ export const ReportsView: React.FC = () => {
               {selectedReportType === 'consolidado' && '1. Informe Consolidado General de Adquisiciones y Eventos NOG'}
               {selectedReportType === 'adjudicados' && '2. Informe Oficial de Eventos Resueltos y Adjudicados'}
               {selectedReportType === 'git' && '3. Registro Institucional de Dictámenes y Evaluaciones Técnicas GIT'}
-              {selectedReportType === 'balance' && '4. Balance Financiero y Ejecución Presupuestaria por Renglón'}
+              {selectedReportType === 'presupuesto_analitico' && '4. Informe de Presupuesto Analítico de Renglones y Disponibilidades Presupuestarias'}
+              {selectedReportType === 'reporte_grupo' && '5. Informe Consolidado de Ejecución por Grupo Presupuestario (Grupos 100, 200 y 300)'}
+              {selectedReportType === 'metricas_ejecucion' && '6. Dashboard de Métricas de Ejecución Presupuestaria (% Ejecución vs Disponible Consolidado)'}
               {selectedReportType === 'analitico' && (
                 isAdmin
-                  ? '5. Desglose Analítico por Grupo y Renglón Presupuestario (Consolidado de Todas las Áreas)'
-                  : `5. Desglose Analítico por Grupo y Renglón Presupuestario - Unidad: ${(userAssignedArea || 'ÁREA').toUpperCase()}`
+                  ? '7. Desglose Analítico de Compras por Grupo y Renglón Presupuestario (Todas las Áreas)'
+                  : `7. Desglose Analítico de Compras por Grupo y Renglón Presupuestario - Unidad: ${(userAssignedArea || 'ÁREA').toUpperCase()}`
               )}
+              {selectedReportType === 'balance' && '8. Balance Financiero y Ejecución Presupuestaria'}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               {selectedReportType === 'consolidado' && 'Listado maestro de formularios F56-e, estatus del evento y montos de compra'}
               {selectedReportType === 'adjudicados' && 'Expedientes adjudicados a proveedores con detalle de montos y modalidades'}
               {selectedReportType === 'git' && 'Control de dictámenes técnicos elaborados conforme al Decreto 57-92 y normativas'}
-              {selectedReportType === 'balance' && 'Disponibilidad presupuestaria vigente, comprometida, pagada y saldos reales'}
+              {selectedReportType === 'presupuesto_analitico' && 'Matriz analítica de disponibilidad: Presupuesto inicial, modificaciones (+/-), vigente, pagado, comprometido y disponibilidades real y proyectada'}
+              {selectedReportType === 'reporte_grupo' && 'Consolidado comparativo por Grupo 100 Servicios, Grupo 200 Materiales y Grupo 300 Activos con desglose de renglones'}
+              {selectedReportType === 'metricas_ejecucion' && 'Visualización analítica mediante gráficos de dona interactivos que contrastan la tasa de ejecución frente al saldo disponible consolidado por cada renglón presupuestario'}
               {selectedReportType === 'analitico' && (
                 isAdmin 
                   ? 'Estructura jerárquica por Grupo (100, 200, 300) y Renglón presupuestario con desglose comparativo por área'
                   : 'Estructura jerárquica por Grupo y Renglón presupuestario de las adquisiciones correspondientes a su unidad'
               )}
+              {selectedReportType === 'balance' && 'Disponibilidad presupuestaria vigente, comprometida, pagada y saldos reales'}
             </p>
           </div>
         </div>
@@ -2370,6 +3371,1579 @@ export const ReportsView: React.FC = () => {
                 <div>
                   <span className="text-[10px] uppercase font-bold text-emerald-600 block">Saldo Total Disponible</span>
                   <span className="text-lg font-bold font-mono text-emerald-800">{formatQuetzales(totalBalanceSaldo)}</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* VISTA: PRESUPUESTO ANALÍTICO (TODOS LOS RENGLONES Y DISPONIBILIDADES) */}
+        {/* ========================================================= */}
+        {selectedReportType === 'presupuesto_analitico' && (
+          <div className="space-y-6">
+            
+            {/* Panel Ejecutivo de KPIs y Gráficas Circulares */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-blue-100 text-blue-700">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                        Panel Ejecutivo de Disponibilidad Presupuestaria Analítica
+                      </h4>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                        {analiticoRenglonesData.length} Renglones Institucionales
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Disponibilidad presupuestaria en tiempo real de todos los renglones de TI conforme al Decreto 57-92
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPresupuestoAnaliticoCharts(!showPresupuestoAnaliticoCharts)}
+                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-center shadow-2xs"
+                >
+                  {showPresupuestoAnaliticoCharts ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ocultar Gráficas</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ver Gráficas y KPIs</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Contenido Desplegable de Gráficas y KPIs */}
+              {showPresupuestoAnaliticoCharts && (
+                <div className="space-y-5 pt-1">
+                  
+                  {/* Tarjetas KPI de Resumen Financiero */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    <div className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Presupuesto Vigente Total
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono block mt-0.5">
+                        {formatQuetzales(analiticoRenglonesTotals.vigente)}
+                      </span>
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        Inicial: {formatQuetzales(analiticoRenglonesTotals.inicial)}
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-blue-200 p-3.5 rounded-xl shadow-2xs bg-blue-50/20">
+                      <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
+                        Pagado que Rebaja
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-blue-900 font-mono block mt-0.5">
+                        {formatQuetzales(analiticoRenglonesTotals.pagado)}
+                      </span>
+                      <span className="text-[11px] text-blue-600 mt-1 block">
+                        Rebaja directamente el saldo real
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-amber-200 p-3.5 rounded-xl shadow-2xs bg-amber-50/20">
+                      <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
+                        Comprometido en Trámite
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-amber-900 font-mono block mt-0.5">
+                        {formatQuetzales(analiticoRenglonesTotals.comprometido)}
+                      </span>
+                      <span className="text-[11px] text-amber-600 mt-1 block">
+                        Expedientes F56-e en adjudicación
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-emerald-200 p-3.5 rounded-xl shadow-2xs bg-emerald-50/20">
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+                        Disponible Proyectado Libre
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-emerald-900 font-mono block mt-0.5">
+                        {formatQuetzales(analiticoRenglonesTotals.disponibleProyectado)}
+                      </span>
+                      <span className="text-[11px] text-emerald-600 mt-1 block">
+                        {analiticoRenglonesTotals.vigente > 0 ? `${(((analiticoRenglonesTotals.pagado + analiticoRenglonesTotals.comprometido) / analiticoRenglonesTotals.vigente) * 100).toFixed(1)}% usado global` : '0%'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Fila de 2 Gráficas Circulares */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Gráfica 1: Distribución Financiera */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                          <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                          Distribución Financiera de Techo Presupuestario
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                          {formatQuetzales(analiticoRenglonesTotals.vigente)}
+                        </span>
+                      </div>
+                      <div className="h-44 relative flex items-center justify-center">
+                        {analiticoDistribucionChartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={analiticoDistribucionChartData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={35}
+                                outerRadius={60}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {analiticoDistribucionChartData.map((entry, index) => (
+                                  <Cell key={`an-dst-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(val: any) => [formatQuetzales(Number(val)), 'Monto']}
+                                contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                              />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                        ) : <span className="text-xs text-slate-400">Sin datos</span>}
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-3 pt-1 border-t border-slate-100 text-[10px]">
+                        {analiticoDistribucionChartData.map((d, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-slate-600 font-medium">{d.name}: {formatQuetzales(d.value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Gráfica 2: Semáforo de Renglones */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          Semáforo Oficial de Salud Presupuestaria
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                          {analiticoSaludStats.total} Renglones
+                        </span>
+                      </div>
+                      <div className="h-44 relative flex items-center justify-center">
+                        {analiticoSemaforoChartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={analiticoSemaforoChartData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={35}
+                                outerRadius={60}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {analiticoSemaforoChartData.map((entry, index) => (
+                                  <Cell key={`an-sem-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(val: any) => [`${val} Renglones`, 'Estado']}
+                                contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                              />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                        ) : <span className="text-xs text-slate-400">Sin datos</span>}
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-3 pt-1 border-t border-slate-100 text-[10px]">
+                        <div className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span className="text-slate-600 font-medium">Disponibles: {analiticoSaludStats.saludable}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                          <span className="text-slate-600 font-medium">Alerta Preventiva: {analiticoSaludStats.alerta}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-rose-500" />
+                          <span className="text-slate-600 font-medium">Sin Saldo / Déficit: {analiticoSaludStats.deficit}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            {/* Barra de Filtros y Búsqueda en Tiempo Real */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs print:hidden">
+              <div className="relative w-full sm:w-80">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar renglón por código o nombre..."
+                  value={budgetRenglonSearch}
+                  onChange={(e) => setBudgetRenglonSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+                <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <select
+                  value={budgetGroupFilter}
+                  onChange={(e) => setBudgetGroupFilter(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="todos">Todos los Grupos Presupuestarios</option>
+                  <option value="100">Grupo 100 - Servicios No Personales</option>
+                  <option value="200">Grupo 200 - Materiales y Suministros</option>
+                  <option value="300">Grupo 300 - Propiedad, Planta y Equipo</option>
+                </select>
+
+                <select
+                  value={budgetStatusFilter}
+                  onChange={(e) => setBudgetStatusFilter(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="todos">Todos los Estados</option>
+                  <option value="Con Disponibilidad">Con Disponibilidad</option>
+                  <option value="Alerta Disponibilidad Baja">Alerta Disponibilidad</option>
+                  <option value="Sin Disponibilidad">Sin Disponibilidad</option>
+                </select>
+
+                <span className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] font-mono font-bold text-slate-700 shrink-0">
+                  {analiticoRenglonesData.length} renglones
+                </span>
+              </div>
+            </div>
+
+            {/* Matriz Completa de Disponibilidad Presupuestaria Analítica */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+              <table className="w-full text-left text-xs text-slate-800 border-collapse">
+                <thead className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white font-bold uppercase text-[9.5px] border-b-2 border-blue-800 shadow-xs">
+                  <tr>
+                    <th className="p-2 border-b border-indigo-900/60 text-center text-white">Renglón</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-white">Nombre del Renglón</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-center text-white">Grupo</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">P. Inicial</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Modif. (±)</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">P. Vigente</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Pagado Rebaja</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Disp. Real</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Comprometido</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Disp. Proyectado</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-center text-white">% Usado</th>
+                    <th className="p-2 border-b border-indigo-900/60 text-center text-white">Estatus</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[11px]">
+                  {analiticoRenglonesData.length > 0 ? (
+                    analiticoRenglonesData.map((l) => {
+                      const countPurchases = basePurchases.filter(p => p.renglonPresupuestario === l.renglonPresupuestario).length;
+                      return (
+                        <tr key={l.id || l.renglonPresupuestario} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-2 text-center font-mono font-bold text-slate-900 whitespace-nowrap">
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200">
+                              R-{l.renglonPresupuestario}
+                            </span>
+                          </td>
+                          <td className="p-2 font-medium text-slate-900">
+                            <div className="flex items-center gap-1.5">
+                              <span>{l.nombreRenglon}</span>
+                              {countPurchases > 0 && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 font-mono font-normal">
+                                  {countPurchases} {countPurchases === 1 ? 'compra' : 'compras'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 text-center text-[10px] font-semibold text-slate-600 whitespace-nowrap">
+                            {l.grupoPresupuestario.replace('Grupo ', 'G-')}
+                          </td>
+                          <td className="p-2 text-right font-mono text-slate-700 whitespace-nowrap">
+                            {formatQuetzales(l.presupuestoInicial)}
+                          </td>
+                          <td className={`p-2 text-right font-mono whitespace-nowrap font-medium ${
+                            l.modificacionesAprobadas > 0 ? 'text-emerald-700' : l.modificacionesAprobadas < 0 ? 'text-rose-700' : 'text-slate-500'
+                          }`}>
+                            {l.modificacionesAprobadas > 0 ? `+${formatQuetzales(l.modificacionesAprobadas)}` : formatQuetzales(l.modificacionesAprobadas)}
+                          </td>
+                          <td className="p-2 text-right font-mono font-bold text-slate-900 whitespace-nowrap bg-slate-50/50">
+                            {formatQuetzales(l.presupuestoVigente)}
+                          </td>
+                          <td className="p-2 text-right font-mono font-semibold text-blue-700 whitespace-nowrap">
+                            {formatQuetzales(l.pagadoQueRebaja)}
+                          </td>
+                          <td className="p-2 text-right font-mono text-slate-700 whitespace-nowrap">
+                            {formatQuetzales(l.disponibleReal)}
+                          </td>
+                          <td className="p-2 text-right font-mono font-semibold text-amber-700 whitespace-nowrap">
+                            {formatQuetzales(l.comprometidoPendiente)}
+                          </td>
+                          <td className={`p-2 text-right font-mono font-bold whitespace-nowrap ${
+                            l.disponibleProyectado <= 0 ? 'text-rose-700 bg-rose-50/50' : 'text-emerald-700 bg-emerald-50/30'
+                          }`}>
+                            {formatQuetzales(l.disponibleProyectado)}
+                          </td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <span className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10.5px] ${
+                              l.porcentajeUsadoComprometido > 85 ? 'bg-rose-100 text-rose-800' :
+                              l.porcentajeUsadoComprometido > 50 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {l.porcentajeUsadoComprometido}%
+                            </span>
+                          </td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              l.estatusDisponibilidad === 'Con Disponibilidad' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                              l.disponibleProyectado <= 0 ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                              'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}>
+                              {l.estatusDisponibilidad === 'Con Disponibilidad' ? 'DISPONIBLE' : (l.disponibleProyectado <= 0 ? 'DÉFICIT' : 'ALERTA')}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={12} className="p-8 text-center text-slate-400">
+                        No se encontraron renglones presupuestarios que coincidan con los criterios de búsqueda.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot className="bg-slate-900 text-white font-bold text-[11px] border-t-2 border-blue-800">
+                  <tr>
+                    <td colSpan={3} className="p-2.5 text-left uppercase tracking-wide">
+                      TOTAL CONSOLIDADO OFICIAL ({analiticoRenglonesData.length} RENGLONES)
+                    </td>
+                    <td className="p-2.5 text-right font-mono whitespace-nowrap text-slate-200">
+                      {formatQuetzales(analiticoRenglonesTotals.inicial)}
+                    </td>
+                    <td className="p-2.5 text-right font-mono whitespace-nowrap text-slate-200">
+                      {analiticoRenglonesTotals.modificaciones >= 0 ? `+${formatQuetzales(analiticoRenglonesTotals.modificaciones)}` : formatQuetzales(analiticoRenglonesTotals.modificaciones)}
+                    </td>
+                    <td className="p-2.5 text-right font-mono whitespace-nowrap text-white text-xs">
+                      {formatQuetzales(analiticoRenglonesTotals.vigente)}
+                    </td>
+                    <td className="p-2.5 text-right font-mono whitespace-nowrap text-blue-300 text-xs">
+                      {formatQuetzales(analiticoRenglonesTotals.pagado)}
+                    </td>
+                    <td className="p-2.5 text-right font-mono whitespace-nowrap text-slate-200">
+                      {formatQuetzales(analiticoRenglonesTotals.disponibleReal)}
+                    </td>
+                    <td className="p-2.5 text-right font-mono whitespace-nowrap text-amber-300 text-xs">
+                      {formatQuetzales(analiticoRenglonesTotals.comprometido)}
+                    </td>
+                    <td className="p-2.5 text-right font-mono whitespace-nowrap text-emerald-400 text-xs">
+                      {formatQuetzales(analiticoRenglonesTotals.disponibleProyectado)}
+                    </td>
+                    <td className="p-2.5 text-center font-mono text-amber-300">
+                      {analiticoRenglonesTotals.vigente > 0 ? `${(((analiticoRenglonesTotals.pagado + analiticoRenglonesTotals.comprometido) / analiticoRenglonesTotals.vigente) * 100).toFixed(1)}%` : '0%'}
+                    </td>
+                    <td className="p-2.5 text-center text-slate-300 text-[10px]">
+                      CONSOLIDADO
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Banner Informativo y Resumen */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-900 text-white flex items-center justify-center font-bold">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 uppercase tracking-wide">
+                    Certificación de Disponibilidad Presupuestaria
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Saldos auditables emitidos por la Gerencia de Informática con respaldo de las formas F56-e y NOG institucionales.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-6 text-right">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Gasto Afectado</span>
+                  <span className="text-sm font-bold font-mono text-blue-700">{formatQuetzales(analiticoRenglonesTotals.totalGasto)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-emerald-600 block">Saldo Libre Proyectado</span>
+                  <span className="text-base font-bold font-mono text-emerald-800">{formatQuetzales(analiticoRenglonesTotals.disponibleProyectado)}</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* VISTA: REPORTE POR GRUPO PRESUPUESTARIO (GRUPOS 100, 200, 300) */}
+        {/* ========================================================= */}
+        {selectedReportType === 'reporte_grupo' && (
+          <div className="space-y-6">
+            
+            {/* Panel Ejecutivo de Decisión por Grupo Presupuestario */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-purple-100 text-purple-700">
+                    <FolderTree className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                        Informe Consolidado por Grupo Presupuestario
+                      </h4>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300">
+                        {dataReporteGrupo.length} Grupos Institucionales
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Consolidación jerárquica de techos, gasto pagado, compromisos y saldos proyectados por Grupo Oficial
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowReporteGrupoCharts(!showReporteGrupoCharts)}
+                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-center shadow-2xs"
+                >
+                  {showReporteGrupoCharts ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ocultar Gráficas</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ver Gráficas y KPIs</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Contenido Desplegable de Gráficas y KPIs */}
+              {showReporteGrupoCharts && (
+                <div className="space-y-5 pt-1">
+                  
+                  {/* Tarjetas KPI de Resumen de Grupos */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    <div className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Techo Vigente Consolidado
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono block mt-0.5">
+                        {formatQuetzales(totalesReporteGrupos.vigente)}
+                      </span>
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        {totalesReporteGrupos.renglonesCount} Renglones en total
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-purple-200 p-3.5 rounded-xl shadow-2xs bg-purple-50/20">
+                      <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block">
+                        Gasto Total Ejecutado
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-purple-900 font-mono block mt-0.5">
+                        {formatQuetzales(totalesReporteGrupos.gastoTotal)}
+                      </span>
+                      <span className="text-[11px] text-purple-600 mt-1 block">
+                        Pagado: {formatQuetzales(totalesReporteGrupos.pagado)}
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-amber-200 p-3.5 rounded-xl shadow-2xs bg-amber-50/20">
+                      <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
+                        Comprometido en Proceso
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-amber-900 font-mono block mt-0.5">
+                        {formatQuetzales(totalesReporteGrupos.comprometido)}
+                      </span>
+                      <span className="text-[11px] text-amber-600 mt-1 block">
+                        {totalesReporteGrupos.comprasCount} Eventos de compra
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-emerald-200 p-3.5 rounded-xl shadow-2xs bg-emerald-50/20">
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+                        Saldo Disponible Proyectado
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-emerald-900 font-mono block mt-0.5">
+                        {formatQuetzales(totalesReporteGrupos.disponibleProyectado)}
+                      </span>
+                      <span className="text-[11px] text-emerald-600 mt-1 block">
+                        {totalesReporteGrupos.vigente > 0 ? `${((totalesReporteGrupos.gastoTotal / totalesReporteGrupos.vigente) * 100).toFixed(1)}% ejecutado` : '0%'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Fila de 2 Gráficas Circulares */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Gráfica 1: Techo Vigente por Grupo */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                          <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                          Techo Presupuestario Vigente por Grupo
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                          {formatQuetzales(totalesReporteGrupos.vigente)}
+                        </span>
+                      </div>
+                      <div className="h-44 relative flex items-center justify-center">
+                        {grupoVigenteChartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={grupoVigenteChartData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={35}
+                                outerRadius={60}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {grupoVigenteChartData.map((entry, index) => (
+                                  <Cell key={`grp-vig-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(val: any) => [formatQuetzales(Number(val)), 'Techo Vigente']}
+                                contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                              />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                        ) : <span className="text-xs text-slate-400">Sin datos</span>}
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-3 pt-1 border-t border-slate-100 text-[10px]">
+                        {grupoVigenteChartData.map((d, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-slate-600 font-medium">{d.fullName.split('-')[0].trim()}: {formatQuetzales(d.value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Gráfica 2: Gasto Total Ejecutado por Grupo */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                          <PieChartIcon className="w-3.5 h-3.5 text-purple-600" />
+                          Gasto Total Ejecutado por Grupo
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">
+                          {formatQuetzales(totalesReporteGrupos.gastoTotal)}
+                        </span>
+                      </div>
+                      <div className="h-44 relative flex items-center justify-center">
+                        {grupoGastoChartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={grupoGastoChartData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={35}
+                                outerRadius={60}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {grupoGastoChartData.map((entry, index) => (
+                                  <Cell key={`grp-gst-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(val: any) => [formatQuetzales(Number(val)), 'Gasto Total']}
+                                contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                              />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                        ) : <span className="text-xs text-slate-400">Sin datos</span>}
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-3 pt-1 border-t border-slate-100 text-[10px]">
+                        {grupoGastoChartData.map((d, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-slate-600 font-medium">{d.fullName.split('-')[0].trim()}: {formatQuetzales(d.value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            {/* Tabla Comparativa Consolidada de Grupos Presupuestarios */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+              <table className="w-full text-left text-xs text-slate-800 border-collapse">
+                <thead className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white font-bold uppercase text-[9.5px] border-b-2 border-blue-800 shadow-xs">
+                  <tr>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-white">Grupo Presupuestario</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-center text-white">Renglones</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-right font-mono text-white">P. Inicial</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-right font-mono text-white">Modificaciones (±)</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-right font-mono text-white">P. Vigente</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-right font-mono text-white">Pagado Rebaja</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-right font-mono text-white">Comprometido</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-right font-mono text-white">Gasto Total</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-right font-mono text-white">Disp. Proyectado</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-center text-white">% Ejecución</th>
+                    <th className="p-2.5 border-b border-indigo-900/60 text-center text-white">Eventos</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-[11.5px]">
+                  {dataReporteGrupo.map((grp) => (
+                    <tr key={grp.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-2.5 font-bold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <FolderTree className="w-4 h-4 text-purple-600" />
+                          <span>{grp.nombreGrupo}</span>
+                        </div>
+                      </td>
+                      <td className="p-2.5 text-center font-mono font-bold text-slate-700">
+                        {grp.renglonesCount}
+                      </td>
+                      <td className="p-2.5 text-right font-mono text-slate-700 whitespace-nowrap">
+                        {formatQuetzales(grp.presupuestoInicial)}
+                      </td>
+                      <td className={`p-2.5 text-right font-mono whitespace-nowrap font-medium ${
+                        grp.modificaciones > 0 ? 'text-emerald-700' : grp.modificaciones < 0 ? 'text-rose-700' : 'text-slate-500'
+                      }`}>
+                        {grp.modificaciones > 0 ? `+${formatQuetzales(grp.modificaciones)}` : formatQuetzales(grp.modificaciones)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono font-black text-slate-900 whitespace-nowrap bg-slate-50/50">
+                        {formatQuetzales(grp.presupuestoVigente)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono font-semibold text-blue-700 whitespace-nowrap">
+                        {formatQuetzales(grp.pagadoQueRebaja)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono font-semibold text-amber-700 whitespace-nowrap">
+                        {formatQuetzales(grp.comprometidoPendiente)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono font-bold text-purple-900 whitespace-nowrap bg-purple-50/30">
+                        {formatQuetzales(grp.gastoTotal)}
+                      </td>
+                      <td className={`p-2.5 text-right font-mono font-bold whitespace-nowrap ${
+                        grp.disponibleProyectado <= 0 ? 'text-rose-700 bg-rose-50/50' : 'text-emerald-700 bg-emerald-50/30'
+                      }`}>
+                        {formatQuetzales(grp.disponibleProyectado)}
+                      </td>
+                      <td className="p-2.5 text-center whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
+                          grp.ejecucionPct > 85 ? 'bg-rose-100 text-rose-800' :
+                          grp.ejecucionPct > 50 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {grp.ejecucionPct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-center font-mono font-bold text-slate-600">
+                        {grp.comprasCount}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-900 text-white font-bold text-xs border-t-2 border-purple-800">
+                  <tr>
+                    <td className="p-3 text-left uppercase tracking-wide">
+                      GRAN TOTAL INSTITUCIONAL ({dataReporteGrupo.length} GRUPOS)
+                    </td>
+                    <td className="p-3 text-center font-mono text-purple-300">
+                      {totalesReporteGrupos.renglonesCount}
+                    </td>
+                    <td className="p-3 text-right font-mono whitespace-nowrap text-slate-200">
+                      {formatQuetzales(totalesReporteGrupos.inicial)}
+                    </td>
+                    <td className="p-3 text-right font-mono whitespace-nowrap text-slate-200">
+                      {totalesReporteGrupos.modificaciones >= 0 ? `+${formatQuetzales(totalesReporteGrupos.modificaciones)}` : formatQuetzales(totalesReporteGrupos.modificaciones)}
+                    </td>
+                    <td className="p-3 text-right font-mono whitespace-nowrap text-white text-sm">
+                      {formatQuetzales(totalesReporteGrupos.vigente)}
+                    </td>
+                    <td className="p-3 text-right font-mono whitespace-nowrap text-blue-300">
+                      {formatQuetzales(totalesReporteGrupos.pagado)}
+                    </td>
+                    <td className="p-3 text-right font-mono whitespace-nowrap text-amber-300">
+                      {formatQuetzales(totalesReporteGrupos.comprometido)}
+                    </td>
+                    <td className="p-3 text-right font-mono whitespace-nowrap text-purple-300 text-sm">
+                      {formatQuetzales(totalesReporteGrupos.gastoTotal)}
+                    </td>
+                    <td className="p-3 text-right font-mono whitespace-nowrap text-emerald-400 text-sm">
+                      {formatQuetzales(totalesReporteGrupos.disponibleProyectado)}
+                    </td>
+                    <td className="p-3 text-center font-mono text-amber-400">
+                      {totalesReporteGrupos.vigente > 0 ? `${((totalesReporteGrupos.gastoTotal / totalesReporteGrupos.vigente) * 100).toFixed(1)}%` : '0%'}
+                    </td>
+                    <td className="p-3 text-center font-mono text-slate-300">
+                      {totalesReporteGrupos.comprasCount}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Desglose Jerárquico Expandible por Grupo Presupuestario */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <ListTree className="w-4 h-4 text-purple-600" />
+                  Desglose Detallado de Renglones por Grupo Presupuestario
+                </h4>
+                <span className="text-[11px] text-slate-500">
+                  Haga clic en cada grupo para expandir o contraer sus renglones y disponibilidades
+                </span>
+              </div>
+
+              {dataReporteGrupo.map((grp) => {
+                const isExpanded = expandedReportGroups[grp.id] !== false;
+                return (
+                  <div key={grp.id} className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                    {/* Cabecera del Grupo Expandible */}
+                    <div
+                      onClick={() => setExpandedReportGroups(prev => ({ ...prev, [grp.id]: !isExpanded }))}
+                      className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-3.5 flex items-center justify-between border-b-2 border-purple-800 cursor-pointer select-none"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <FolderTree className="w-4 h-4 text-purple-300" />
+                        <span className="font-bold text-sm tracking-wide text-white">
+                          {grp.nombreGrupo}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-900/80 text-purple-200 font-mono">
+                          {grp.renglones.length} renglones • {grp.comprasCount} compras
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <span className="text-[10px] text-purple-200 block">P. Vigente / Disp. Proyectado</span>
+                          <span className="font-mono font-bold text-white text-xs">
+                            {formatQuetzales(grp.presupuestoVigente)} / <span className="text-emerald-400">{formatQuetzales(grp.disponibleProyectado)}</span>
+                          </span>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-purple-300" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-purple-300" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Tabla de Renglones del Grupo */}
+                    {isExpanded && (
+                      <div className="overflow-x-auto bg-white">
+                        <table className="w-full text-left text-xs text-slate-800 border-collapse">
+                          <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[9.5px] border-b border-slate-200">
+                            <tr>
+                              <th className="p-2 text-center">Renglón</th>
+                              <th className="p-2">Nombre del Renglón</th>
+                              <th className="p-2 text-right font-mono">P. Vigente</th>
+                              <th className="p-2 text-right font-mono">Pagado Rebaja</th>
+                              <th className="p-2 text-right font-mono">Comprometido</th>
+                              <th className="p-2 text-right font-mono">Gasto Total</th>
+                              <th className="p-2 text-right font-mono">Disp. Proyectado</th>
+                              <th className="p-2 text-center">% Usado</th>
+                              <th className="p-2 text-center">Estatus</th>
+                              <th className="p-2 text-center">Compras</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-[11px]">
+                            {grp.renglones.map((l) => (
+                              <tr key={l.id || l.renglonPresupuestario} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-2 text-center font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-900 border border-purple-200">
+                                    R-{l.renglonPresupuestario}
+                                  </span>
+                                </td>
+                                <td className="p-2 font-medium text-slate-800">
+                                  {l.nombreRenglon}
+                                </td>
+                                <td className="p-2 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  {formatQuetzales(l.presupuestoVigente)}
+                                </td>
+                                <td className="p-2 text-right font-mono font-semibold text-blue-700 whitespace-nowrap">
+                                  {formatQuetzales(l.pagadoQueRebaja)}
+                                </td>
+                                <td className="p-2 text-right font-mono font-semibold text-amber-700 whitespace-nowrap">
+                                  {formatQuetzales(l.comprometidoPendiente)}
+                                </td>
+                                <td className="p-2 text-right font-mono font-bold text-purple-900 whitespace-nowrap bg-purple-50/20">
+                                  {formatQuetzales(l.gastoTotal)}
+                                </td>
+                                <td className={`p-2 text-right font-mono font-bold whitespace-nowrap ${
+                                  l.disponibleProyectado <= 0 ? 'text-rose-700 bg-rose-50/50' : 'text-emerald-700 bg-emerald-50/30'
+                                }`}>
+                                  {formatQuetzales(l.disponibleProyectado)}
+                                </td>
+                                <td className="p-2 text-center whitespace-nowrap">
+                                  <span className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10.5px] ${
+                                    l.porcentajeUsadoComprometido > 85 ? 'bg-rose-100 text-rose-800' :
+                                    l.porcentajeUsadoComprometido > 50 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                                  }`}>
+                                    {l.porcentajeUsadoComprometido}%
+                                  </span>
+                                </td>
+                                <td className="p-2 text-center whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    l.estatusDisponibilidad === 'Con Disponibilidad' ? 'bg-emerald-100 text-emerald-800' :
+                                    l.disponibleProyectado <= 0 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {l.estatusDisponibilidad === 'Con Disponibilidad' ? 'DISPONIBLE' : (l.disponibleProyectado <= 0 ? 'DÉFICIT' : 'ALERTA')}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-center font-mono font-bold text-slate-600">
+                                  {l.comprasCount}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-slate-50 font-bold text-[11px] border-t border-slate-200">
+                            <tr>
+                              <td colSpan={2} className="p-2 text-left text-slate-700">
+                                SUBTOTAL {grp.nombreGrupo.toUpperCase()} ({grp.renglones.length} RENGLONES):
+                              </td>
+                              <td className="p-2 text-right font-mono text-slate-900 whitespace-nowrap">
+                                {formatQuetzales(grp.presupuestoVigente)}
+                              </td>
+                              <td className="p-2 text-right font-mono text-blue-700 whitespace-nowrap">
+                                {formatQuetzales(grp.pagadoQueRebaja)}
+                              </td>
+                              <td className="p-2 text-right font-mono text-amber-700 whitespace-nowrap">
+                                {formatQuetzales(grp.comprometidoPendiente)}
+                              </td>
+                              <td className="p-2 text-right font-mono text-purple-900 whitespace-nowrap">
+                                {formatQuetzales(grp.gastoTotal)}
+                              </td>
+                              <td className="p-2 text-right font-mono text-emerald-700 whitespace-nowrap">
+                                {formatQuetzales(grp.disponibleProyectado)}
+                              </td>
+                              <td className="p-2 text-center font-mono text-slate-800">
+                                {grp.ejecucionPct.toFixed(1)}%
+                              </td>
+                              <td className="p-2 text-center text-slate-600 text-[10px]">
+                                SUBTOTAL
+                              </td>
+                              <td className="p-2 text-center font-mono text-slate-700">
+                                {grp.comprasCount}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* VISTA: DASHBOARD DE MÉTRICAS DE EJECUCIÓN PRESUPUESTARIA (GRÁFICOS DE DONA) */}
+        {/* ========================================================= */}
+        {selectedReportType === 'metricas_ejecucion' && (
+          <div className="space-y-6">
+            
+            {/* Panel Ejecutivo Superior con KPIs y Donas Globales */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800">
+                    <PieChartIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                        Dashboard de Métricas de Ejecución Presupuestaria
+                      </h4>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        {totalesMetricasEjecucion.totalRenglones} Renglones Institucionales
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Visualización analítica mediante gráficos de dona del porcentaje de ejecución versus el disponible consolidado por cada renglón presupuestario
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMetricasCharts(!showMetricasCharts)}
+                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-center shadow-2xs"
+                >
+                  {showMetricasCharts ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ocultar Resumen Global</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ver Resumen Global & Donas</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Contenido Desplegable Global */}
+              {showMetricasCharts && (
+                <div className="space-y-5 pt-1">
+                  
+                  {/* Tarjetas KPI de Resumen Institucional */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    <div className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Techo Vigente Consolidado
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-slate-900 font-mono block mt-0.5">
+                        {formatQuetzales(totalesMetricasEjecucion.vigente)}
+                      </span>
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        Inicial: {formatQuetzales(totalesMetricasEjecucion.inicial)}
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-blue-200 p-3.5 rounded-xl shadow-2xs bg-blue-50/20">
+                      <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
+                        Total Ejecutado Consolidado
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-blue-900 font-mono block mt-0.5">
+                        {formatQuetzales(totalesMetricasEjecucion.gastoTotal)}
+                      </span>
+                      <span className="text-[11px] text-blue-600 mt-1 block font-semibold">
+                        {totalesMetricasEjecucion.pctGlobalEjecucion.toFixed(1)}% tasa de ejecución global
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-emerald-200 p-3.5 rounded-xl shadow-2xs bg-emerald-50/20">
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+                        Saldo Disponible Consolidado
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-emerald-900 font-mono block mt-0.5">
+                        {formatQuetzales(totalesMetricasEjecucion.disponibleProyectado)}
+                      </span>
+                      <span className="text-[11px] text-emerald-600 mt-1 block font-semibold">
+                        {totalesMetricasEjecucion.pctGlobalDisponible.toFixed(1)}% saldo libre proyectado
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-purple-200 p-3.5 rounded-xl shadow-2xs bg-purple-50/20">
+                      <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block">
+                        Gobernanza de Adquisiciones
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-purple-900 font-mono block mt-0.5">
+                        {totalesMetricasEjecucion.comprasCount} Eventos
+                      </span>
+                      <span className="text-[11px] text-purple-600 mt-1 block">
+                        {totalesMetricasEjecucion.totalRenglones} renglones evaluados
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Fila de 2 Gráficos de Dona Consolidados */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Dona 1: Ejecución Presupuestaria Consolidada */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                          <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                          Ejecución Presupuestaria Consolidada
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                          {totalesMetricasEjecucion.pctGlobalEjecucion.toFixed(1)}% Ejecutado
+                        </span>
+                      </div>
+
+                      <div className="h-44 relative flex items-center justify-center">
+                        {totalesMetricasEjecucion.donutGlobal.length > 0 ? (
+                          <>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={totalesMetricasEjecucion.donutGlobal}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={42}
+                                  outerRadius={64}
+                                  paddingAngle={3}
+                                  dataKey="value"
+                                >
+                                  {totalesMetricasEjecucion.donutGlobal.map((entry, index) => (
+                                    <Cell key={`global-donut-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip
+                                  formatter={(val: any) => [formatQuetzales(Number(val)), 'Monto']}
+                                  contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                                />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-lg font-black font-mono text-slate-900 leading-none">
+                                {totalesMetricasEjecucion.pctGlobalEjecucion.toFixed(1)}%
+                              </span>
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 mt-0.5">
+                                Ejecutado
+                              </span>
+                            </div>
+                          </>
+                        ) : <span className="text-xs text-slate-400">Sin datos</span>}
+                      </div>
+
+                      <div className="flex flex-wrap justify-center gap-3 pt-1 border-t border-slate-100 text-[10px]">
+                        {totalesMetricasEjecucion.donutGlobal.map((d, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-slate-600 font-medium">
+                              {d.name}: {formatQuetzales(d.value)} ({d.pct?.toFixed(1)}%)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dona 2: Semáforo de Renglones por Nivel de Ejecución */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                          <Activity className="w-3.5 h-3.5 text-emerald-600" />
+                          Distribución de Renglones por Nivel de Ejecución
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                          {totalesMetricasEjecucion.totalRenglones} Renglones
+                        </span>
+                      </div>
+
+                      <div className="h-44 relative flex items-center justify-center">
+                        {totalesMetricasEjecucion.semaforoDonutData.length > 0 ? (
+                          <>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={totalesMetricasEjecucion.semaforoDonutData}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={42}
+                                  outerRadius={64}
+                                  paddingAngle={3}
+                                  dataKey="value"
+                                >
+                                  {totalesMetricasEjecucion.semaforoDonutData.map((entry, index) => (
+                                    <Cell key={`sem-donut-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip
+                                  formatter={(val: any) => [`${val} Renglones`, 'Cantidad']}
+                                  contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                                />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-lg font-black font-mono text-slate-900 leading-none">
+                                {totalesMetricasEjecucion.totalRenglones}
+                              </span>
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 mt-0.5">
+                                Renglones
+                              </span>
+                            </div>
+                          </>
+                        ) : <span className="text-xs text-slate-400">Sin datos</span>}
+                      </div>
+
+                      <div className="flex flex-wrap justify-center gap-3 pt-1 border-t border-slate-100 text-[10px]">
+                        {totalesMetricasEjecucion.semaforoDonutData.map((d, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-slate-600 font-medium">
+                              {d.name}: {d.value} ({((d.value / totalesMetricasEjecucion.totalRenglones) * 100).toFixed(0)}%)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            {/* Barra de Herramientas, Filtros Dinámicos y Controles de Vista */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs print:hidden">
+              <div className="flex items-center gap-2 flex-1 w-full lg:w-auto">
+                {/* Búsqueda en Vivo */}
+                <div className="relative flex-1 sm:w-72">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar renglón (ej. 158, informática)..."
+                    value={metricasSearch}
+                    onChange={(e) => setMetricasSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  {metricasSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setMetricasSearch('')}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtro por Grupo */}
+                <select
+                  value={metricasGroupFilter}
+                  onChange={(e) => setMetricasGroupFilter(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                >
+                  <option value="todos">Todos los Grupos</option>
+                  <option value="100">Grupo 100 - Servicios</option>
+                  <option value="200">Grupo 200 - Materiales</option>
+                  <option value="300">Grupo 300 - Activos</option>
+                </select>
+
+                {/* Filtro por Rango de Ejecución */}
+                <select
+                  value={metricasTierFilter}
+                  onChange={(e) => setMetricasTierFilter(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer hidden sm:block"
+                >
+                  <option value="todos">Todos los Niveles</option>
+                  <option value="alta">Alta Ejecución (&gt; 85%)</option>
+                  <option value="media">Media Ejecución (50 - 85%)</option>
+                  <option value="baja">Baja Ejecución (&lt; 50%)</option>
+                  <option value="alerta">Con Alerta o Déficit</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2.5 justify-between lg:justify-end flex-wrap sm:flex-nowrap">
+                {/* Selector de Ordenamiento */}
+                <div className="flex items-center gap-1.5">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  <select
+                    value={metricasSortBy}
+                    onChange={(e: any) => setMetricasSortBy(e.target.value)}
+                    className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="renglon">Por Renglón (Ascendente)</option>
+                    <option value="mayor_ejecucion">Mayor % Ejecución</option>
+                    <option value="menor_ejecucion">Menor % Ejecución</option>
+                    <option value="mayor_vigente">Mayor Techo Vigente</option>
+                    <option value="mayor_disponible">Mayor Saldo Disponible</option>
+                  </select>
+                </div>
+
+                {/* Conmutador de Modo de Vista */}
+                <div className="flex items-center bg-white border border-slate-300 rounded-lg p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setMetricasViewMode('grid')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors ${
+                      metricasViewMode === 'grid'
+                        ? 'bg-emerald-900 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="Vista en cuadrícula de donas individuales"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Donas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMetricasViewMode('table')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors ${
+                      metricasViewMode === 'table'
+                        ? 'bg-emerald-900 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="Vista en tabla comparativa con micro donas"
+                  >
+                    <TableIcon className="w-3.5 h-3.5" />
+                    <span>Tabla</span>
+                  </button>
+                </div>
+
+                <span className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] font-mono font-bold text-slate-700 shrink-0">
+                  {filteredMetricasEjecucionData.length} renglones
+                </span>
+              </div>
+            </div>
+
+            {/* VISTA 1: CUADRÍCULA DE DONAS POR CADA RENGLÓN PRESUPUESTARIO */}
+            {metricasViewMode === 'grid' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredMetricasEjecucionData.length > 0 ? (
+                  filteredMetricasEjecucionData.map((item) => (
+                    <div
+                      key={item.renglonPresupuestario}
+                      className="bg-white rounded-xl border border-slate-200 hover:border-emerald-500 hover:shadow-md transition-all p-4 flex flex-col justify-between"
+                    >
+                      {/* Cabecera de la Tarjeta */}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-black text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200">
+                              R-{item.renglonPresupuestario}
+                            </span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                              {item.grupoPresupuestario.replace('Grupo ', 'G-')}
+                            </span>
+                          </div>
+                          
+                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold flex items-center gap-1 ${
+                            item.estatusDisponibilidad === 'Con Disponibilidad' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                            item.disponibleProyectado <= 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                            'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              item.estatusDisponibilidad === 'Con Disponibilidad' ? 'bg-emerald-500' :
+                              item.disponibleProyectado <= 0 ? 'bg-rose-500' : 'bg-amber-500'
+                            }`} />
+                            {item.estatusDisponibilidad === 'Con Disponibilidad' ? 'Disponible' : (item.disponibleProyectado <= 0 ? 'Déficit' : 'Alerta')}
+                          </span>
+                        </div>
+
+                        <h4 className="text-xs font-bold text-slate-800 line-clamp-2 min-h-[32px] leading-tight" title={item.nombreRenglon}>
+                          {item.nombreRenglon}
+                        </h4>
+                      </div>
+
+                      {/* Gráfico de Dona con Porcentaje Central */}
+                      <div className="my-3 relative flex items-center justify-center">
+                        <div className="w-full h-36 relative">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={item.donutData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={36}
+                                outerRadius={52}
+                                paddingAngle={2}
+                                dataKey="value"
+                              >
+                                {item.donutData.map((entry, index) => (
+                                  <Cell key={`donut-${item.renglonPresupuestario}-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(val: any) => [formatQuetzales(Number(val)), 'Monto']}
+                                contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '5px 8px', backgroundColor: '#0f172a', color: '#fff' }}
+                              />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+
+                          {/* Centro de la Dona: Porcentaje de Ejecución */}
+                          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                            <span className={`text-base font-black font-mono tracking-tight leading-none ${
+                              item.pctEjecucion > 85 ? 'text-rose-600' :
+                              item.pctEjecucion > 50 ? 'text-amber-600' : 'text-emerald-600'
+                            }`}>
+                              {item.pctEjecucion.toFixed(1)}%
+                            </span>
+                            <span className="text-[8px] uppercase tracking-wider font-bold text-slate-400 mt-0.5">
+                              Ejecutado
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Métricas Clave y Comparativa Ejecución vs Disponible */}
+                      <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
+                        {/* Comparativa Directa */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10.5px]">
+                            <span className="font-semibold text-slate-700 flex items-center gap-1.5 truncate">
+                              <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                              <span className="truncate">Ejecutado:</span>
+                              <strong className="text-slate-900 font-mono">{formatQuetzales(item.gastoTotal)}</strong>
+                            </span>
+                            <span className="font-bold font-mono text-blue-700 shrink-0">
+                              {item.pctEjecucion.toFixed(1)}%
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10.5px]">
+                            <span className="font-semibold text-slate-700 flex items-center gap-1.5 truncate">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${item.disponibleProyectado <= 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                              <span className="truncate">Disponible:</span>
+                              <strong className={`font-mono ${item.disponibleProyectado <= 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                                {formatQuetzales(item.disponibleProyectado)}
+                              </strong>
+                            </span>
+                            <span className={`font-bold font-mono shrink-0 ${item.disponibleProyectado <= 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                              {item.pctDisponible.toFixed(1)}%
+                            </span>
+                          </div>
+
+                          {/* Barra de progreso comparativa dual apilada */}
+                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
+                            <div 
+                              className="h-full bg-blue-600 transition-all" 
+                              style={{ width: `${Math.min(100, item.pctEjecucion)}%` }} 
+                              title={`Ejecutado: ${item.pctEjecucion.toFixed(1)}%`}
+                            />
+                            <div 
+                              className={`h-full transition-all ${item.disponibleProyectado <= 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} 
+                              style={{ width: `${Math.min(100 - Math.min(100, item.pctEjecucion), Math.max(0, item.pctDisponible))}%` }} 
+                              title={`Disponible: ${item.pctDisponible.toFixed(1)}%`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Desglose Contable */}
+                        <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] bg-slate-50 p-2 rounded-lg border border-slate-100 font-mono">
+                          <div>
+                            <span className="text-[9px] font-normal text-slate-400 block font-sans">P. Vigente</span>
+                            <span className="font-bold text-slate-800">{formatQuetzales(item.vigente)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-normal text-slate-400 block font-sans">Disp. Real</span>
+                            <span className="font-semibold text-slate-700">{formatQuetzales(item.disponibleReal)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-normal text-blue-600 block font-sans">Pagado</span>
+                            <span className="font-medium text-blue-700">{formatQuetzales(item.pagado)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-normal text-amber-600 block font-sans">Comprometido</span>
+                            <span className="font-medium text-amber-700">{formatQuetzales(item.comprometido)}</span>
+                          </div>
+                        </div>
+
+                        {/* Pie de Tarjeta con Adquisiciones Asociadas */}
+                        <div className="flex items-center justify-between pt-1 text-[10px] text-slate-500">
+                          <span className="font-mono text-slate-600">
+                            {item.comprasCount} {item.comprasCount === 1 ? 'adquisición F56-e' : 'adquisiciones F56-e'}
+                          </span>
+                          <span className="font-medium text-slate-600">
+                            Inicial: {formatQuetzales(item.inicial)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-full p-10 text-center bg-white rounded-xl border border-slate-200 text-slate-400">
+                    No se encontraron renglones presupuestarios con los criterios seleccionados.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* VISTA 2: TABLA COMPARATIVA CON MINI DONAS EN CADA FILA */}
+            {metricasViewMode === 'table' && (
+              <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+                <table className="w-full text-left text-xs text-slate-800 border-collapse">
+                  <thead className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white font-bold uppercase text-[9.5px] border-b-2 border-emerald-600 shadow-xs">
+                    <tr>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">Renglón</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-white">Nombre del Renglón</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">Grupo</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">Gráfico Dona</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">P. Vigente</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Pagado Devengado</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Comprometido</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Total Ejecutado</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">% Ejecución</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-right font-mono text-white">Disp. Consolidado</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">% Disponible</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">Proporción</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">Estatus</th>
+                      <th className="p-2 border-b border-indigo-900/60 text-center text-white">Eventos</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-[11px] bg-white">
+                    {filteredMetricasEjecucionData.length > 0 ? (
+                      filteredMetricasEjecucionData.map((item) => (
+                        <tr key={item.renglonPresupuestario} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-2 text-center font-mono font-bold text-slate-900 whitespace-nowrap">
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200">
+                              R-{item.renglonPresupuestario}
+                            </span>
+                          </td>
+                          <td className="p-2 font-medium text-slate-900 max-w-xs truncate" title={item.nombreRenglon}>
+                            {item.nombreRenglon}
+                          </td>
+                          <td className="p-2 text-center text-[10px] font-semibold text-slate-600 whitespace-nowrap">
+                            {item.grupoPresupuestario.replace('Grupo ', 'G-')}
+                          </td>
+                          
+                          {/* Columna con Mini Gráfico de Dona SVG */}
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <div className="inline-flex items-center justify-center relative w-10 h-10">
+                              <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+                                {/* Círculo de fondo */}
+                                <path
+                                  className="text-slate-100"
+                                  strokeWidth="4"
+                                  stroke="currentColor"
+                                  fill="none"
+                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                />
+                                {/* Arco de Ejecución */}
+                                <path
+                                  className={item.pctEjecucion > 85 ? 'text-rose-500' : item.pctEjecucion > 50 ? 'text-amber-500' : 'text-blue-600'}
+                                  strokeDasharray={`${Math.min(100, item.pctEjecucion)}, 100`}
+                                  strokeWidth="4"
+                                  strokeLinecap="round"
+                                  stroke="currentColor"
+                                  fill="none"
+                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                />
+                              </svg>
+                              <span className="absolute font-mono text-[9px] font-bold text-slate-800">
+                                {item.pctEjecucion.toFixed(0)}%
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="p-2 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {formatQuetzales(item.vigente)}
+                          </td>
+                          <td className="p-2 text-right font-mono text-blue-700 whitespace-nowrap">
+                            {formatQuetzales(item.pagado)}
+                          </td>
+                          <td className="p-2 text-right font-mono text-amber-700 whitespace-nowrap">
+                            {formatQuetzales(item.comprometido)}
+                          </td>
+                          <td className="p-2 text-right font-mono font-bold text-purple-900 whitespace-nowrap bg-purple-50/20">
+                            {formatQuetzales(item.gastoTotal)}
+                          </td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <span className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10.5px] ${
+                              item.pctEjecucion > 85 ? 'bg-rose-100 text-rose-800' :
+                              item.pctEjecucion > 50 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {item.pctEjecucion.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className={`p-2 text-right font-mono font-bold whitespace-nowrap ${
+                            item.disponibleProyectado <= 0 ? 'text-rose-700 bg-rose-50/50' : 'text-emerald-700 bg-emerald-50/30'
+                          }`}>
+                            {formatQuetzales(item.disponibleProyectado)}
+                          </td>
+                          <td className="p-2 text-center font-mono font-bold text-emerald-800 whitespace-nowrap">
+                            {item.pctDisponible.toFixed(1)}%
+                          </td>
+                          <td className="p-2 text-center whitespace-nowrap w-24">
+                            <div className="h-2 w-20 bg-slate-100 rounded-full overflow-hidden flex mx-auto">
+                              <div 
+                                className="h-full bg-blue-600" 
+                                style={{ width: `${Math.min(100, item.pctEjecucion)}%` }} 
+                              />
+                              <div 
+                                className={`h-full ${item.disponibleProyectado <= 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} 
+                                style={{ width: `${Math.min(100 - Math.min(100, item.pctEjecucion), Math.max(0, item.pctDisponible))}%` }} 
+                              />
+                            </div>
+                          </td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              item.estatusDisponibilidad === 'Con Disponibilidad' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                              item.disponibleProyectado <= 0 ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                              'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}>
+                              {item.estatusDisponibilidad === 'Con Disponibilidad' ? 'DISPONIBLE' : (item.disponibleProyectado <= 0 ? 'DÉFICIT' : 'ALERTA')}
+                            </span>
+                          </td>
+                          <td className="p-2 text-center font-mono font-bold text-slate-600">
+                            {item.comprasCount}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={14} className="p-8 text-center text-slate-400">
+                          No se encontraron renglones presupuestarios coincidentes.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot className="bg-slate-900 text-white font-bold text-[11px] border-t-2 border-emerald-600">
+                    <tr>
+                      <td colSpan={4} className="p-2.5 text-left uppercase tracking-wide">
+                        TOTAL CONSOLIDADO ({filteredMetricasEjecucionData.length} RENGLONES)
+                      </td>
+                      <td className="p-2.5 text-right font-mono whitespace-nowrap text-white text-xs">
+                        {formatQuetzales(totalesMetricasEjecucion.vigente)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono whitespace-nowrap text-blue-300">
+                        {formatQuetzales(totalesMetricasEjecucion.pagado)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono whitespace-nowrap text-amber-300">
+                        {formatQuetzales(totalesMetricasEjecucion.comprometido)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono whitespace-nowrap text-purple-300 text-xs">
+                        {formatQuetzales(totalesMetricasEjecucion.gastoTotal)}
+                      </td>
+                      <td className="p-2.5 text-center font-mono text-amber-300">
+                        {totalesMetricasEjecucion.pctGlobalEjecucion.toFixed(1)}%
+                      </td>
+                      <td className="p-2.5 text-right font-mono whitespace-nowrap text-emerald-400 text-xs">
+                        {formatQuetzales(totalesMetricasEjecucion.disponibleProyectado)}
+                      </td>
+                      <td className="p-2.5 text-center font-mono text-emerald-300">
+                        {totalesMetricasEjecucion.pctGlobalDisponible.toFixed(1)}%
+                      </td>
+                      <td className="p-2.5 text-center text-slate-300 text-[10px]">
+                        GLOBAL
+                      </td>
+                      <td className="p-2.5 text-center text-slate-300 text-[10px]">
+                        CONSOLIDADO
+                      </td>
+                      <td className="p-2.5 text-center font-mono text-slate-200">
+                        {totalesMetricasEjecucion.comprasCount}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Banner Oficial Informativo y de Auditoría */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-900 text-white flex items-center justify-center font-bold">
+                  <PieChartIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 uppercase tracking-wide">
+                    Certificación de Métricas de Ejecución vs Disponibilidad
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Porcentajes y disponibilidades calculados automáticamente en base a las asignaciones oficiales y el cruce con los formularios F56-e y NOG.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-6 text-right">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Tasa Global Ejecutada</span>
+                  <span className="text-base font-bold font-mono text-blue-700">{totalesMetricasEjecucion.pctGlobalEjecucion.toFixed(1)}%</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-emerald-600 block">Saldo Libre Proyectado</span>
+                  <span className="text-base font-bold font-mono text-emerald-800">{formatQuetzales(totalesMetricasEjecucion.disponibleProyectado)}</span>
                 </div>
               </div>
             </div>

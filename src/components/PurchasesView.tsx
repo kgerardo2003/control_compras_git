@@ -76,7 +76,22 @@ export const PurchasesView: React.FC = () => {
   const [showOnlyImported, setShowOnlyImported] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<PurchaseRecord | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [modalInitialArea, setModalInitialArea] = useState<string>('todas');
+  const [modalInitialTab, setModalInitialTab] = useState<'porArea' | 'graficas' | 'configuracion'>('porArea');
   const [pdfToast, setPdfToast] = useState<string | null>(null);
+
+  const handleOpenExportByArea = (specificArea?: string) => {
+    const areaToSelect = specificArea || (filterArea !== 'todos' ? filterArea : (userAssignedArea && !isAdmin ? userAssignedArea : 'todas'));
+    setModalInitialArea(areaToSelect);
+    setModalInitialTab('porArea');
+    setIsPdfModalOpen(true);
+  };
+
+  const handleOpenGeneralPdf = () => {
+    setModalInitialArea(filterArea !== 'todos' ? filterArea : 'todas');
+    setModalInitialTab(filterArea !== 'todos' ? 'porArea' : 'graficas');
+    setIsPdfModalOpen(true);
+  };
 
   // Estados de selección múltiple y eliminación masiva
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -101,10 +116,11 @@ export const PurchasesView: React.FC = () => {
   const currentPurchases = useMemo(() => {
     if (!isAdmin) return rbacPurchases;
     if (filterArea === 'todos') return rbacPurchases;
+    const clean = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const targetArea = clean(filterArea);
     return rbacPurchases.filter(p => {
-      const pArea = (p.areaSolicitante || '').toLowerCase();
-      const targetArea = filterArea.toLowerCase();
-      return pArea.includes(targetArea) || targetArea.includes(pArea);
+      const pArea = clean(p.areaSolicitante || '');
+      return pArea === targetArea;
     });
   }, [rbacPurchases, isAdmin, filterArea]);
 
@@ -452,9 +468,20 @@ export const PurchasesView: React.FC = () => {
           )}
 
           <button
+            id="btn-export-purchases-by-area"
+            type="button"
+            onClick={() => handleOpenExportByArea()}
+            className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-bold border border-blue-300 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+            title="Exportar reporte de adquisiciones por área solicitante para enviar a cada departamento (incluye portada ejecutiva, KPIs y gráficas circulares)"
+          >
+            <Building2 className="w-3.5 h-3.5 text-blue-700" />
+            <span>Exportar por Área</span>
+          </button>
+
+          <button
             id="btn-export-purchases-pdf"
             type="button"
-            onClick={() => setIsPdfModalOpen(true)}
+            onClick={handleOpenGeneralPdf}
             className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-rose-800 text-xs font-bold border border-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
             title="Exportar la tabla actual a formato PDF con cabecera institucional y control de auditoría"
           >
@@ -726,7 +753,7 @@ export const PurchasesView: React.FC = () => {
 
           {/* Filtro Área Solicitante para Administradores */}
           {isAdmin && (
-            <div className="md:col-span-3">
+            <div className="md:col-span-3 flex flex-col gap-1">
               <select
                 id="filter-select-area-admin"
                 value={filterArea}
@@ -738,6 +765,31 @@ export const PurchasesView: React.FC = () => {
                   <option key={a} value={a}>{a}</option>
                 ))}
               </select>
+              {filterArea !== 'todos' && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenExportByArea(filterArea)}
+                  className="w-full px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                  title={`Exportar adquisiciones de ${filterArea} en PDF con portada, KPIs y gráficas circulares`}
+                >
+                  <FileText className="w-3 h-3 text-amber-300" />
+                  <span>Reporte PDF de {filterArea}</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {!isAdmin && userAssignedArea && (
+            <div className="md:col-span-3 flex items-center">
+              <button
+                type="button"
+                onClick={() => handleOpenExportByArea(userAssignedArea)}
+                className="w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title={`Exportar adquisiciones de ${userAssignedArea} en PDF con portada ejecutiva, KPIs y gráficas`}
+              >
+                <Building2 className="w-3.5 h-3.5 text-blue-700" />
+                <span>Exportar Reporte de Mi Área ({userAssignedArea})</span>
+              </button>
             </div>
           )}
 
@@ -1511,14 +1563,18 @@ export const PurchasesView: React.FC = () => {
         isOpen={isPdfModalOpen}
         onClose={() => setIsPdfModalOpen(false)}
         purchases={filteredPurchases}
+        allPurchases={rbacPurchases}
+        initialSelectedArea={modalInitialArea}
+        initialTab={modalInitialTab}
         currentUser={currentUser}
         filterInfo={{
           search: searchTerm,
           status: filterEstatus,
           category: filterCategory,
+          area: filterArea !== 'todos' ? filterArea : undefined,
         }}
         onSuccess={(filename) => {
-          logAudit('EXPORTAR_DATOS', 'Compras', `Exportación oficial de ${filteredPurchases.length} adquisiciones a PDF (${filename}).`);
+          logAudit('EXPORTAR_DATOS', 'Compras', `Exportación oficial de adquisiciones a PDF (${filename}).`);
           showToast({
             type: 'success',
             title: 'Exportación a PDF Exitosa',

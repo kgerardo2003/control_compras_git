@@ -793,7 +793,7 @@ export const BudgetView: React.FC = () => {
           <FileText className="w-4 h-4" />
           <span>Reportes y Dictámenes Oficiales</span>
           <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">
-            5 Variantes
+            6 Variantes Oficiales
           </span>
         </button>
       </div>

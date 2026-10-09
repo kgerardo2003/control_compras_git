@@ -49,6 +49,7 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
   modalidadChartData: ChartDataItem[];
   dictamenChartData: ChartDataItem[];
   areaChartData: ChartDataItem[];
+  categoryChartData: ChartDataItem[];
   recommendations: Array<{ type: 'success' | 'warning' | 'info'; title: string; desc: string }>;
 } {
   const totalPurchases = purchases.length;
@@ -76,8 +77,9 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
   let sinDictamenCount = 0;
   let sinDictamenAmount = 0;
 
-  // Áreas
+  // Áreas y Categorías Tecnológicas
   const areaMap: Record<string, { count: number; amount: number }> = {};
+  const categoryMap: Record<string, { count: number; amount: number }> = {};
   let sinOfertasCount = 0;
 
   purchases.forEach((p) => {
@@ -128,6 +130,13 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
       sinDictamenAmount += monto;
     }
 
+    // Categoría Tecnológica
+    const cat = (p.categoriaTecnologica || '').trim() || 'Equipo Informático';
+    if (!categoryMap[cat]) {
+      categoryMap[cat] = { count: 0, amount: 0 };
+    }
+    categoryMap[cat].count += 1;
+    categoryMap[cat].amount += monto;
     // Área
     let area = (p.areaSolicitante || '').trim() || 'Soporte Técnico';
     const lowerArea = area.toLowerCase();
@@ -274,6 +283,17 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     percentage: totalAmount > 0 ? Math.round((data.amount / totalAmount) * 100) : 0,
   }));
 
+  const categoryPalette = ['#0A0A69', '#2563EB', '#0D9488', '#D97706', '#7C3AED', '#DB2777', '#059669'];
+  const categoryChartData: ChartDataItem[] = Object.entries(categoryMap)
+    .sort((a, b) => b[1].amount - a[1].amount)
+    .map(([name, data], idx) => ({
+      name,
+      value: data.count,
+      amount: data.amount,
+      color: categoryPalette[idx % categoryPalette.length],
+      percentage: totalAmount > 0 ? Math.round((data.amount / totalAmount) * 100) : 0,
+    }));
+
   // Hallazgos y recomendaciones para toma de decisiones
   const recommendations: Array<{ type: 'success' | 'warning' | 'info'; title: string; desc: string }> = [];
 
@@ -320,6 +340,7 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     modalidadChartData,
     dictamenChartData,
     areaChartData,
+    categoryChartData,
     recommendations,
   };
 }
@@ -497,8 +518,10 @@ export function generateExecutiveDashboardImage(purchases: PurchaseRecord[]): st
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, width, height);
 
-    const { kpis, estatusChartData, modalidadChartData, dictamenChartData, areaChartData, recommendations } =
+    const { kpis, estatusChartData, modalidadChartData, dictamenChartData, areaChartData, categoryChartData, recommendations } =
       calculateExecutiveKPIs(purchases);
+
+    const isSingleArea = areaChartData.length === 1;
 
     // ==========================================
     // 1. FILA DE 4 TARJETAS EJECUTIVAS DE KPIS
@@ -511,7 +534,7 @@ export function generateExecutiveDashboardImage(purchases: PurchaseRecord[]): st
 
     const kpiCards = [
       {
-        title: 'PRESUPUESTO TOTAL GESTIONADO',
+        title: isSingleArea ? 'PRESUPUESTO DEL ÁREA' : 'PRESUPUESTO TOTAL GESTIONADO',
         value: formatQuetzales(kpis.totalAmount),
         sub: `${kpis.totalPurchases} adquisiciones registradas`,
         borderColor: '#0A0A69',
@@ -532,9 +555,9 @@ export function generateExecutiveDashboardImage(purchases: PurchaseRecord[]): st
         accentColor: '#059669',
       },
       {
-        title: 'TICKET MEDIO / MODALIDAD',
-        value: formatQuetzales(kpis.averageTicket),
-        sub: `Predomina: ${kpis.modalidadPredominante}`,
+        title: isSingleArea ? 'UNIDAD / TICKET MEDIO' : 'TICKET MEDIO / MODALIDAD',
+        value: isSingleArea ? (areaChartData[0]?.name?.length > 20 ? areaChartData[0].name.substring(0, 18) + '…' : areaChartData[0]?.name) : formatQuetzales(kpis.averageTicket),
+        sub: isSingleArea ? `${kpis.totalPurchases} eventos • Ticket: ${formatQuetzales(kpis.averageTicket)}` : `Predomina: ${kpis.modalidadPredominante}`,
         borderColor: '#D97706',
         accentColor: '#D97706',
       },
@@ -612,12 +635,18 @@ export function generateExecutiveDashboardImage(purchases: PurchaseRecord[]): st
         total: kpis.totalPurchases,
       },
       {
-        title: '4. CONCENTRACIÓN DE INVERSIÓN POR ÁREA SOLICITANTE',
-        subtitle: 'Distribución presupuestaria por dependencia de TI',
-        data: areaChartData,
+        title: isSingleArea 
+          ? `4. CATEGORÍAS TECNOLÓGICAS • ${areaChartData[0]?.name?.toUpperCase()}`
+          : '4. CONCENTRACIÓN DE INVERSIÓN POR ÁREA SOLICITANTE',
+        subtitle: isSingleArea 
+          ? 'Distribución del presupuesto del área por tipo de bien o servicio'
+          : 'Distribución presupuestaria por dependencia de TI',
+        data: (isSingleArea && categoryChartData.length > 0) ? categoryChartData : areaChartData,
         centerTitle: formatQuetzales(kpis.totalAmount).split('.')[0],
         centerSubtitle: 'Total GTQ',
-        total: areaChartData.reduce((acc, d) => acc + d.value, 0),
+        total: (isSingleArea && categoryChartData.length > 0)
+          ? categoryChartData.reduce((acc, d) => acc + d.value, 0)
+          : areaChartData.reduce((acc, d) => acc + d.value, 0),
       },
     ];
 

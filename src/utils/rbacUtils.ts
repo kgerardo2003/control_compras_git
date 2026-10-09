@@ -4,13 +4,15 @@ export const ALL_AREAS_LABEL = 'Todas las Áreas (Acceso Global)';
 
 export const TECHNICAL_AREAS_LIST = [
   ALL_AREAS_LABEL,
+  'Soporte Técnico',
+  'Departamento de Servicios Informáticos',
   'Desarrollo y Administración de Sistemas',
   'Redes y Telecomunicaciones',
-  'Soporte técnico',
   'Soporte Técnico Remoto',
   'Sección de Videoaudiencias',
-  'Departamento de Servicios Informáticos',
-  'Seguridad Informática'
+  'Seguridad Informática',
+  'Infraestructura',
+  'Estadística',
 ] as const;
 
 /**
