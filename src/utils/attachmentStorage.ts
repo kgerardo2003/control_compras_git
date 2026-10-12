@@ -421,3 +421,71 @@ export async function deleteJudicaturaAttachmentFromIndexedDB(
     return false;
   }
 }
+
+/**
+ * Guarda un documento adjunto de un movimiento de adquisición en IndexedDB local
+ */
+export async function saveMovementAttachmentToIndexedDB(
+  purchaseId: string,
+  movementId: string,
+  document: AttachedDocument
+): Promise<boolean> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const record = {
+        id: `mov_${purchaseId}_${movementId}`,
+        document,
+        actualizadoEn: new Date().toISOString()
+      };
+      store.put(record);
+
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * Recupera un documento adjunto de un movimiento de adquisición desde IndexedDB local
+ */
+export async function getMovementAttachmentFromIndexedDB(
+  purchaseId: string,
+  movementId: string
+): Promise<AttachedDocument | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(`mov_${purchaseId}_${movementId}`);
+
+      request.onsuccess = () => {
+        db.close();
+        if (request.result && request.result.document) {
+          resolve(request.result.document);
+        } else {
+          resolve(null);
+        }
+      };
+
+      request.onerror = () => {
+        db.close();
+        resolve(null);
+      };
+    });
+  } catch (err) {
+    return null;
+  }
+}

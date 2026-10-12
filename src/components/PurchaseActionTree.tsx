@@ -1,8 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   GitBranch, 
   GitCommit, 
-  GitMerge, 
   CheckCircle2, 
   Clock, 
   AlertCircle, 
@@ -10,765 +9,945 @@ import {
   User, 
   Calendar, 
   Award, 
-  Ban, 
   Paperclip, 
   ShieldCheck, 
   ChevronRight, 
   ChevronDown, 
-  FolderTree, 
-  Sparkles,
-  Layers,
-  Filter,
-  Eye,
+  Plus, 
+  Search, 
+  Download, 
+  Eye, 
+  Trash2, 
+  Upload, 
+  X, 
   ExternalLink,
-  Search
+  Filter,
+  FileCheck,
+  Building2,
+  Tag,
+  Maximize2
 } from 'lucide-react';
-import { PurchaseRecord, StatusTimelineEvent, PurchaseChangeLogEntry } from '../types';
+import { PurchaseRecord, PurchaseMovement, AttachedDocument } from '../types';
 import { formatDate, formatDateTime, formatQuetzales } from '../utils/formatters';
+import { getPurchaseMovements, MOVEMENT_TYPES } from '../utils/movementUtils';
+import { downloadDocumentFile } from '../utils/documentUtils';
+import { useApp } from '../context/AppContext';
+import { DocumentPreview } from './DocumentPreview';
+import { canUserEditPurchase } from '../utils/rbacUtils';
 
-interface TreeNodeItem {
-  id: string;
-  titulo: string;
-  subtitulo?: string;
-  fecha?: string;
-  hora?: string;
-  responsable?: string;
-  rol?: string;
-  estado: 'completado' | 'en_proceso' | 'pendiente' | 'desierto';
-  tipo: 'hito' | 'bitacora' | 'documento' | 'sistema';
-  observaciones?: string;
-  documentoRef?: string;
-  detalles?: string;
-  ip?: string;
-  hijos?: TreeNodeItem[];
-}
-
-interface TreeBranch {
-  id: string;
-  titulo: string;
-  descripcion: string;
-  icono: React.ReactNode;
-  color: string;
-  completados: number;
-  total: number;
-  nodos: TreeNodeItem[];
-}
+const formatFileSize = (bytes?: number): string => {
+  if (!bytes) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 interface PurchaseActionTreeProps {
   purchase: Partial<PurchaseRecord>;
-  onSelectAction?: (node: TreeNodeItem) => void;
+  onSelectAction?: (movement: PurchaseMovement) => void;
   compact?: boolean;
-  initialFilterState?: 'todos' | 'completados' | 'en_proceso' | 'pendientes' | 'recorridos';
+  initialFilterState?: 'todos' | 'con_documento' | 'observaciones' | 'hitos';
+  onNavigateToFullTree?: () => void;
 }
 
 export const PurchaseActionTree: React.FC<PurchaseActionTreeProps> = ({
   purchase,
   compact = false,
-  initialFilterState = 'todos'
+  initialFilterState = 'todos',
+  onNavigateToFullTree
 }) => {
-  const [viewMode, setViewMode] = useState<'jerarquico' | 'cronologico'>('jerarquico');
-  const [filterState, setFilterState] = useState<'todos' | 'completados' | 'en_proceso' | 'pendientes' | 'recorridos'>(initialFilterState);
+  const { 
+    addPurchaseMovement, 
+    deletePurchaseMovement, 
+    attachDocumentToMovement, 
+    updatePurchase, 
+    currentUser, 
+    showToast 
+  } = useApp();
+
+  const canEdit = canUserEditPurchase(currentUser);
+
+  // Estados de control
+  const [filterType, setFilterType] = useState<'todos' | 'con_documento' | 'observaciones' | 'hitos'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
-  const [collapsedBranches, setCollapsedBranches] = useState<Record<string, boolean>>({});
-  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+  const [isAddingMovement, setIsAddingMovement] = useState(false);
+  const [previewDocument, setPreviewDocument] = useState<AttachedDocument | null>(null);
+  const [targetMovementForDoc, setTargetMovementForDoc] = useState<string | null>(null);
+  const [expandedMovements, setExpandedMovements] = useState<Record<string, boolean>>({});
+  const [allExpanded, setAllExpanded] = useState(true);
 
-  // Alternar colapso de rama
-  const toggleBranch = (branchId: string) => {
-    setCollapsedBranches(prev => ({
-      ...prev,
-      [branchId]: !prev[branchId]
-    }));
-  };
+  // Estados del Formulario de Nuevo Movimiento
+  const [newTitulo, setNewTitulo] = useState('Observación Técnica');
+  const [newTipo, setNewTipo] = useState('observacion');
+  const [newFecha, setNewFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newHora, setNewHora] = useState(() => new Date().toTimeString().slice(0, 5));
+  const [newResponsable, setNewResponsable] = useState(purchase?.areaSolicitante || 'Gerencia de Informática');
+  const [newObservaciones, setNewObservaciones] = useState('');
+  const [newEstatusCambio, setNewEstatusCambio] = useState('');
+  const [newAttachedDoc, setNewAttachedDoc] = useState<AttachedDocument | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Alternar detalle de nodo
-  const toggleNodeDetail = (nodeId: string) => {
-    setExpandedNodes(prev => ({
-      ...prev,
-      [nodeId]: !prev[nodeId]
-    }));
-  };
+  // Referencias para file inputs
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const movementAttachInputRef = useRef<HTMLInputElement>(null);
 
-  // Expandir / Colapsar todo
-  const expandAll = () => {
-    setCollapsedBranches({});
-    const allExpanded: Record<string, boolean> = {};
-    branches.forEach(b => {
-      b.nodos.forEach(n => {
-        allExpanded[n.id] = true;
-      });
-    });
-    setExpandedNodes(allExpanded);
-  };
+  // Obtener lista completa de movimientos ordenados cronológicamente (más reciente al más antiguo)
+  const allMovements = useMemo(() => {
+    return getPurchaseMovements(purchase);
+  }, [purchase?.movimientos, purchase]);
 
-  const collapseAll = () => {
-    const allCollapsed: Record<string, boolean> = {};
-    branches.forEach(b => {
-      allCollapsed[b.id] = true;
-    });
-    setCollapsedBranches(allCollapsed);
-    setExpandedNodes({});
-  };
+  // Filtrado y búsqueda de movimientos
+  const filteredMovements = useMemo(() => {
+    let list = [...allMovements];
 
-  // Construir las ramas del árbol institucional
-  const branches: TreeBranch[] = useMemo(() => {
-    const list: TreeBranch[] = [];
+    if (filterType === 'con_documento') {
+      list = list.filter(m => Boolean(m.documento?.nombre));
+    } else if (filterType === 'observaciones') {
+      list = list.filter(m => m.tipoAccion === 'observacion' || !m.automatico);
+    } else if (filterType === 'hitos') {
+      list = list.filter(m => m.tipoAccion === 'avance' || m.tipoAccion === 'adjudicacion' || m.tipoAccion === 'pago');
+    }
 
-    // --- RAMA 1: Solicitud y Requerimiento Oficial ---
-    const rama1Nodes: TreeNodeItem[] = [
-      {
-        id: 'node-solicitud-inicial',
-        titulo: 'Registro de Solicitud Inicial F56-e',
-        subtitulo: `Formulario F56-e: ${purchase.f56e || 'Pendiente'}`,
-        fecha: purchase.fechaSolicitud || undefined,
-        responsable: purchase.dependenciaSolicitante || purchase.areaSolicitante || 'Área Solicitante',
-        estado: purchase.fechaSolicitud ? 'completado' : 'en_proceso',
-        tipo: 'hito',
-        observaciones: purchase.descripcion ? `Objeto: ${purchase.descripcion.slice(0, 120)}...` : 'Ingreso oficial de la necesidad tecnológica.',
-        documentoRef: purchase.f56e ? `Forma F56-e No. ${purchase.f56e}` : undefined
-      },
-      {
-        id: 'node-vobo',
-        titulo: 'Visto Bueno de Jefatura (VoBo)',
-        subtitulo: 'Aprobación técnica inicial de la unidad requirente',
-        fecha: purchase.fechaVoBo || undefined,
-        responsable: purchase.areaSolicitante || 'Jefatura de Área',
-        estado: purchase.fechaVoBo ? 'completado' : purchase.fechaSolicitud ? 'en_proceso' : 'pendiente',
-        tipo: 'hito',
-        observaciones: purchase.fechaVoBo ? `Visto bueno emitido el ${formatDate(purchase.fechaVoBo)}.` : 'Pendiente de emisión de VoBo formal.'
-      },
-      {
-        id: 'node-autorizacion',
-        titulo: 'Autorización Formal del Formulario',
-        subtitulo: 'Aval superior para trámite presupuestario',
-        fecha: purchase.fechaAutorizado || undefined,
-        responsable: 'Autoridad Solicitante',
-        estado: purchase.fechaAutorizado ? 'completado' : 'pendiente',
-        tipo: 'hito',
-        observaciones: purchase.fechaAutorizado ? `Autorizado oficialmente el ${formatDate(purchase.fechaAutorizado)}.` : 'En espera de firma y autorización.'
-      }
-    ];
-
-    const rama1Done = rama1Nodes.filter(n => n.estado === 'completado').length;
-    list.push({
-      id: 'branch-solicitud',
-      titulo: '1. Requerimiento y Aprobación Inicial',
-      descripcion: 'Formulario F56-e, justificación técnica y firmas de autorización',
-      icono: <FileText className="w-4 h-4 text-blue-600" />,
-      color: 'blue',
-      completados: rama1Done,
-      total: rama1Nodes.length,
-      nodos: rama1Nodes
-    });
-
-    // --- RAMA 2: Dictamen y Gestión Técnica GIT ---
-    const evaluado = purchase.evaluadoGIT === 'Sí';
-    const rama2Nodes: TreeNodeItem[] = [
-      {
-        id: 'node-git-evaluacion',
-        titulo: 'Revisión Técnica por Gerencia de Informática (GIT)',
-        subtitulo: 'Verificación de estándares, arquitectura y compatibilidad',
-        fecha: purchase.fechaDictamenGIT || purchase.fechaSolicitud,
-        responsable: 'Gerencia de Informática - GIT',
-        estado: evaluado ? 'completado' : 'en_proceso',
-        tipo: 'hito',
-        observaciones: evaluado 
-          ? 'Expediente analizado por los especialistas de GIT y calificado técnicamente viable.' 
-          : 'En proceso de evaluación técnica por el equipo de ingeniería GIT.'
-      },
-      {
-        id: 'node-git-dictamen',
-        titulo: 'Emisión de Dictamen Técnico Oficial',
-        subtitulo: 'Resolución técnica vinculante para compras TI',
-        fecha: purchase.fechaDictamenGIT || undefined,
-        responsable: 'Gerencia de Informática',
-        estado: purchase.fechaDictamenGIT ? 'completado' : evaluado ? 'en_proceso' : 'pendiente',
-        tipo: 'hito',
-        observaciones: purchase.fechaDictamenGIT 
-          ? `Dictamen técnico favorable emitido con fecha ${formatDate(purchase.fechaDictamenGIT)}.` 
-          : 'Pendiente de emisión formal de dictamen.',
-        documentoRef: purchase.fechaDictamenGIT ? `Dictamen GIT (${purchase.fechaDictamenGIT})` : undefined
-      },
-      {
-        id: 'node-git-oficio',
-        titulo: 'Oficio de Traslado GIT hacia Dirección de Compras',
-        subtitulo: 'Remisión de expediente dictaminado para contratación',
-        fecha: purchase.fechaElaboracionOficioGIT || undefined,
-        responsable: 'Gerencia de Informática - GIT',
-        estado: purchase.fechaElaboracionOficioGIT ? 'completado' : 'pendiente',
-        tipo: 'hito',
-        observaciones: purchase.fechaElaboracionOficioGIT 
-          ? `Oficio técnico elaborado y remitido a Compras el ${formatDate(purchase.fechaElaboracionOficioGIT)}.` 
-          : 'Pendiente de elaboración de oficio de traslado.',
-        documentoRef: purchase.fechaElaboracionOficioGIT ? `Oficio GIT: ${purchase.fechaElaboracionOficioGIT}` : undefined
-      }
-    ];
-
-    const rama2Done = rama2Nodes.filter(n => n.estado === 'completado').length;
-    list.push({
-      id: 'branch-git',
-      titulo: '2. Dictamen y Gestión Técnica (GIT)',
-      descripcion: 'Evaluación técnica, dictamen vinculante y oficio de remisión',
-      icono: <ShieldCheck className="w-4 h-4 text-emerald-600" />,
-      color: 'emerald',
-      completados: rama2Done,
-      total: rama2Nodes.length,
-      nodos: rama2Nodes
-    });
-
-    // --- RAMA 3: Guatecompras y Concurrencia ---
-    const rama3Nodes: TreeNodeItem[] = [
-      {
-        id: 'node-guatecompras-publicacion',
-        titulo: 'Publicación en Portal Guatecompras',
-        subtitulo: `NOG: ${purchase.nog || 'Pendiente de publicación'}`,
-        fecha: purchase.fechaPublicacion || undefined,
-        responsable: 'Dirección de Compras',
-        estado: purchase.fechaPublicacion ? 'completado' : 'pendiente',
-        tipo: 'hito',
-        observaciones: purchase.fechaPublicacion 
-          ? `Publicado oficialmente en Guatecompras el ${formatDate(purchase.fechaPublicacion)}. Modalidad: ${purchase.modalidadCompra || 'Cotización'}.` 
-          : 'En preparación para publicación en Guatecompras.',
-        documentoRef: purchase.nog ? `NOG Guatecompras: ${purchase.nog}` : undefined
-      },
-      {
-        id: 'node-guatecompras-ofertas',
-        titulo: 'Recepción y Apertura de Ofertas',
-        subtitulo: `Oferentes registrados: ${purchase.cantidadOfertas ?? 0}`,
-        fecha: purchase.fechaOfertas || undefined,
-        responsable: 'Junta de Cotización / Compras',
-        estado: (purchase.cantidadOfertas !== undefined && purchase.cantidadOfertas > 0) || purchase.fechaOfertas 
-          ? 'completado' 
-          : purchase.fechaPublicacion ? 'en_proceso' : 'pendiente',
-        tipo: 'hito',
-        observaciones: (purchase.cantidadOfertas || 0) > 0 
-          ? `Se recibieron ${purchase.cantidadOfertas} ofertas válidas de proveedores en el plazo estipulado.` 
-          : 'En espera del cierre del período de recepción de ofertas.'
-      }
-    ];
-
-    const rama3Done = rama3Nodes.filter(n => n.estado === 'completado').length;
-    list.push({
-      id: 'branch-guatecompras',
-      titulo: '3. Portal Guatecompras y Oferentes',
-      descripcion: 'Publicación del NOG, concurrencia y recepción de ofertas técnicas',
-      icono: <ExternalLink className="w-4 h-4 text-purple-600" />,
-      color: 'purple',
-      completados: rama3Done,
-      total: rama3Nodes.length,
-      nodos: rama3Nodes
-    });
-
-    // --- RAMA 4: Resolución, Adjudicación y Pago ---
-    const esAdjudicado = purchase.estatusEvento === 'Adjudicación';
-    const esDesierto = purchase.estatusEvento === 'Desierto' || purchase.estatusEvento === 'Prescindido';
-    
-    const rama4Nodes: TreeNodeItem[] = [
-      {
-        id: 'node-adjudicacion-resolucion',
-        titulo: esDesierto ? `Resolución: Evento ${purchase.estatusEvento}` : 'Resolución de Adjudicación Definitiva',
-        subtitulo: esAdjudicado 
-          ? `Proveedor: ${purchase.proveedorAdjudicado || 'Adjudicado'}` 
-          : esDesierto 
-            ? 'Evento declarado sin adjudicación' 
-            : 'Calificación técnica y económica en curso',
-        fecha: purchase.fechaAdjudicacion || undefined,
-        responsable: 'Autoridad Superior / Junta',
-        estado: esAdjudicado ? 'completado' : esDesierto ? 'desierto' : 'pendiente',
-        tipo: 'hito',
-        observaciones: esAdjudicado 
-          ? `Adjudicado formalmente a ${purchase.proveedorAdjudicado || 'proveedor seleccionado'} por un monto de Q${(purchase.monto || 0).toLocaleString('es-GT', { minimumFractionDigits: 2 })}.`
-          : esDesierto 
-            ? `El evento fue declarado ${purchase.estatusEvento} según acta de junta.`
-            : 'En espera de resolución final de adjudicación.'
-      },
-      {
-        id: 'node-pago-compromiso',
-        titulo: 'Estado de Compromiso y Ejecución de Pago',
-        subtitulo: `Estatus actual: ${purchase.estadoPago || 'Pendiente'}`,
-        responsable: 'Gerencia Financiera',
-        estado: purchase.estadoPago === 'Pagado' ? 'completado' : purchase.estadoPago === 'En trámite' ? 'en_proceso' : 'pendiente',
-        tipo: 'hito',
-        observaciones: `Renglón presupuestario asignado: [${purchase.renglonPresupuestario || '158'}]. Monto de reserva: Q${(purchase.monto || 0).toLocaleString('es-GT', { minimumFractionDigits: 2 })}.`
-      }
-    ];
-
-    const rama4Done = rama4Nodes.filter(n => n.estado === 'completado').length;
-    list.push({
-      id: 'branch-adjudicacion',
-      titulo: '4. Resolución y Liquidación',
-      descripcion: 'Adjudicación formal, proveedor contratado y ejecución presupuestaria',
-      icono: <Award className="w-4 h-4 text-amber-600" />,
-      color: 'amber',
-      completados: rama4Done,
-      total: rama4Nodes.length,
-      nodos: rama4Nodes
-    });
-
-    // --- RAMA 5: Expediente y Documentos Digitales ---
-    const tieneDoc = Boolean(purchase.f56Documento?.nombre);
-    const rama5Nodes: TreeNodeItem[] = [
-      {
-        id: 'node-doc-f56',
-        titulo: tieneDoc ? `Documento Digitalizado: ${purchase.f56Documento?.nombre}` : 'Documento Digitalizado F56 (Físico / Escaneado)',
-        subtitulo: tieneDoc 
-          ? `Tamaño: ${((purchase.f56Documento?.tamano || 0) / 1024).toFixed(1)} KB • Tipo: ${purchase.f56Documento?.tipo || 'PDF'}` 
-          : 'No se ha adjuntado archivo aún',
-        fecha: purchase.f56Documento?.fechaSubida ? purchase.f56Documento.fechaSubida.slice(0, 10) : undefined,
-        hora: purchase.f56Documento?.fechaSubida ? purchase.f56Documento.fechaSubida.slice(11, 16) : undefined,
-        responsable: purchase.creadoPor || 'Operador',
-        estado: tieneDoc ? 'completado' : 'en_proceso',
-        tipo: 'documento',
-        observaciones: tieneDoc 
-          ? `Archivo incorporado de forma inmutable al expediente. Respaldo verificado en almacenamiento seguro.`
-          : 'Se requiere adjuntar el documento físico digitalizado para completar el expediente.',
-        documentoRef: purchase.f56Documento?.nombre
-      }
-    ];
-
-    list.push({
-      id: 'branch-documentos',
-      titulo: '5. Documentación Digital Oficial',
-      descripcion: 'Formulario F56-e digitalizado, comprobantes y sellos de seguridad',
-      icono: <Paperclip className="w-4 h-4 text-sky-600" />,
-      color: 'sky',
-      completados: tieneDoc ? 1 : 0,
-      total: 1,
-      nodos: rama5Nodes
-    });
-
-    // --- RAMA 6: Registro de Auditoría y Acciones del Operador ---
-    if (purchase.bitacoraCambios && purchase.bitacoraCambios.length > 0) {
-      const bitacoraNodes: TreeNodeItem[] = purchase.bitacoraCambios.map(entry => ({
-        id: entry.id,
-        titulo: `Acción: ${entry.accion} (${entry.estatus || 'Registrada'})`,
-        subtitulo: `Por ${entry.usuario} • Rol: ${entry.rol || 'Operador'}`,
-        fecha: entry.fechaHora.slice(0, 10),
-        hora: entry.fechaHora.slice(11, 19),
-        responsable: entry.usuario,
-        rol: entry.rol,
-        estado: 'completado',
-        tipo: 'bitacora',
-        observaciones: entry.detalles,
-        ip: entry.ip
-      }));
-
-      list.push({
-        id: 'branch-bitacora',
-        titulo: `6. Registro de Acciones y Auditoría (${bitacoraNodes.length})`,
-        descripcion: 'Trazabilidad cronológica detallada de cada cambio ejecutado por los usuarios',
-        icono: <GitBranch className="w-4 h-4 text-indigo-600" />,
-        color: 'indigo',
-        completados: bitacoraNodes.length,
-        total: bitacoraNodes.length,
-        nodos: bitacoraNodes
-      });
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(m => 
+        m.titulo.toLowerCase().includes(q) ||
+        m.observaciones.toLowerCase().includes(q) ||
+        m.usuario.toLowerCase().includes(q) ||
+        (m.responsable && m.responsable.toLowerCase().includes(q)) ||
+        (m.documento?.nombre && m.documento.nombre.toLowerCase().includes(q)) ||
+        m.fecha.includes(q)
+      );
     }
 
     return list;
-  }, [purchase]);
+  }, [allMovements, filterType, searchQuery]);
 
-  // Nodos planos para la vista cronológica
-  const chronologicalNodes = useMemo(() => {
-    const all: TreeNodeItem[] = [];
-    branches.forEach(b => {
-      b.nodos.forEach(n => {
-        all.push(n);
+  // Movimientos a mostrar (en modo compacto solo los primeros 4)
+  const displayMovements = useMemo(() => {
+    if (compact) {
+      return filteredMovements.slice(0, 4);
+    }
+    return filteredMovements;
+  }, [filteredMovements, compact]);
+
+  // Conteo de documentos adjuntos
+  const totalDocumentsCount = useMemo(() => {
+    return allMovements.filter(m => Boolean(m.documento?.nombre)).length;
+  }, [allMovements]);
+
+  // Manejador de carga de archivo para nuevo movimiento
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      showToast({
+        type: 'alerta',
+        title: 'Archivo Demasiado Grande',
+        message: 'El tamaño máximo permitido es de 25 MB.'
       });
-    });
+      return;
+    }
 
-    // Ordenar cronológicamente si tienen fecha
-    return all.sort((a, b) => {
-      const dateA = a.fecha || '1970-01-01';
-      const dateB = b.fecha || '1970-01-01';
-      return dateB.localeCompare(dateA);
-    });
-  }, [branches]);
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setNewAttachedDoc({
+        nombre: file.name,
+        tamano: file.size,
+        tipo: file.type || 'application/pdf',
+        fechaSubida: new Date().toISOString(),
+        dataUrl
+      });
+      setIsUploading(false);
+      showToast({
+        type: 'info',
+        title: 'Documento Cargado',
+        message: `Archivo "${file.name}" preparado para adjuntar a la observación.`
+      });
+    };
+    reader.onerror = () => {
+      setIsUploading(false);
+      showToast({
+        type: 'error',
+        title: 'Error de Lectura',
+        message: 'No se pudo leer el archivo seleccionado.'
+      });
+    };
+    reader.readAsDataURL(file);
+  };
 
-  // Filtrado de ramas y nodos
-  const filteredBranches = useMemo(() => {
-    return branches.map(b => {
-      let filteredNodes = b.nodos;
+  // Manejador de adjuntar documento a movimiento existente
+  const handleAttachToExistingMovement = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetMovementForDoc || !purchase.id) return;
 
-      if (filterState === 'recorridos') {
-        filteredNodes = filteredNodes.filter(n => n.estado === 'completado' || n.estado === 'en_proceso' || n.estado === 'desierto');
-      } else if (filterState === 'completados') {
-        filteredNodes = filteredNodes.filter(n => n.estado === 'completado');
-      } else if (filterState === 'en_proceso') {
-        filteredNodes = filteredNodes.filter(n => n.estado === 'en_proceso');
-      } else if (filterState === 'pendientes') {
-        filteredNodes = filteredNodes.filter(n => n.estado === 'pendiente');
-      }
+    if (file.size > 25 * 1024 * 1024) {
+      showToast({
+        type: 'alerta',
+        title: 'Archivo Demasiado Grande',
+        message: 'El tamaño máximo permitido es de 25 MB.'
+      });
+      return;
+    }
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        filteredNodes = filteredNodes.filter(n => 
-          n.titulo.toLowerCase().includes(q) ||
-          (n.subtitulo && n.subtitulo.toLowerCase().includes(q)) ||
-          (n.observaciones && n.observaciones.toLowerCase().includes(q)) ||
-          (n.responsable && n.responsable.toLowerCase().includes(q))
-        );
-      }
-
-      return {
-        ...b,
-        nodos: filteredNodes
+    const reader = new FileReader();
+    reader.onload = () => {
+      const doc: AttachedDocument = {
+        nombre: file.name,
+        tamano: file.size,
+        tipo: file.type || 'application/pdf',
+        fechaSubida: new Date().toISOString(),
+        dataUrl: reader.result as string
       };
-    }).filter(b => b.nodos.length > 0);
-  }, [branches, filterState, searchQuery]);
+      attachDocumentToMovement(purchase.id!, targetMovementForDoc, doc);
+      setTargetMovementForDoc(null);
+    };
+    reader.readAsDataURL(file);
+  };
 
-  // Conteo global
-  const totalNodes = branches.reduce((acc, b) => acc + b.total, 0);
-  const totalCompleted = branches.reduce((acc, b) => acc + b.completados, 0);
-  const progressPercent = totalNodes > 0 ? Math.round((totalCompleted / totalNodes) * 100) : 0;
+  // Guardar nuevo movimiento
+  const handleSaveMovement = () => {
+    if (!purchase.id) {
+      showToast({
+        type: 'alerta',
+        title: 'No se puede registrar',
+        message: 'La ficha aún no ha sido creada o guardada en el sistema.'
+      });
+      return;
+    }
 
-  // Render de un nodo individual en el árbol
-  const renderNode = (node: TreeNodeItem, isLast: boolean, depth = 0) => {
-    const isExpanded = Boolean(expandedNodes[node.id]);
+    if (!newTitulo.trim()) {
+      showToast({
+        type: 'alerta',
+        title: 'Título Obligatorio',
+        message: 'Por favor ingrese el título de la acción u observación.'
+      });
+      return;
+    }
 
-    const stateConfig = {
-      completado: {
-        badge: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-        dot: 'bg-emerald-500 ring-4 ring-emerald-100',
-        line: 'border-emerald-300',
-        text: 'Completado',
-        icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-      },
-      en_proceso: {
-        badge: 'bg-amber-100 text-amber-800 border-amber-300',
-        dot: 'bg-amber-500 ring-4 ring-amber-100 animate-pulse',
-        line: 'border-amber-300',
-        text: 'En Proceso',
-        icon: <Clock className="w-3.5 h-3.5 text-amber-600" />
-      },
-      pendiente: {
-        badge: 'bg-slate-100 text-slate-600 border-slate-300',
-        dot: 'bg-slate-300 ring-4 ring-slate-100',
-        line: 'border-slate-200',
-        text: 'Pendiente',
-        icon: <Clock className="w-3.5 h-3.5 text-slate-400" />
-      },
-      desierto: {
-        badge: 'bg-rose-100 text-rose-800 border-rose-300',
-        dot: 'bg-rose-500 ring-4 ring-rose-100',
-        line: 'border-rose-300',
-        text: 'No Adjudicado',
-        icon: <Ban className="w-3.5 h-3.5 text-rose-600" />
-      }
-    }[node.estado];
+    if (!newObservaciones.trim()) {
+      showToast({
+        type: 'alerta',
+        title: 'Observación Obligatoria',
+        message: 'Por favor redacte el detalle u observación a asentar en el árbol.'
+      });
+      return;
+    }
 
-    return (
-      <div key={node.id} className="relative flex items-start group">
-        {/* Línea conectora vertical de rama */}
-        {!isLast && (
-          <div className="absolute left-[17px] top-7 bottom-0 w-0.5 bg-slate-200 group-hover:bg-slate-300 transition-colors" />
-        )}
+    addPurchaseMovement(purchase.id, {
+      titulo: newTitulo.trim(),
+      tipoAccion: newTipo,
+      fecha: newFecha,
+      hora: newHora,
+      observaciones: newObservaciones.trim(),
+      responsable: newResponsable.trim(),
+      usuario: currentUser ? currentUser.nombreCompleto : 'Operador GIT',
+      rolUsuario: currentUser?.rol,
+      estatusAlMomento: newEstatusCambio || purchase.estatusEvento,
+      documento: newAttachedDoc || undefined,
+      automatico: false
+    });
 
-        {/* Punto / Conector de Nodo */}
-        <div className="relative z-10 flex items-center justify-center w-9 h-9 shrink-0 mr-3">
-          <div className={`w-3.5 h-3.5 rounded-full ${stateConfig.dot} transition-transform group-hover:scale-110 flex items-center justify-center`} />
-        </div>
+    // Resetear formulario
+    setNewTitulo('Observación Técnica');
+    setNewTipo('observacion');
+    setNewObservaciones('');
+    setNewEstatusCambio('');
+    setNewAttachedDoc(null);
+    setIsAddingMovement(false);
+  };
 
-        {/* Tarjeta del Nodo */}
-        <div className="flex-1 pb-4 min-w-0">
-          <div 
-            onClick={() => toggleNodeDetail(node.id)}
-            className={`p-3 rounded-xl border transition-all cursor-pointer ${
-              node.estado === 'completado' 
-                ? 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs' 
-                : node.estado === 'en_proceso'
-                  ? 'bg-amber-50/40 border-amber-200 hover:border-amber-300'
-                  : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
-            }`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-xs font-bold text-slate-900 leading-snug">
-                    {node.titulo}
-                  </h4>
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${stateConfig.badge}`}>
-                    {stateConfig.icon}
-                    <span>{stateConfig.text}</span>
+  // Alternar expansión de observación en un nodo
+  const toggleExpand = (id: string) => {
+    setExpandedMovements(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const toggleAll = () => {
+    const nextState = !allExpanded;
+    setAllExpanded(nextState);
+    const newMap: Record<string, boolean> = {};
+    allMovements.forEach(m => {
+      newMap[m.id] = nextState;
+    });
+    setExpandedMovements(newMap);
+  };
+
+  // Sugerencias de títulos rápidos
+  const TITLE_SUGGESTIONS = [
+    { label: 'Observación Técnica', tipo: 'observacion' },
+    { label: 'Oficio a Dirección de Compras', tipo: 'oficio' },
+    { label: 'Dictamen Técnico Aprobado', tipo: 'dictamen' },
+    { label: 'Revisión de Especificaciones', tipo: 'observacion' },
+    { label: 'Recepción de Muestra / Prueba', tipo: 'avance' },
+    { label: 'Acta de Junta Calificadora', tipo: 'adjudicacion' },
+    { label: 'Requerimiento de Documentación', tipo: 'documento' },
+    { label: 'Trámite de Liquidación Contable', tipo: 'pago' }
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Input oculto para adjuntar archivo a movimiento existente */}
+      <input 
+        type="file" 
+        ref={movementAttachInputRef}
+        onChange={handleAttachToExistingMovement}
+        className="hidden" 
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
+      />
+
+      {/* Barra Superior de Control del Árbol */}
+      {!compact && (
+        <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center font-bold shrink-0">
+                <GitBranch className="w-5 h-5 text-amber-800" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Árbol Cronológico de Movimientos y Acciones
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                    {allMovements.length} {allMovements.length === 1 ? 'registro' : 'registros'}
                   </span>
                 </div>
-                {node.subtitulo && (
-                  <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
-                    {node.subtitulo}
-                  </p>
-                )}
+                <p className="text-xs text-slate-500">
+                  Orden cronológico: del más reciente al más antiguo con soporte para documentos adjuntos por observación.
+                </p>
               </div>
+            </div>
 
-              {/* Fecha y botón de expandir */}
-              <div className="flex items-center gap-2 shrink-0">
-                {node.fecha && (
-                  <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md">
-                    <Calendar className="w-3 h-3 text-slate-400" />
-                    {formatDate(node.fecha)} {node.hora ? `• ${node.hora}` : ''}
-                  </span>
-                )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {canEdit && (
                 <button
                   type="button"
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors"
-                  aria-label="Ver detalles"
+                  onClick={() => setIsAddingMovement(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                    isAddingMovement 
+                      ? 'bg-slate-200 text-slate-800 hover:bg-slate-300' 
+                      : 'bg-amber-600 hover:bg-amber-700 text-white'
+                  }`}
                 >
-                  {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                  {isAddingMovement ? (
+                    <>
+                      <X className="w-3.5 h-3.5" />
+                      <span>Cerrar Formulario</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Registrar Acción / Observación</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer"
+                title="Expandir o contraer todas las observaciones"
+              >
+                {allExpanded ? 'Contraer Todo' : 'Expandir Todo'}
+              </button>
+            </div>
+          </div>
+
+          {/* Filtros rápidos y Barra de Búsqueda */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setFilterType('todos')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                  filterType === 'todos' 
+                    ? 'bg-slate-900 text-white' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Todos ({allMovements.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterType('con_documento')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                  filterType === 'con_documento' 
+                    ? 'bg-sky-600 text-white' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Paperclip className="w-3 h-3" />
+                <span>Con Documento ({totalDocumentsCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterType('observaciones')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                  filterType === 'observaciones' 
+                    ? 'bg-amber-600 text-white' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Observaciones
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterType('hitos')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                  filterType === 'hitos' 
+                    ? 'bg-emerald-600 text-white' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Hitos y Estatus
+              </button>
+            </div>
+
+            <div className="relative min-w-[200px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar acción, usuario, fecha..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Formulario Interactivo para Registrar Acción / Observación */}
+      {isAddingMovement && !compact && (
+        <div className="bg-amber-50/60 rounded-xl border border-amber-300 p-4 shadow-sm space-y-4 animate-in fade-in duration-150">
+          <div className="flex items-center justify-between border-b border-amber-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center">
+                <Plus className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                  Registrar Nuevo Movimiento u Observación en el Árbol
+                </h4>
+                <p className="text-[11px] text-amber-800">
+                  Se insertará en el orden cronológico correspondiente y quedará asentado en el expediente.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAddingMovement(false)}
+              className="p-1 rounded text-amber-700 hover:text-amber-950 hover:bg-amber-200/50"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Sugerencias Rápidas */}
+          <div>
+            <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block mb-1">
+              Plantillas Rápidas de Acción:
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {TITLE_SUGGESTIONS.map((sug, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setNewTitulo(sug.label);
+                    setNewTipo(sug.tipo);
+                  }}
+                  className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 transition-colors cursor-pointer"
+                >
+                  {sug.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Título de la acción */}
+            <div className="sm:col-span-2">
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Título del Movimiento / Acción *
+              </label>
+              <input
+                type="text"
+                value={newTitulo}
+                onChange={(e) => setNewTitulo(e.target.value)}
+                placeholder="Ej: Observación Técnica sobre Especificaciones"
+                className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+              />
+            </div>
+
+            {/* Tipo de Acción */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Tipo de Acción
+              </label>
+              <select
+                value={newTipo}
+                onChange={(e) => setNewTipo(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+              >
+                {Object.values(MOVEMENT_TYPES).map(t => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Fecha */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Fecha del Movimiento
+              </label>
+              <input
+                type="date"
+                value={newFecha}
+                onChange={(e) => setNewFecha(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+              />
+            </div>
+
+            {/* Hora */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Hora
+              </label>
+              <input
+                type="time"
+                value={newHora}
+                onChange={(e) => setNewHora(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+              />
+            </div>
+
+            {/* Área / Responsable */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Dependencia / Responsable
+              </label>
+              <input
+                type="text"
+                value={newResponsable}
+                onChange={(e) => setNewResponsable(e.target.value)}
+                placeholder="Ej: Gerencia de Informática - GIT"
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
+          </div>
+
+          {/* Observaciones Detalladas */}
+          <div>
+            <label className="text-[11px] font-bold text-slate-700 block mb-1">
+              Observación Técnica / Descripción Detallada *
+            </label>
+            <textarea
+              rows={3}
+              value={newObservaciones}
+              onChange={(e) => setNewObservaciones(e.target.value)}
+              placeholder="Describa ampliamente los antecedentes, resultados, justificaciones o detalles de esta observación institucional..."
+              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 leading-relaxed font-normal"
+            />
+          </div>
+
+          {/* Opciones Adicionales: Cambio de Estatus y Adjuntar Documento */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Actualizar Estatus de la Adquisición */}
+            <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-1">
+              <label className="text-[11px] font-bold text-slate-700 block">
+                Actualizar Estatus del Evento (Opcional):
+              </label>
+              <select
+                value={newEstatusCambio}
+                onChange={(e) => setNewEstatusCambio(e.target.value)}
+                className="w-full px-2.5 py-1 text-xs border border-slate-300 rounded bg-slate-50 text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              >
+                <option value="">Mantener estatus actual ({purchase.estatusEvento || 'Vigente'})</option>
+                <option value="Evaluación">Cambiar a: Evaluación</option>
+                <option value="Adjudicación">Cambiar a: Adjudicación</option>
+                <option value="Vigente">Cambiar a: Vigente</option>
+                <option value="Prescindido">Cambiar a: Prescindido</option>
+                <option value="Desierto">Cambiar a: Desierto</option>
+              </select>
+              <p className="text-[10px] text-slate-500">
+                Si esta acción cambia la etapa de la compra, puede asignarlo directamente aquí.
+              </p>
+            </div>
+
+            {/* Adjuntar Documento Digital a la Observación */}
+            <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2">
+              <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Paperclip className="w-3.5 h-3.5 text-amber-700" />
+                  Adjuntar Documento a la Observación
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal">PDF, DOC, XLS, IMG (Máx 25MB)</span>
+              </label>
+
+              {newAttachedDoc ? (
+                <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900">
+                  <div className="flex items-center gap-2 truncate">
+                    <FileCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div className="truncate">
+                      <span className="font-bold block truncate">{newAttachedDoc.nombre}</span>
+                      <span className="text-[10px] text-emerald-700">{formatFileSize(newAttachedDoc.tamano)}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNewAttachedDoc(null)}
+                    className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-100 rounded cursor-pointer"
+                    title="Quitar archivo adjunto"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
+                  />
+                  <button
+                    type="button"
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-2 px-3 border border-dashed border-amber-400 rounded-lg bg-amber-50/50 hover:bg-amber-100/60 text-amber-900 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-amber-700" />
+                    <span>{isUploading ? 'Procesando archivo...' : 'Seleccionar Documento para Adjuntar'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Botones de Acción */}
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-200">
+            <button
+              type="button"
+              onClick={() => setIsAddingMovement(false)}
+              className="px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveMovement}
+              className="px-4 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Guardar en el Árbol Cronológico</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ÁRBOL CRONOLÓGICO VISUAL (DEL MÁS RECIENTE AL MÁS ANTIGUO) */}
+      <div className="relative pl-6 sm:pl-8 space-y-4">
+        {/* Tronco Central del Árbol */}
+        <div className="absolute left-2.5 sm:left-3.5 top-2 bottom-2 w-0.5 bg-gradient-to-b from-amber-600 via-amber-400 to-slate-300" />
+
+        {displayMovements.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-500">
+            <GitBranch className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
+            <h4 className="text-sm font-bold text-slate-700">Sin movimientos que coincidan</h4>
+            <p className="text-xs text-slate-400 mt-1">
+              No se encontraron registros para los filtros seleccionados.
+            </p>
+          </div>
+        ) : (
+          displayMovements.map((mov, index) => {
+            const typeConfig = MOVEMENT_TYPES[mov.tipoAccion] || MOVEMENT_TYPES.otro;
+            const isExpanded = expandedMovements[mov.id] ?? allExpanded;
+            const isLatest = index === 0;
+
+            return (
+              <div 
+                key={mov.id || index}
+                className="relative group transition-all"
+              >
+                {/* Nodo en el Tronco del Árbol */}
+                <div className={`absolute -left-6 sm:-left-8 top-3 w-5 h-5 rounded-full border-2 bg-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-110 z-10 ${
+                  isLatest ? 'border-amber-600 ring-2 ring-amber-300' : 'border-slate-400'
+                }`}>
+                  <div className={`w-2 h-2 rounded-full ${typeConfig.dotColor}`} />
+                </div>
+
+                {/* Rama Conectora */}
+                <div className="absolute -left-2 top-5 w-2 h-0.5 bg-slate-300" />
+
+                {/* Tarjeta del Movimiento / Observación */}
+                <div className={`rounded-xl border transition-all ${
+                  isLatest 
+                    ? 'bg-amber-50/40 border-amber-300 shadow-xs' 
+                    : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs'
+                } p-3.5 space-y-2`}>
+                  
+                  {/* Encabezado del Nodo: Fecha, Tipo y Estatus */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Badge Cronológico */}
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 font-mono">
+                        <Calendar className="w-3 h-3 text-slate-500" />
+                        {formatDate(mov.fecha)} {mov.hora ? `• ${mov.hora}` : ''}
+                      </span>
+
+                      {isLatest && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-600 text-white shadow-2xs">
+                          Más Reciente
+                        </span>
+                      )}
+
+                      {/* Tipo de Acción */}
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${typeConfig.badgeBg} ${typeConfig.badgeText}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${typeConfig.dotColor}`} />
+                        {typeConfig.label}
+                      </span>
+
+                      {mov.estatusAlMomento && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          Estatus: {mov.estatusAlMomento}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Acciones Rápidas en la Cabecera */}
+                    <div className="flex items-center gap-1.5">
+                      {mov.documento && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                          <Paperclip className="w-2.5 h-2.5" />
+                          Doc Adjunto
+                        </span>
+                      )}
+
+                      {!compact && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(mov.id)}
+                          className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                          title={isExpanded ? 'Contraer detalle' : 'Expandir detalle'}
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-4 h-4" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Título Principal de la Acción */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                        {mov.titulo}
+                      </h4>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                        {mov.responsable && (
+                          <span className="inline-flex items-center gap-1">
+                            <Building2 className="w-3 h-3 text-slate-400" />
+                            <strong>Área:</strong> {mov.responsable}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1">
+                          <User className="w-3 h-3 text-slate-400" />
+                          <strong>Por:</strong> {mov.usuario} {mov.rolUsuario ? `(${mov.rolUsuario})` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cuerpo de la Observación / Detalle Técnico */}
+                  {isExpanded && (
+                    <div className="pt-1 space-y-2">
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 leading-relaxed font-normal">
+                        {mov.observaciones}
+                      </div>
+
+                      {/* DOCUMENTO ADJUNTO A ESTE MOVIMIENTO */}
+                      {mov.documento ? (
+                        <div className="p-2.5 rounded-lg bg-sky-50/70 border border-sky-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-sky-100 border border-sky-300 flex items-center justify-center text-sky-700 shrink-0">
+                              <FileText className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-sky-950 block truncate">
+                                {mov.documento.nombre}
+                              </span>
+                              <span className="text-[10px] text-sky-700 block">
+                                Tamaño: {formatFileSize(mov.documento.tamano)} • Subido: {formatDate(mov.documento.fechaSubida || mov.fecha)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDocument(mov.documento!)}
+                              className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>Ver Documento</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadDocumentFile(mov.documento!, purchase)}
+                              className="p-1 rounded bg-white hover:bg-slate-100 border border-sky-200 text-slate-700 cursor-pointer"
+                              title="Descargar archivo adjunto"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                            {canEdit && purchase.id && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  // Remover documento de este movimiento
+                                  const updated = allMovements.map(m => m.id === mov.id ? { ...m, documento: undefined } : m);
+                                  updatePurchase(purchase.id!, { movimientos: updated });
+                                  showToast({
+                                    type: 'info',
+                                    title: 'Documento Removido',
+                                    message: 'Se desvinculó el archivo adjunto de esta observación.'
+                                  });
+                                }}
+                                className="p-1 rounded bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 cursor-pointer"
+                                title="Quitar archivo adjunto"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        // Opción para adjuntar documento a este movimiento si aún no lo tiene
+                        canEdit && purchase.id && !compact && (
+                          <div className="pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetMovementForDoc(mov.id);
+                                movementAttachInputRef.current?.click();
+                              }}
+                              className="text-[11px] font-bold text-sky-700 hover:text-sky-900 inline-flex items-center gap-1 cursor-pointer hover:underline"
+                            >
+                              <Paperclip className="w-3 h-3" />
+                              <span>+ Adjuntar documento a esta observación</span>
+                            </button>
+                          </div>
+                        )
+                      )}
+
+                      {/* Botón para eliminar movimiento manual (si no es automático de inicio) */}
+                      {canEdit && purchase.id && !mov.automatico && !compact && (
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => deletePurchaseMovement(purchase.id!, mov.id)}
+                            className="text-[10px] text-rose-600 hover:text-rose-800 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                            <span>Eliminar esta anotación</span>
+                          </button>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Pie del Modo Compacto: Botón para Ir a la Pestaña Completa */}
+      {compact && (
+        <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+          <span className="text-xs text-slate-500 font-medium">
+            Mostrando las 4 acciones más recientes de un total de {allMovements.length}.
+          </span>
+          {onNavigateToFullTree && (
+            <button
+              type="button"
+              onClick={onNavigateToFullTree}
+              className="px-3 py-1.5 rounded-lg bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Ver Árbol Completo y Registrar Acciones</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Modal de Previsualización de Documento */}
+      {previewDocument && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden">
+            <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-4 h-4 text-amber-400" />
+                <span className="text-xs sm:text-sm font-bold truncate max-w-md">
+                  {previewDocument.nombre}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  ({formatFileSize(previewDocument.tamano)})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => downloadDocumentFile(previewDocument, purchase)}
+                  className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descargar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocument(null)}
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+                >
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Metadatos rápidos del nodo */}
-            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500 flex-wrap">
-              {node.responsable && (
-                <span className="flex items-center gap-1 font-medium">
-                  <User className="w-3 h-3 text-slate-400" />
-                  <span>{node.responsable}</span>
-                  {node.rol && <span className="text-slate-400">({node.rol})</span>}
-                </span>
-              )}
-              {node.documentoRef && (
-                <span className="flex items-center gap-1 text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-medium">
-                  <Paperclip className="w-3 h-3" />
-                  <span className="truncate max-w-[200px]">{node.documentoRef}</span>
-                </span>
-              )}
-              {node.ip && (
-                <span className="text-slate-400 font-mono text-[9px]">
-                  IP: {node.ip}
-                </span>
-              )}
-            </div>
-
-            {/* Detalles expandibles */}
-            {isExpanded && node.observaciones && (
-              <div className="mt-2.5 pt-2.5 border-t border-dashed border-slate-200 text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg">
-                <p className="font-medium leading-relaxed">
-                  {node.observaciones}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Barra superior de Resumen del Árbol y Progreso */}
-      <div className="bg-gradient-to-r from-slate-900 to-blue-950 p-4 rounded-xl text-white shadow-md border border-slate-800">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400 shrink-0">
-              <FolderTree className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                  Árbol de Registro e Historial de Acciones
-                </h3>
-                <span className="text-[10px] bg-amber-500/20 border border-amber-400/40 text-amber-300 px-2 py-0.5 rounded-full font-bold">
-                  {purchase.nog ? `NOG: ${purchase.nog}` : 'Nuevo Registro'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Formulario F56-e: {purchase.f56e || 'Borrador'} • {purchase.dependenciaSolicitante || 'Gerencia de Informática'}
-              </p>
-            </div>
-          </div>
-
-          {/* Métrica de avance del árbol */}
-          <div className="flex items-center gap-3 self-end sm:self-auto">
-            <div className="text-right">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block">
-                Avance del Expediente
-              </span>
-              <span className="text-sm font-black text-amber-400">
-                {totalCompleted} de {totalNodes} hitos ({progressPercent}%)
-              </span>
-            </div>
-            <div className="w-14 h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-              <div 
-                className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-500" 
-                style={{ width: `${progressPercent}%` }} 
+            <div className="flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center min-h-[420px]">
+              <DocumentPreview
+                document={previewDocument}
+                purchase={purchase}
+                title={previewDocument.nombre}
+                isInline={false}
+                onClose={() => setPreviewDocument(null)}
               />
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Controles del Árbol: Filtros, Búsqueda y Modos */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-        
-        {/* Selector de modo y búsqueda */}
-        <div className="flex items-center gap-2 flex-1">
-          <div className="relative flex-1 max-w-xs">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Buscar acción, usuario, hito..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-2.5 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-            />
-          </div>
-
-          <div className="flex items-center bg-white border border-slate-300 rounded-lg p-0.5 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setViewMode('jerarquico')}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
-                viewMode === 'jerarquico' 
-                  ? 'bg-slate-900 text-white shadow-xs' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Por Fases
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('cronologico')}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
-                viewMode === 'cronologico' 
-                  ? 'bg-slate-900 text-white shadow-xs' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Cronológico
-            </button>
-          </div>
-        </div>
-
-        {/* Filtros de estado y botones expandir/colapsar */}
-        <div className="flex items-center gap-1.5 justify-end flex-wrap">
-          <div className="flex items-center gap-1 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setFilterState('recorridos')}
-              className={`px-2 py-0.5 rounded font-bold transition-colors ${
-                filterState === 'recorridos' ? 'bg-amber-800 text-white' : 'text-amber-800 hover:bg-amber-100'
-              }`}
-              title="Ver únicamente los hitos y acciones transitados por esta ficha"
-            >
-              Ruta de esta Ficha
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterState('todos')}
-              className={`px-2 py-0.5 rounded font-bold transition-colors ${
-                filterState === 'todos' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Todos ({totalNodes})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterState('completados')}
-              className={`px-2 py-0.5 rounded font-bold transition-colors ${
-                filterState === 'completados' ? 'bg-emerald-700 text-white' : 'text-emerald-700 hover:bg-emerald-100'
-              }`}
-            >
-              Hechos ({totalCompleted})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterState('en_proceso')}
-              className={`px-2 py-0.5 rounded font-bold transition-colors ${
-                filterState === 'en_proceso' ? 'bg-amber-600 text-white' : 'text-amber-700 hover:bg-amber-100'
-              }`}
-            >
-              En Proceso
-            </button>
-          </div>
-
-          <div className="h-4 w-px bg-slate-300 mx-1 hidden sm:block" />
-
-          <button
-            type="button"
-            onClick={expandAll}
-            className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 px-2 py-0.5 hover:bg-slate-200 rounded"
-          >
-            Expandir todo
-          </button>
-          <button
-            type="button"
-            onClick={collapseAll}
-            className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 px-2 py-0.5 hover:bg-slate-200 rounded"
-          >
-            Colapsar todo
-          </button>
-        </div>
-
-      </div>
-
-      {/* CUERPO DEL ÁRBOL */}
-      {viewMode === 'jerarquico' ? (
-        /* VISTA JERÁRQUICA POR RAMAS INSTITUCIONALES */
-        <div className="space-y-4">
-          {filteredBranches.map((branch, bIdx) => {
-            const isCollapsed = Boolean(collapsedBranches[branch.id]);
-
-            return (
-              <div 
-                key={branch.id} 
-                className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden transition-all"
-              >
-                {/* Encabezado de Rama */}
-                <div 
-                  onClick={() => toggleBranch(branch.id)}
-                  className="p-3.5 bg-slate-50/80 hover:bg-slate-100/80 flex items-center justify-between border-b border-slate-200 cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-1.5 rounded-lg bg-white border border-slate-200 shadow-2xs">
-                      {branch.icono}
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                        <span>{branch.titulo}</span>
-                        <span className="text-[10px] font-semibold text-slate-500 bg-white border border-slate-200 px-2 py-0.2 rounded-full">
-                          {branch.completados}/{branch.total}
-                        </span>
-                      </h4>
-                      <p className="text-[10px] text-slate-500">
-                        {branch.descripcion}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden hidden sm:block">
-                      <div 
-                        className="h-full bg-emerald-500" 
-                        style={{ width: `${(branch.completados / branch.total) * 100}%` }} 
-                      />
-                    </div>
-                    {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-                  </div>
-                </div>
-
-                {/* Nodos hijos de la rama */}
-                {!isCollapsed && (
-                  <div className="p-4 sm:p-5 bg-white space-y-1">
-                    {branch.nodos.map((node, nIdx) => 
-                      renderNode(node, nIdx === branch.nodos.length - 1)
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        /* VISTA CRONOLÓGICA DIRECTA */
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4 sm:p-6 space-y-1">
-          {chronologicalNodes.length > 0 ? (
-            chronologicalNodes.map((node, idx) => 
-              renderNode(node, idx === chronologicalNodes.length - 1)
-            )
-          ) : (
-            <div className="text-center py-8 text-slate-400 text-xs font-medium">
-              No se encontraron acciones registradas que coincidan con los filtros.
-            </div>
-          )}
         </div>
       )}
     </div>

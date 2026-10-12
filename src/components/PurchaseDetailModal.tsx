@@ -204,9 +204,9 @@ export const PurchaseDetailModal: React.FC = () => {
                 }`}
               >
                 <GitBranch className="w-3.5 h-3.5" />
-                <span>Ruta en Árbol (Línea de Tiempo)</span>
+                <span>Árbol de Movimientos y Acciones</span>
                 <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-700 text-white">
-                  Árbol
+                  {selectedPurchase.movimientos?.length || 'Árbol'}
                 </span>
               </button>
 
@@ -303,17 +303,17 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Vista: Ruta en forma de Árbol de la Ficha */}
+            {/* Vista: Árbol Cronológico de Movimientos y Acciones */}
             {activeTab === 'arbol' && (
               <div className="pt-1 space-y-3">
-                <div className="bg-gradient-to-r from-amber-900 to-slate-900 text-white p-3.5 rounded-xl border border-amber-800 shadow-xs flex items-center justify-between gap-3">
+                <div className="bg-gradient-to-r from-amber-900 via-amber-800 to-slate-900 text-white p-3.5 rounded-xl border border-amber-800 shadow-xs flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0">
                       <GitBranch className="w-4 h-4" />
                     </div>
                     <div>
                       <h4 className="text-xs sm:text-sm font-bold text-white">
-                        Línea de Tiempo en Árbol de la Ficha
+                        Árbol de Movimientos y Acciones de la Compra
                       </h4>
                       <p className="text-[11px] text-amber-200/80">
                         NOG: <span className="font-mono font-bold text-white">{selectedPurchase.nog}</span> • F56-e: <span className="font-mono font-bold text-white">{selectedPurchase.f56e}</span>
@@ -327,7 +327,7 @@ export const PurchaseDetailModal: React.FC = () => {
 
                 <PurchaseActionTree 
                   purchase={selectedPurchase} 
-                  initialFilterState="recorridos"
+                  initialFilterState="todos"
                 />
               </div>
             )}
@@ -698,7 +698,7 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Sección Ruta y Línea de Tiempo en Árbol dentro de Ficha General */}
+            {/* Sección Árbol de Movimientos y Observaciones dentro de Ficha General */}
             <div className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <div className="flex items-center gap-2">
@@ -707,10 +707,10 @@ export const PurchaseDetailModal: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                      Ruta y Línea de Tiempo en Árbol
+                      Árbol de Movimientos y Acciones Recientes
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      Ruta transitada por esta adquisición
+                      Registro cronológico inverso de acciones y documentos adjuntos
                     </span>
                   </div>
                 </div>
@@ -719,7 +719,7 @@ export const PurchaseDetailModal: React.FC = () => {
                   onClick={() => setActiveTab('arbol')}
                   className="px-2.5 py-1 rounded-lg text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors inline-flex items-center gap-1 cursor-pointer"
                 >
-                  <span>Vista Completa</span>
+                  <span>Ver Árbol Completo</span>
                   <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
@@ -727,7 +727,8 @@ export const PurchaseDetailModal: React.FC = () => {
               <PurchaseActionTree 
                 purchase={selectedPurchase} 
                 compact={true}
-                initialFilterState="recorridos"
+                initialFilterState="todos"
+                onNavigateToFullTree={() => setActiveTab('arbol')}
               />
             </div>
           </>

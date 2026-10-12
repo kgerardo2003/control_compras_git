@@ -125,6 +125,23 @@ export interface PurchaseRecord {
   fechaPago?: string; // Fecha en que se marcó como pagado
   diasAtraso?: number; // Días de atraso en el evento (para semáforos de cumplimiento)
   bitacoraCambios?: PurchaseChangeLogEntry[]; // Bitácora de cambios y auditoría de la ficha
+  movimientos?: PurchaseMovement[]; // Registro cronológico en árbol de movimientos y observaciones con documentos adjuntos
+}
+
+export interface PurchaseMovement {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  hora?: string; // HH:mm:ss o HH:mm
+  fechaHoraIso: string; // Timestamp ISO completo para ordenación cronológica inversa estricta (más reciente al más antiguo)
+  titulo: string; // Ej: "Observación Técnica", "Oficio remitido a Compras", "Dictamen Técnico", etc.
+  tipoAccion: string; // 'observacion' | 'avance' | 'oficio' | 'dictamen' | 'adjudicacion' | 'pago' | 'documento' | 'estatus' | 'otro'
+  observaciones: string; // Texto descriptivo u observación registrada
+  responsable?: string; // Área o dependencia responsable
+  usuario: string; // Funcionario o usuario que registró la acción
+  rolUsuario?: string; // Rol del usuario en el sistema
+  estatusAlMomento?: string; // Estatus del evento al momento de este movimiento
+  documento?: AttachedDocument; // Documento digital adjunto opcional
+  automatico?: boolean; // Flag de hito del sistema vs observación manual
 }
 
 export interface PurchaseChangeLogEntry {

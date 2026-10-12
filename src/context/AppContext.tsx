@@ -25,7 +25,8 @@ import {
   JudicaturaRecord,
   JudicaturaObservacion,
   JudicaturaDocumento,
-  ServicioContratado
+  ServicioContratado,
+  PurchaseMovement
 } from '../types';
 import { 
   getOrCreateTotpSecret, 
@@ -62,6 +63,7 @@ import {
   detectAutomaticEventsOnUpdate, 
   getPurchaseTimeline 
 } from '../utils/timelineUtils';
+import { getPurchaseMovements } from '../utils/movementUtils';
 import { 
   db,
   PURCHASES_COLLECTION, 
@@ -199,6 +201,16 @@ interface AppContextType {
       nuevoEstatus?: string;
       additionalFields?: Partial<PurchaseRecord>;
     }
+  ) => void;
+  addPurchaseMovement: (
+    purchaseId: string, 
+    movement: Omit<PurchaseMovement, 'id' | 'fechaHoraIso'> & { id?: string; fechaHoraIso?: string }
+  ) => void;
+  deletePurchaseMovement: (purchaseId: string, movementId: string) => void;
+  attachDocumentToMovement: (
+    purchaseId: string, 
+    movementId: string, 
+    document: AttachedDocument
   ) => void;
   deletePurchase: (id: string) => void;
   deletePurchases: (ids: string[]) => Promise<{ count: number }>;
@@ -3141,6 +3153,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const addPurchaseMovement = (
+    purchaseId: string, 
+    movementData: Omit<PurchaseMovement, 'id' | 'fechaHoraIso'> & { id?: string; fechaHoraIso?: string }
+  ) => {
+    const prev = purchases.find(p => p.id === purchaseId);
+    if (!prev) return;
+
+    const existingMovements = getPurchaseMovements(prev);
+    const nowIso = new Date().toISOString();
+    const nowFecha = nowIso.slice(0, 10);
+    const nowHora = nowIso.slice(11, 16);
+
+    const newMov: PurchaseMovement = {
+      id: movementData.id || `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      fecha: movementData.fecha || nowFecha,
+      hora: movementData.hora || nowHora,
+      fechaHoraIso: movementData.fechaHoraIso || (movementData.fecha && movementData.hora ? `${movementData.fecha}T${movementData.hora}:00Z` : nowIso),
+      titulo: movementData.titulo,
+      tipoAccion: movementData.tipoAccion || 'observacion',
+      observaciones: movementData.observaciones,
+      responsable: movementData.responsable || prev.areaSolicitante || 'Área Responsable',
+      usuario: movementData.usuario || (currentUser ? currentUser.nombreCompleto : 'Operador GIT'),
+      rolUsuario: movementData.rolUsuario || currentUser?.rol,
+      estatusAlMomento: movementData.estatusAlMomento || prev.estatusEvento,
+      documento: movementData.documento,
+      automatico: movementData.automatico ?? false
+    };
+
+    // Ordenar de más reciente a más antiguo (cronología inversa)
+    const updatedMovimientos = [newMov, ...existingMovements].sort((a, b) => {
+      const timeA = new Date(a.fechaHoraIso || `${a.fecha}T${a.hora || '00:00'}:00`).getTime();
+      const timeB = new Date(b.fechaHoraIso || `${b.fecha}T${b.hora || '00:00'}:00`).getTime();
+      return timeB - timeA;
+    });
+
+    const patch: Partial<PurchaseRecord> = {
+      movimientos: updatedMovimientos,
+    };
+
+    if (movementData.estatusAlMomento && movementData.estatusAlMomento !== prev.estatusEvento) {
+      patch.estatusEvento = movementData.estatusAlMomento;
+    }
+
+    updatePurchase(purchaseId, patch);
+
+    showToast({
+      type: 'success',
+      title: 'Movimiento Registrado en el Árbol',
+      message: `"${newMov.titulo}" se incorporó exitosamente al árbol cronológico de la compra.`
+    });
+  };
+
+  const deletePurchaseMovement = (purchaseId: string, movementId: string) => {
+    const prev = purchases.find(p => p.id === purchaseId);
+    if (!prev) return;
+
+    const existingMovements = getPurchaseMovements(prev);
+    const updatedMovimientos = existingMovements.filter(m => m.id !== movementId);
+
+    updatePurchase(purchaseId, { movimientos: updatedMovimientos });
+
+    showToast({
+      type: 'info',
+      title: 'Movimiento Eliminado',
+      message: 'Se retiró el registro del árbol cronológico.'
+    });
+  };
+
+  const attachDocumentToMovement = (
+    purchaseId: string, 
+    movementId: string, 
+    document: AttachedDocument
+  ) => {
+    const prev = purchases.find(p => p.id === purchaseId);
+    if (!prev) return;
+
+    const existingMovements = getPurchaseMovements(prev);
+    const updatedMovimientos = existingMovements.map(m => {
+      if (m.id === movementId) {
+        return {
+          ...m,
+          documento: document
+        };
+      }
+      return m;
+    });
+
+    updatePurchase(purchaseId, { movimientos: updatedMovimientos });
+
+    showToast({
+      type: 'success',
+      title: 'Documento Adjuntado',
+      message: `El archivo "${document.nombre}" fue vinculado con éxito a la observación.`
+    });
+  };
+
   const deletePurchase = (id: string) => {
     const prev = purchases.find(p => p.id === id);
     const nogText = prev ? `NOG ${prev.nog}` : `registro ID ${id}`;
@@ -5141,6 +5249,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         importPurchases,
         updatePurchase,
         recordPurchaseMilestone,
+        addPurchaseMovement,
+        deletePurchaseMovement,
+        attachDocumentToMovement,
         deletePurchase,
         deletePurchases,
         clearAllPurchases,
