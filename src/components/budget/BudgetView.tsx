@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   BudgetLineItem, 
@@ -46,7 +46,15 @@ import {
   RefreshCw,
   BookOpen,
   Calculator,
-  Columns
+  Columns,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  MoveRight,
+  MoveLeft,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -132,6 +140,73 @@ export const BudgetView: React.FC = () => {
 
   const isAdmin = currentUser?.rol === 'administrador';
   const canEditBudget = isAdmin || currentUser?.rol === 'operador_compras' || currentUser?.rol === 'usuario_estandar' || Boolean(currentUser);
+
+  // Estados y referencias para la Matriz de Disponibilidad (Navegación horizontal y columnas inmovilizadas)
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [activeColumnSection, setActiveColumnSection] = useState<'inicio' | 'techo' | 'ejecucion' | 'disponibilidad'>('inicio');
+  const [isMatrixFullHeight, setIsMatrixFullHeight] = useState(false);
+
+  // Sincronización de scroll horizontal entre contenedor de tabla y barra superior
+  const handleTableScroll = () => {
+    if (!tableContainerRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = tableContainerRef.current;
+    const maxScroll = Math.max(0, scrollWidth - clientWidth);
+    setCanScrollLeft(scrollLeft > 15);
+    setCanScrollRight(scrollLeft < maxScroll - 15);
+    setScrollProgress(maxScroll > 0 ? Math.min(100, Math.round((scrollLeft / maxScroll) * 100)) : 0);
+
+    if (scrollLeft < 160) {
+      setActiveColumnSection('inicio');
+    } else if (scrollLeft < 460) {
+      setActiveColumnSection('techo');
+    } else if (scrollLeft < 800) {
+      setActiveColumnSection('ejecucion');
+    } else {
+      setActiveColumnSection('disponibilidad');
+    }
+
+    if (topScrollRef.current && !isSyncingScroll.current) {
+      isSyncingScroll.current = true;
+      topScrollRef.current.scrollLeft = scrollLeft;
+      setTimeout(() => {
+        isSyncingScroll.current = false;
+      }, 30);
+    }
+  };
+
+  const handleTopScroll = () => {
+    if (!topScrollRef.current || !tableContainerRef.current) return;
+    if (!isSyncingScroll.current) {
+      isSyncingScroll.current = true;
+      tableContainerRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      setTimeout(() => {
+        isSyncingScroll.current = false;
+      }, 30);
+    }
+  };
+
+  const scrollMatrixHorizontally = (pixels: number) => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: pixels, behavior: 'smooth' });
+    }
+  };
+
+  const scrollToMatrixSection = (section: 'inicio' | 'techo' | 'ejecucion' | 'disponibilidad' | 'final') => {
+    if (!tableContainerRef.current) return;
+    const targets: Record<string, number> = {
+      inicio: 0,
+      techo: 280,
+      ejecucion: 620,
+      disponibilidad: 980,
+      final: tableContainerRef.current.scrollWidth
+    };
+    tableContainerRef.current.scrollTo({ left: targets[section] ?? 0, behavior: 'smooth' });
+  };
 
   // Extraer grupos presupuestarios únicos
   const availableGroups = useMemo(() => {
@@ -921,27 +996,205 @@ export const BudgetView: React.FC = () => {
             </div>
           </div>
 
-          {/* Tabla de la Matriz con las 12 Columnas Requeridas */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+          {/* Barra Superior de Control de Navegación Horizontal y Congelamiento de Columnas */}
+          <div className="bg-slate-900 text-white rounded-t-xl p-3 border border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+                <Columns className="w-4 h-4 text-amber-400" />
+                <span>Navegación de Columnas:</span>
+              </span>
+
+              {/* Botones de Desplazamiento Paso a Paso */}
+              <div className="inline-flex items-center rounded-lg bg-slate-800 p-0.5 border border-slate-700 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('inicio')}
+                  disabled={!canScrollLeft}
+                  className="px-2 py-1 text-xs font-bold text-slate-200 hover:text-white hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Ir al inicio (Columna 1: Grupo y Renglón)"
+                >
+                  <ChevronsLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Inicio</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollMatrixHorizontally(-320)}
+                  disabled={!canScrollLeft}
+                  className="px-2.5 py-1 text-xs font-bold text-amber-300 hover:text-amber-200 hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Desplazar hacia la izquierda (-320px)"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Izquierda</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollMatrixHorizontally(320)}
+                  disabled={!canScrollRight}
+                  className="px-2.5 py-1 text-xs font-bold text-amber-300 hover:text-amber-200 hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Desplazar hacia la derecha (+320px)"
+                >
+                  <span>Derecha</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('final')}
+                  disabled={!canScrollRight}
+                  className="px-2 py-1 text-xs font-bold text-slate-200 hover:text-white hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Ir al final (Columnas 10-12: Disponible Proyectado y Estatus)"
+                >
+                  <span className="hidden sm:inline">Final</span>
+                  <ChevronsRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Botones de Salto Directo a Secciones de Columnas */}
+              <div className="hidden md:flex items-center gap-1 bg-slate-800/80 p-0.5 rounded-lg border border-slate-700/80 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('inicio')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'inicio' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Grupo Presupuestario, Renglón y Nombre"
+                >
+                  1-3. Renglón
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('techo')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'techo' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Inicial, Modificaciones Aprobadas y Presupuesto Vigente"
+                >
+                  4-6. Techo Vigente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('ejecucion')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'ejecucion' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Pagado Rebaja, Disponible Real y Comprometido Pendiente"
+                >
+                  7-9. Ejecución
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('disponibilidad')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'disponibilidad' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Disponible Proyectado, % Usado y Estatus"
+                >
+                  10-12. Disponibilidad
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Indicador de Desplazamiento Horizontal */}
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
+                <span className="hidden xl:inline text-slate-400">Desplazamiento:</span>
+                <span className="font-mono font-bold text-amber-400">{scrollProgress}%</span>
+                <div className="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden border border-slate-700 hidden sm:block">
+                  <div
+                    className="bg-amber-500 h-full rounded-full transition-all duration-150"
+                    style={{ width: `${scrollProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Toggle de Altura Completa vs Scroll Interno */}
+              <button
+                type="button"
+                onClick={() => setIsMatrixFullHeight(!isMatrixFullHeight)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 border border-slate-700 cursor-pointer transition-colors"
+                title={isMatrixFullHeight ? "Fijar altura con scroll interno (recomendado)" : "Desplegar toda la tabla sin límite de altura"}
+              >
+                {isMatrixFullHeight ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Altura Fija (Scroll)</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Ver Expandida</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Barra de Scroll Horizontal Superior Sincronizada (Accesible directamente en la parte superior sin tener que bajar) */}
+          <div 
+            ref={topScrollRef}
+            onScroll={handleTopScroll}
+            className="w-full overflow-x-auto bg-slate-100 border-x border-b border-slate-300 h-3.5 cursor-ew-resize scrollbar-thin select-none"
+            title="Barra de desplazamiento superior: Arrastre aquí para moverse a la derecha/izquierda rápidamente"
+          >
+            <div style={{ width: '1680px', height: '1px' }} />
+          </div>
+
+          {/* Tabla de la Matriz con las 12 Columnas Requeridas y Columnas Inmovilizadas */}
+          <div className="bg-white rounded-b-xl border border-t-0 border-slate-200 shadow-xs overflow-hidden relative">
+            <div 
+              ref={tableContainerRef}
+              onScroll={handleTableScroll}
+              className={`overflow-x-auto overflow-y-auto ${isMatrixFullHeight ? 'max-h-none' : 'max-h-[64vh]'} scrollbar-thin`}
+              style={{ scrollBehavior: 'smooth' }}
+            >
+              <table className="w-full text-xs text-left border-collapse min-w-[1640px]">
+                <thead className="sticky top-0 z-30 bg-slate-100 text-slate-700 font-bold border-b border-slate-300 uppercase text-[10px] tracking-wider shadow-xs select-none">
                   <tr>
-                    <th className="px-3.5 py-3 whitespace-nowrap">1. Grupo Presupuestario</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-center">2. Renglón</th>
-                    <th className="px-3.5 py-3 whitespace-nowrap min-w-[180px]">3. Nombre del Renglón</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap">4. Presupuesto Inicial</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap" title="Modificaciones Aprobadas: Incrementos (+), Disminuciones (-) y Neto">
+                    {/* 1. Grupo Presupuestario (Inmovilizado / Sticky Left) */}
+                    <th className="sticky top-0 left-0 z-40 bg-slate-100 px-3.5 py-3.5 whitespace-nowrap min-w-[175px] max-w-[175px] w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)] border-b border-slate-300 text-slate-800">
+                      1. Grupo Presupuestario
+                    </th>
+
+                    {/* 2. Renglón Presupuestario (Inmovilizado / Sticky Left) */}
+                    <th className="sticky top-0 left-[175px] z-40 bg-slate-100 px-3 py-3.5 whitespace-nowrap text-center min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] border-b border-slate-300 text-blue-950 font-black">
+                      2. Renglón
+                    </th>
+
+                    {/* 3. Nombre del Renglón */}
+                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[200px]">3. Nombre del Renglón</th>
+
+                    {/* 4. Presupuesto Inicial */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap min-w-[125px]">4. Presupuesto Inicial</th>
+
+                    {/* 5. Modificaciones Aprobadas */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap min-w-[145px]" title="Modificaciones Aprobadas: Incrementos (+), Disminuciones (-) y Neto">
                       5. Modif. Aprobadas (±)
                     </th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap bg-blue-50/70 text-blue-950 border-x border-blue-200/60 font-black" title="Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas">6. Presupuesto Vigente</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap text-blue-800">7. Pagado Rebaja</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap">8. Disponible Real</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap text-amber-800">9. Comprometido Pendiente</th>
-                    <th className="px-3 py-3 text-right whitespace-nowrap bg-emerald-50/50 text-emerald-950 font-black">10. Disp. Proyectado</th>
-                    <th className="px-3 py-3 text-center whitespace-nowrap min-w-[110px]">11. % Usado/Comp.</th>
-                    <th className="px-3 py-3 text-center whitespace-nowrap">12. Estatus</th>
-                    <th className="px-3 py-3 text-center whitespace-nowrap">Acciones</th>
+
+                    {/* 6. Presupuesto Vigente */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap bg-blue-100/70 text-blue-950 border-x border-blue-300/80 font-black min-w-[135px]" title="Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas">
+                      6. Presupuesto Vigente
+                    </th>
+
+                    {/* 7. Pagado Rebaja */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap text-blue-800 min-w-[125px]">7. Pagado Rebaja</th>
+
+                    {/* 8. Disponible Real */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap min-w-[125px]">8. Disponible Real</th>
+
+                    {/* 9. Comprometido Pendiente */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap text-amber-800 min-w-[140px]">9. Comprometido Pendiente</th>
+
+                    {/* 10. Disp. Proyectado */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap bg-emerald-100/70 text-emerald-950 font-black min-w-[135px]">10. Disp. Proyectado</th>
+
+                    {/* 11. % Usado/Comp. */}
+                    <th className="px-3 py-3.5 text-center whitespace-nowrap min-w-[110px]">11. % Usado/Comp.</th>
+
+                    {/* 12. Estatus */}
+                    <th className="px-3 py-3.5 text-center whitespace-nowrap min-w-[130px]">12. Estatus</th>
+
+                    {/* Acciones */}
+                    <th className="px-3 py-3.5 text-center whitespace-nowrap min-w-[85px]">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -965,15 +1218,15 @@ export const BudgetView: React.FC = () => {
                       else if (pct > 70) pctColor = 'bg-amber-500';
 
                       return (
-                        <tr key={line.id} className="hover:bg-slate-50/80 transition-colors">
+                        <tr key={line.id} className="group hover:bg-blue-50/40 transition-colors">
                           
-                          {/* 1. Grupo Presupuestario */}
-                          <td className="px-3.5 py-2.5 font-medium text-slate-600 max-w-[170px] truncate" title={line.grupoPresupuestario}>
+                          {/* 1. Grupo Presupuestario (Inmovilizado / Sticky Left) */}
+                          <td className="sticky left-0 z-20 bg-white group-hover:bg-slate-50 transition-colors px-3.5 py-2.5 font-medium text-slate-700 min-w-[175px] max-w-[175px] w-[175px] truncate shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)] border-b border-slate-200" title={line.grupoPresupuestario}>
                             {line.grupoPresupuestario}
                           </td>
 
-                          {/* 2. Renglón Presupuestario */}
-                          <td className="px-3 py-2.5 text-center font-mono font-black text-blue-900 text-xs">
+                          {/* 2. Renglón Presupuestario (Inmovilizado / Sticky Left) */}
+                          <td className="sticky left-[175px] z-20 bg-white group-hover:bg-slate-50 transition-colors px-3 py-2.5 text-center font-mono font-black text-blue-900 text-xs min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] border-b border-slate-200">
                             <span className="px-2 py-0.5 rounded bg-blue-50 border border-blue-200">
                               {line.renglonPresupuestario}
                             </span>
@@ -1132,18 +1385,24 @@ export const BudgetView: React.FC = () => {
                   )}
                 </tbody>
 
-                {/* Pie de Totales Oficiales de la Matriz */}
-                <tfoot className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
+                {/* Pie de Totales Oficiales de la Matriz (Inmovilizado / Sticky Bottom) */}
+                <tfoot className="sticky bottom-0 z-30 bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.06)] select-none">
                   {/* Si hay filtros activos, mostrar primero el Subtotal de los renglones filtrados */}
                   {filteredLines.length !== budgetAvailability.length && (
-                    <tr className="bg-amber-50/70 border-b border-amber-200">
-                      <td colSpan={3} className="px-3.5 py-3 text-right font-black uppercase text-amber-900 tracking-wider">
-                        Subtotal Renglones Filtrados ({filteredTotals.count} de {totals.count}):
+                    <tr className="bg-amber-50/90 border-b border-amber-200">
+                      <td className="sticky left-0 z-20 bg-amber-100/95 px-3.5 py-3 text-left font-black uppercase text-amber-950 tracking-wider min-w-[175px] max-w-[175px] w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)] border-b border-amber-200">
+                        Subtotal Filtrado
                       </td>
-                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
+                      <td className="sticky left-[175px] z-20 bg-amber-100/95 px-3 py-3 text-center font-mono font-black text-amber-950 min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] border-b border-amber-200">
+                        {filteredTotals.count} R
+                      </td>
+                      <td className="px-3.5 py-3 text-left font-bold text-amber-900 text-[11px] min-w-[200px]">
+                        ({filteredTotals.count} de {totals.count} renglones filtrados)
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap min-w-[125px]">
                         {formatCurrency(filteredTotals.totalInicial)}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap min-w-[145px]">
                         <div className="flex flex-col items-end gap-0.5">
                           <span className={`font-bold ${filteredTotals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                             {filteredTotals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(filteredTotals.totalModificaciones)}
@@ -1159,22 +1418,22 @@ export const BudgetView: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-blue-100/60 text-blue-950">
+                      <td className="px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-blue-100/70 text-blue-950 min-w-[135px]">
                         {formatCurrency(filteredTotals.totalVigente)}
                       </td>
-                      <td className="px-3 py-3 text-right font-mono font-bold text-blue-800 whitespace-nowrap">
+                      <td className="px-3 py-3 text-right font-mono font-bold text-blue-800 whitespace-nowrap min-w-[125px]">
                         {formatCurrency(filteredTotals.totalPagado)}
                       </td>
-                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap text-slate-900">
+                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap text-slate-900 min-w-[125px]">
                         {formatCurrency(filteredTotals.totalDisponibleReal)}
                       </td>
-                      <td className="px-3 py-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
+                      <td className="px-3 py-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap min-w-[140px]">
                         {formatCurrency(filteredTotals.totalComprometido)}
                       </td>
-                      <td className={`px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-emerald-100/60 ${filteredTotals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
+                      <td className={`px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-emerald-100/70 min-w-[135px] ${filteredTotals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
                         {formatCurrency(filteredTotals.totalDisponibleProyectado)}
                       </td>
-                      <td className="px-3 py-3 text-center whitespace-nowrap">
+                      <td className="px-3 py-3 text-center whitespace-nowrap min-w-[110px]">
                         <div className="flex flex-col items-center justify-center gap-1">
                           <span className="font-mono font-bold text-xs text-slate-900">
                             {filteredTotals.porcentajeGlobal.toFixed(1)}%
@@ -1190,7 +1449,7 @@ export const BudgetView: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-center whitespace-nowrap">
+                      <td className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                             <CheckCircle2 className="w-2.5 h-2.5" />
@@ -1210,9 +1469,9 @@ export const BudgetView: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-center whitespace-nowrap">
+                      <td className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">
                         <span className="px-2 py-1 rounded bg-amber-100 text-amber-900 font-extrabold text-[11px] border border-amber-300">
-                          {filteredTotals.count} Renglones
+                          {filteredTotals.count} R
                         </span>
                       </td>
                     </tr>
@@ -1220,15 +1479,21 @@ export const BudgetView: React.FC = () => {
 
                   {/* Fila Principal de Totales Consolidados Institucionales */}
                   <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
-                    <td colSpan={3} className="px-3.5 py-3.5 text-right font-black uppercase text-slate-900 tracking-wider">
-                      {filteredLines.length !== budgetAvailability.length 
-                        ? `Gran Total Institucional (${totals.count} Renglones):` 
-                        : `Totales Consolidados Gerencia de Informática (${totals.count} Renglones):`}
+                    <td className="sticky left-0 z-20 bg-slate-100 px-3.5 py-3.5 text-left font-black uppercase text-slate-900 tracking-wider min-w-[175px] max-w-[175px] w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]">
+                      TOTAL CONSOLIDADO
                     </td>
-                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900">
+                    <td className="sticky left-[175px] z-20 bg-slate-100 px-3 py-3.5 text-center font-mono font-black text-blue-950 min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)]">
+                      {totals.count} R
+                    </td>
+                    <td className="px-3.5 py-3.5 text-left font-bold text-slate-700 text-[11px] min-w-[200px]">
+                      {filteredLines.length !== budgetAvailability.length 
+                        ? `Gran Total Institucional (${totals.count} Renglones)` 
+                        : `Gerencia de Informática (${totals.count} Renglones Institucionales)`}
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900 min-w-[125px]">
                       {formatCurrency(totals.totalInicial)}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap min-w-[145px]">
                       <div className="flex flex-col items-end gap-0.5">
                         <span className={`font-black ${totals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                           {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
@@ -1244,22 +1509,22 @@ export const BudgetView: React.FC = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-blue-100/70 text-blue-950">
+                    <td className="px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-blue-100/70 text-blue-950 min-w-[135px]">
                       {formatCurrency(totals.totalVigente)}
                     </td>
-                    <td className="px-3 py-3.5 text-right font-mono font-bold text-blue-800 whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-right font-mono font-bold text-blue-800 whitespace-nowrap min-w-[125px]">
                       {formatCurrency(totals.totalPagado)}
                     </td>
-                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900">
+                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900 min-w-[125px]">
                       {formatCurrency(totals.totalDisponibleReal)}
                     </td>
-                    <td className="px-3 py-3.5 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-right font-mono font-bold text-amber-800 whitespace-nowrap min-w-[140px]">
                       {formatCurrency(totals.totalComprometido)}
                     </td>
-                    <td className={`px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-emerald-100/70 ${totals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
+                    <td className={`px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-emerald-100/70 min-w-[135px] ${totals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
                       {formatCurrency(totals.totalDisponibleProyectado)}
                     </td>
-                    <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap min-w-[110px]">
                       <div className="flex flex-col items-center justify-center gap-1">
                         <span className="font-mono font-bold text-xs text-slate-900">
                           {totals.porcentajeGlobal.toFixed(1)}%
@@ -1275,7 +1540,7 @@ export const BudgetView: React.FC = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap min-w-[130px]">
                       <div className="flex flex-col items-center gap-0.5">
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                           <CheckCircle2 className="w-2.5 h-2.5" />
@@ -1295,9 +1560,9 @@ export const BudgetView: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap min-w-[85px]">
                       <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 font-extrabold text-[11px] border border-slate-300">
-                        {totals.count} Renglones
+                        {totals.count} R
                       </span>
                     </td>
                   </tr>

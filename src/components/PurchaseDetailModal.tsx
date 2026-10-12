@@ -50,6 +50,8 @@ export const PurchaseDetailModal: React.FC = () => {
     setIsPurchaseModalOpen, 
     setPurchaseToEdit,
     deletePurchase,
+    updatePurchase,
+    showToast,
     currentUser 
   } = useApp();
 
@@ -57,6 +59,34 @@ export const PurchaseDetailModal: React.FC = () => {
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [showDocumentPreview, setShowDocumentPreview] = useState(true);
   const [activeTab, setActiveTab] = useState<'general' | 'arbol' | 'bitacora' | 'documento'>('general');
+  const [isEditingFechaAdj, setIsEditingFechaAdj] = useState(false);
+  const [inlineFechaAdj, setInlineFechaAdj] = useState('');
+
+  useEffect(() => {
+    if (selectedPurchase?.fechaAdjudicacion) {
+      setInlineFechaAdj(selectedPurchase.fechaAdjudicacion);
+    } else {
+      setInlineFechaAdj(new Date().toISOString().slice(0, 10));
+    }
+    setIsEditingFechaAdj(false);
+  }, [selectedPurchase?.id, selectedPurchase?.fechaAdjudicacion]);
+
+  const handleSaveFechaAdjudicacion = () => {
+    if (!selectedPurchase || !inlineFechaAdj) return;
+    updatePurchase(selectedPurchase.id, {
+      fechaAdjudicacion: inlineFechaAdj
+    });
+    setSelectedPurchase({
+      ...selectedPurchase,
+      fechaAdjudicacion: inlineFechaAdj
+    });
+    setIsEditingFechaAdj(false);
+    showToast({
+      type: 'success',
+      title: 'Fecha de Adjudicación Guardada',
+      message: `Se grabó la fecha ${formatDate(inlineFechaAdj)} en la adquisición NOG ${selectedPurchase.nog}.`
+    });
+  };
 
   useEffect(() => {
     if (
@@ -547,22 +577,68 @@ export const PurchaseDetailModal: React.FC = () => {
                 </span>
                 <span className="font-bold text-slate-900">{selectedPurchase.cantidadOfertas} ofertas</span>
               </div>
-              {(selectedPurchase.estatusEvento === 'Adjudicación' || selectedPurchase.proveedorAdjudicado || selectedPurchase.fechaAdjudicacion) && (
-                <div className="sm:col-span-2 border-t border-slate-200 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-amber-50/50 p-2.5 rounded-lg border border-amber-200">
-                  {selectedPurchase.fechaAdjudicacion && (
-                    <div>
-                      <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block">
-                        Fecha de Adjudicación:
-                      </span>
-                      <span className="font-bold font-mono text-slate-900">{formatDate(selectedPurchase.fechaAdjudicacion)}</span>
-                    </div>
-                  )}
+              {(selectedPurchase.estatusEvento?.toLowerCase().includes('adjudic') || selectedPurchase.proveedorAdjudicado || selectedPurchase.fechaAdjudicacion) && (
+                <div className="sm:col-span-2 border-t border-slate-200 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-amber-50/70 p-3 rounded-lg border border-amber-300">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block mb-1">
+                      Fecha de Adjudicación Oficial:
+                    </span>
+                    {selectedPurchase.fechaAdjudicacion && !isEditingFechaAdj ? (
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold font-mono text-sm text-slate-900 bg-white px-2.5 py-1 rounded border border-amber-200">
+                          {formatDate(selectedPurchase.fechaAdjudicacion)}
+                        </span>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingFechaAdj(true)}
+                            className="text-xs text-amber-800 hover:text-amber-950 font-semibold underline cursor-pointer"
+                          >
+                            Modificar
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <input
+                          type="date"
+                          value={inlineFechaAdj}
+                          onChange={(e) => setInlineFechaAdj(e.target.value)}
+                          className="px-2 py-1 text-xs border border-amber-300 rounded bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveFechaAdjudicacion}
+                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                        >
+                          Grabar Fecha
+                        </button>
+                        {selectedPurchase.fechaAdjudicacion && (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingFechaAdj(false)}
+                            className="px-2 py-1 text-slate-600 hover:text-slate-800 text-xs cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!selectedPurchase.fechaAdjudicacion && !isEditingFechaAdj && (
+                      <p className="text-[10px] text-amber-800 font-medium mt-1">
+                        * Evento adjudicado pendiente de asignarle fecha oficial. Ingrésela y haga clic en Grabar.
+                      </p>
+                    )}
+                  </div>
+
                   {selectedPurchase.proveedorAdjudicado && (
                     <div>
-                      <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block">
+                      <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block mb-1">
                         Proveedor / Empresa Adjudicada:
                       </span>
-                      <span className="font-bold text-slate-900">{selectedPurchase.proveedorAdjudicado}</span>
+                      <span className="font-bold text-xs text-slate-900 bg-white px-2.5 py-1 rounded border border-amber-200 block">
+                        {selectedPurchase.proveedorAdjudicado}
+                      </span>
                     </div>
                   )}
                 </div>

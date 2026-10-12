@@ -2948,6 +2948,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.proveedorAdjudicado && data.proveedorAdjudicado !== prev.proveedorAdjudicado) {
         changesList.push(`Proveedor adjudicado: ${data.proveedorAdjudicado}`);
       }
+      if (data.fechaAdjudicacion && data.fechaAdjudicacion !== prev.fechaAdjudicacion) {
+        changesList.push(`Fecha de Adjudicación asignada: ${data.fechaAdjudicacion}`);
+      }
       if (data.estadoPago && data.estadoPago !== prev.estadoPago) {
         changesList.push(`Estado del gasto: "${data.estadoPago === 'pagado' ? 'Pagado (Descargado de Comprometido -> Rebajado en Saldo Real)' : 'Comprometido Pendiente'}"`);
       }
@@ -2982,9 +2985,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } : undefined)
       : prev.f56Documento;
 
+    // Sincronizar fecha en eventos de adjudicación del historial si se asignó fechaAdjudicacion
+    if (data.fechaAdjudicacion) {
+      updatedEvents = updatedEvents.map(ev => {
+        if (ev.fase === 'Adjudicación' || ev.titulo.toLowerCase().includes('adjudic')) {
+          return {
+            ...ev,
+            fecha: data.fechaAdjudicacion!,
+            documentoReferencia: `Fecha: ${data.fechaAdjudicacion}`
+          };
+        }
+        return ev;
+      });
+    }
+
     const updated: PurchaseRecord = {
       ...prev,
       ...data,
+      fechaAdjudicacion: data.fechaAdjudicacion !== undefined
+        ? (data.fechaAdjudicacion ? data.fechaAdjudicacion.trim() : undefined)
+        : prev.fechaAdjudicacion,
       f56Documento: preservedDocument,
       historialEstatus: updatedEvents,
       bitacoraCambios: updatedBitacora,

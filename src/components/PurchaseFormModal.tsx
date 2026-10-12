@@ -265,7 +265,7 @@ export const PurchaseFormModal: React.FC = () => {
       fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
       fechaElaboracionOficioGIT: evaluadoGIT === 'Sí' ? fechaElaboracionOficioGIT : '',
       estatusEvento,
-      fechaAdjudicacion: estatusEvento === 'Adjudicación' ? fechaAdjudicacion : undefined,
+      fechaAdjudicacion: (fechaAdjudicacion && fechaAdjudicacion.trim()) ? fechaAdjudicacion.trim() : (estatusEvento?.toLowerCase().trim().includes('adjudic') ? fechaAdjudicacion : undefined),
       areaSolicitante,
       categoriaTecnologica,
       dependenciaSolicitante,
@@ -487,9 +487,10 @@ export const PurchaseFormModal: React.FC = () => {
       newErrors.fechaDictamenGIT = 'Ingrese la fecha en que se realizó el dictamen técnico por la GIT.';
     }
 
-    // 9. Fecha de adjudicación (si el estatus es Adjudicación)
-    if (estatusEvento === 'Adjudicación' && !fechaAdjudicacion) {
-      newErrors.fechaAdjudicacion = 'Ingrese la fecha en que se adjudicó el evento.';
+    // 9. Fecha de adjudicación (si el estatus es Adjudicación o afín)
+    const isEventoAdjudicado = estatusEvento ? estatusEvento.toLowerCase().trim().includes('adjudic') : false;
+    if (isEventoAdjudicado && !fechaAdjudicacion) {
+      newErrors.fechaAdjudicacion = 'Ingrese la fecha oficial en que se adjudicó el evento.';
     }
 
     setErrors(newErrors);
@@ -530,7 +531,7 @@ export const PurchaseFormModal: React.FC = () => {
       fechaDictamenGIT: evaluadoGIT === 'Sí' ? fechaDictamenGIT : '',
       fechaElaboracionOficioGIT: evaluadoGIT === 'Sí' ? fechaElaboracionOficioGIT : '',
       estatusEvento,
-      fechaAdjudicacion: estatusEvento === 'Adjudicación' ? fechaAdjudicacion : undefined,
+      fechaAdjudicacion: (fechaAdjudicacion && fechaAdjudicacion.trim()) ? fechaAdjudicacion.trim() : (estatusEvento?.toLowerCase().trim().includes('adjudic') ? fechaAdjudicacion : undefined),
       areaSolicitante,
       categoriaTecnologica,
       dependenciaSolicitante,
@@ -1418,7 +1419,7 @@ export const PurchaseFormModal: React.FC = () => {
             </div>
 
             {/* 7. SI EL EVENTO YA SE ADJUDICÓ: FECHA DE ADJUDICACIÓN Y PROVEEDOR */}
-            {(estatusEvento === 'Adjudicación' || estatusEvento === 'Adjudicada') && (
+            {(estatusEvento?.toLowerCase().trim().includes('adjudic') || Boolean(fechaAdjudicacion)) && (
               <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-300 space-y-3">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
                   <Award className="w-4 h-4 text-amber-700" />

@@ -337,6 +337,19 @@ export function detectAutomaticEventsOnUpdate(
       documentoReferencia: update.fechaAdjudicacion ? `Fecha: ${update.fechaAdjudicacion}` : undefined,
       registradoPor: userName
     }));
+  } else if (
+    update.fechaAdjudicacion && 
+    update.fechaAdjudicacion !== prev.fechaAdjudicacion && 
+    (prev.estatusEvento.toLowerCase().includes('adjudic') || (update.estatusEvento && update.estatusEvento.toLowerCase().includes('adjudic')))
+  ) {
+    events.push(createAutomaticTimelineEvent({
+      titulo: 'Fecha de Adjudicación Asignada',
+      fase: 'Adjudicación',
+      responsable: 'Autoridad Superior / Compras',
+      observaciones: `Fecha oficial de resolución de adjudicación asentada en el expediente: ${update.fechaAdjudicacion}.${update.proveedorAdjudicado || prev.proveedorAdjudicado ? ` Proveedor: ${update.proveedorAdjudicado || prev.proveedorAdjudicado}.` : ''}`,
+      documentoReferencia: `Fecha: ${update.fechaAdjudicacion}`,
+      registradoPor: userName
+    }));
   }
 
   // 2. Llegada o Registro de Dictamen Técnico en GIT
