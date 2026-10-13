@@ -127,7 +127,7 @@ export const PurchaseDetailModal: React.FC = () => {
   };
 
   const badgeClass = STATUS_BADGE_CLASSES[selectedPurchase.estatusEvento] || 'bg-slate-100 text-slate-700';
-  const modalidadLCE = getModalidadCompraByMonto(selectedPurchase.monto);
+  const modalidadLCE = getModalidadCompraByMonto(selectedPurchase.monto, selectedPurchase.modalidadCompra);
 
   return (
     <>

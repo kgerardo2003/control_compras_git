@@ -72,11 +72,35 @@ export const DesertedAndPrescindedAnalytics: React.FC<DesertedAndPrescindedAnaly
       const est = (p.estatusEvento || '').toLowerCase();
       const numOfertas = Number(p.cantidadOfertas);
       const obs = (p.observaciones || '').toLowerCase();
-      const isDesierto = est.includes('desierto') || obs.includes('desierto');
-      const isPrescindido = est.includes('prescindido') || obs.includes('prescindido');
+
+      // EXENCIÓN ESTRICTA: Los eventos que sean de Baja Cuantía o Fondo Rotativo, o que no lleven NOG (o NOG '0' / 'N/A'),
+      // NO deben clasificarse como desiertos automáticamente. Se deben clasificar estrictamente según el estatus colocado en la ficha.
+      const mod = (p.modalidadCompra || '').toLowerCase();
+      const isBajaCuantia = mod.includes('baja cuant');
+      const isFondoRotativo = mod.includes('rotativ') || mod.includes('fondo');
+      const cleanNog = (p.nog || '').trim();
+      const hasNoNog = !cleanNog || cleanNog === '0' || cleanNog.toLowerCase() === 'n/a';
+      const isExempt = isBajaCuantia || isFondoRotativo || hasNoNog;
+
+      if (isExempt) {
+        // Para Baja Cuantía, Fondo Rotativo o sin NOG: respetar estrictamente el estatus de la ficha
+        if (est.includes('desierto')) {
+          desiertos.push(p);
+          totalMontoDesiertos += Number(p.monto) || 0;
+          if (!combined.some(x => x.id === p.id)) combined.push(p);
+        } else if (est.includes('prescindido')) {
+          prescindidos.push(p);
+          totalMontoPrescindidos += Number(p.monto) || 0;
+          if (!combined.some(x => x.id === p.id)) combined.push(p);
+        }
+        return;
+      }
+
+      const isDesierto = est.includes('desierto');
+      const isPrescindido = est.includes('prescindido');
       const hasZeroOfertas = numOfertas === 0 || obs.includes('sin oferta') || obs.includes('no se presentaron ofertas');
 
-      if (isDesierto || (hasZeroOfertas && est !== 'adjudicación' && est !== 'adjudicada')) {
+      if (isDesierto || (hasZeroOfertas && est !== 'adjudicación' && est !== 'adjudicada' && est !== 'vigente' && est !== 'en proceso' && est !== 'evaluación')) {
         desiertos.push(p);
         totalMontoDesiertos += Number(p.monto) || 0;
         if (!combined.some(x => x.id === p.id)) combined.push(p);
@@ -131,11 +155,19 @@ export const DesertedAndPrescindedAnalytics: React.FC<DesertedAndPrescindedAnaly
         map[area] = { area, desiertos: 0, prescindidos: 0, montoTotal: 0 };
       }
       const est = (p.estatusEvento || '').toLowerCase();
-      const numOfertas = Number(p.cantidadOfertas);
+      const mod = (p.modalidadCompra || '').toLowerCase();
+      const isExempt = mod.includes('baja cuant') || mod.includes('rotativ') || mod.includes('fondo') || !p.nog || p.nog.trim() === '0';
       if (est.includes('prescindido')) {
         map[area].prescindidos += 1;
-      } else if (est.includes('desierto') || numOfertas === 0) {
-        map[area].desiertos += 1;
+      } else if (isExempt) {
+        if (est.includes('desierto')) {
+          map[area].desiertos += 1;
+        }
+      } else {
+        const numOfertas = Number(p.cantidadOfertas);
+        if (est.includes('desierto') || (numOfertas === 0 && !est.includes('adjudic') && !est.includes('vigente'))) {
+          map[area].desiertos += 1;
+        }
       }
       map[area].montoTotal += Number(p.monto) || 0;
     });
@@ -156,10 +188,11 @@ export const DesertedAndPrescindedAnalytics: React.FC<DesertedAndPrescindedAnaly
       'Compra Directa': { name: 'Compra Directa', count: 0, amount: 0, color: '#2563EB' },
       'Cotización': { name: 'Cotización', count: 0, amount: 0, color: '#D97706' },
       'Licitación': { name: 'Licitación', count: 0, amount: 0, color: '#7C3AED' },
+      'Fondo Rotativo': { name: 'Fondo Rotativo', count: 0, amount: 0, color: '#0D9488' },
     };
 
     allFailedEvents.forEach((p) => {
-      const mod = p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre;
+      const mod = p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre;
       if (!map[mod]) {
         map[mod] = { name: mod, count: 0, amount: 0, color: '#64748B' };
       }
@@ -221,7 +254,7 @@ export const DesertedAndPrescindedAnalytics: React.FC<DesertedAndPrescindedAnaly
       'Monto (GTQ)': p.monto || 0,
       'Estatus': p.estatusEvento || '-',
       'Ofertas Recibidas': p.cantidadOfertas !== undefined ? p.cantidadOfertas : '-',
-      'Modalidad': p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre,
+      'Modalidad': p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre,
       'Fecha Solicitud': p.fechaSolicitud || '-',
       'Causa / Observaciones': p.observaciones || 'Sin registrar',
     }));
@@ -644,7 +677,7 @@ export const DesertedAndPrescindedAnalytics: React.FC<DesertedAndPrescindedAnaly
                           {item.descripcion || '-'}
                         </p>
                         <span className="text-[10px] text-slate-400 font-medium">
-                          Modalidad: {item.modalidadCompra || getModalidadCompraByMonto(item.monto).nombre}
+                          Modalidad: {item.modalidadCompra || getModalidadCompraByMonto(item.monto, item.modalidadCompra).nombre}
                         </span>
                       </td>
 

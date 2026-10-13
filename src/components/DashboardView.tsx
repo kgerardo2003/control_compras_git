@@ -773,7 +773,7 @@ export const DashboardView: React.FC = () => {
       statusMap[st].monto += m;
 
       // Modalidad LCE
-      const mod = getModalidadCompraByMonto(m).nombre || p.modalidadCompra || 'Otras Modalidades';
+      const mod = p.modalidadCompra || getModalidadCompraByMonto(m, p.modalidadCompra).nombre || 'Otras Modalidades';
       if (!modalityMap[mod]) {
         modalityMap[mod] = { label: mod, cantidad: 0, monto: 0, color: '#1c39bb' };
       }
@@ -921,12 +921,23 @@ export const DashboardView: React.FC = () => {
     // 5. Indicador de NOG Desiertos / Sin Ofertas / Prescindidos
     const desiertos = filteredPurchases.filter(p => {
       const est = (p.estatusEvento || '').toLowerCase();
+      // REQUERIMIENTO LCE: Si es Baja Cuantía o Fondo Rotativo, o no lleva NOG,
+      // NO clasificarlos como desiertos; se deben clasificar estrictamente según el estatus que se le coloque en la ficha.
+      const mod = (p.modalidadCompra || '').toLowerCase();
+      const isBajaCuantia = mod.includes('baja cuant');
+      const isFondoRotativo = mod.includes('rotativ') || mod.includes('fondo');
+      const cleanNog = (p.nog || '').trim();
+      const hasNoNog = !cleanNog || cleanNog === '0' || cleanNog.toLowerCase() === 'n/a';
+      if (isBajaCuantia || isFondoRotativo || hasNoNog) {
+        return est.includes('desierto') || est.includes('prescindido');
+      }
+
+      const isDesierto = est.includes('desierto');
+      const isPrescindido = est.includes('prescindido');
       const numOfertas = Number(p.cantidadOfertas);
       const obs = (p.observaciones || '').toLowerCase();
-      const isDesierto = est.includes('desierto') || obs.includes('desierto');
-      const isPrescindido = est.includes('prescindido') || obs.includes('prescindido');
       const isSinOfertas = numOfertas === 0 || obs.includes('sin oferta') || obs.includes('no se presentaron ofertas');
-      return isDesierto || isPrescindido || (isSinOfertas && !est.includes('adjudic'));
+      return isDesierto || isPrescindido || (isSinOfertas && !est.includes('adjudic') && !est.includes('vigente'));
     });
     const desiertosCount = desiertos.length;
     const desiertosMonto = desiertos.reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -1212,12 +1223,21 @@ export const DashboardView: React.FC = () => {
         return isPurchaseVigente(p);
       } else if (nogModalType === 'desiertos') {
         const est = (p.estatusEvento || '').toLowerCase();
+        const mod = (p.modalidadCompra || '').toLowerCase();
+        const isBajaCuantia = mod.includes('baja cuant');
+        const isFondoRotativo = mod.includes('rotativ') || mod.includes('fondo');
+        const cleanNog = (p.nog || '').trim();
+        const hasNoNog = !cleanNog || cleanNog === '0' || cleanNog.toLowerCase() === 'n/a';
+        if (isBajaCuantia || isFondoRotativo || hasNoNog) {
+          return est.includes('desierto') || est.includes('prescindido');
+        }
+
+        const isDesierto = est.includes('desierto');
+        const isPrescindido = est.includes('prescindido');
         const numOfertas = Number(p.cantidadOfertas);
         const obs = (p.observaciones || '').toLowerCase();
-        const isDesierto = est.includes('desierto') || obs.includes('desierto');
-        const isPrescindido = est.includes('prescindido') || obs.includes('prescindido');
         const isSinOfertas = numOfertas === 0 || obs.includes('sin oferta') || obs.includes('no se presentaron ofertas');
-        return isDesierto || isPrescindido || (isSinOfertas && !est.includes('adjudic'));
+        return isDesierto || isPrescindido || (isSinOfertas && !est.includes('adjudic') && !est.includes('vigente'));
       } else {
         return p.estatusEvento === 'Evaluación';
       }
@@ -3406,7 +3426,7 @@ export const DashboardView: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {selectedDeptData.purchases.map((p) => {
-                      const mod = getModalidadCompraByMonto(p.monto);
+                      const mod = getModalidadCompraByMonto(p.monto, p.modalidadCompra);
                       return (
                         <tr key={p.id} className="hover:bg-blue-50/40 transition-colors">
                           <td className="p-2.5 whitespace-nowrap">

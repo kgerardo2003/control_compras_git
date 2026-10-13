@@ -146,6 +146,37 @@ export function initDataStore(): DataStoreState {
         }
       });
 
+      // Asegurar que el catálogo de modalidades contenga Fondo Rotativo y los títulos oficiales LCE
+      const modCatIdx = storeMemory.catalogs.findIndex(c => c.codigo === 'MODALIDAD_COMPRA');
+      const initialModCat = INITIAL_CATALOGS.find(c => c.codigo === 'MODALIDAD_COMPRA');
+      if (initialModCat) {
+        if (modCatIdx >= 0) {
+          const currentCat = storeMemory.catalogs[modCatIdx];
+          const mergedItems = [...currentCat.items];
+          initialModCat.items.forEach(initItem => {
+            const exIdx = mergedItems.findIndex(
+              it => it.codigo === initItem.codigo || it.valor.toLowerCase().trim() === initItem.valor.toLowerCase().trim()
+            );
+            if (exIdx >= 0) {
+              mergedItems[exIdx] = {
+                ...mergedItems[exIdx],
+                valor: initItem.valor,
+                descripcion: initItem.descripcion,
+                activo: true
+              };
+            } else {
+              mergedItems.push(initItem);
+            }
+          });
+          storeMemory.catalogs[modCatIdx] = {
+            ...currentCat,
+            items: mergedItems
+          };
+        } else {
+          storeMemory.catalogs.push(initialModCat);
+        }
+      }
+
       persistToDisk();
       console.log(`[DataStore] Cargado desde disco: ${storeMemory.purchases.length} compras, ${storeMemory.users.length} usuarios.`);
       return storeMemory;

@@ -565,6 +565,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             parsed = [judCat, ...parsed];
           }
         }
+        // Asegurar que el catálogo de modalidades contenga Fondo Rotativo y los títulos oficiales LCE
+        const modCatIndex = parsed.findIndex(c => c.codigo === 'MODALIDAD_COMPRA');
+        if (modCatIndex >= 0) {
+          const initialModCat = INITIAL_CATALOGS.find(c => c.codigo === 'MODALIDAD_COMPRA');
+          if (initialModCat) {
+            const currentCat = parsed[modCatIndex];
+            const mergedItems = [...currentCat.items];
+            initialModCat.items.forEach(initItem => {
+              const existingIdx = mergedItems.findIndex(
+                it => it.codigo === initItem.codigo || it.valor.toLowerCase() === initItem.valor.toLowerCase()
+              );
+              if (existingIdx >= 0) {
+                mergedItems[existingIdx] = {
+                  ...mergedItems[existingIdx],
+                  valor: initItem.valor,
+                  descripcion: initItem.descripcion,
+                  activo: true
+                };
+              } else {
+                mergedItems.push(initItem);
+              }
+            });
+            parsed[modCatIndex] = {
+              ...currentCat,
+              items: mergedItems
+            };
+          }
+        } else {
+          const initialModCat = INITIAL_CATALOGS.find(c => c.codigo === 'MODALIDAD_COMPRA');
+          if (initialModCat) parsed = [...parsed, initialModCat];
+        }
         return parsed;
       } catch {
         return INITIAL_CATALOGS;
@@ -1006,9 +1037,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Sincronizar catálogos
       if (Array.isArray(data.catalogs)) {
-        setCatalogs(data.catalogs);
+        let incomingCatalogs = [...data.catalogs];
+        const modCatIdx = incomingCatalogs.findIndex(c => c.codigo === 'MODALIDAD_COMPRA');
+        const initialModCat = INITIAL_CATALOGS.find(c => c.codigo === 'MODALIDAD_COMPRA');
+        if (initialModCat) {
+          if (modCatIdx >= 0) {
+            const currentCat = incomingCatalogs[modCatIdx];
+            const mergedItems = [...currentCat.items];
+            initialModCat.items.forEach(initItem => {
+              const exIdx = mergedItems.findIndex(
+                it => it.codigo === initItem.codigo || it.valor.toLowerCase().trim() === initItem.valor.toLowerCase().trim()
+              );
+              if (exIdx >= 0) {
+                mergedItems[exIdx] = {
+                  ...mergedItems[exIdx],
+                  valor: initItem.valor,
+                  descripcion: initItem.descripcion,
+                  activo: true
+                };
+              } else {
+                mergedItems.push(initItem);
+              }
+            });
+            incomingCatalogs[modCatIdx] = {
+              ...currentCat,
+              items: mergedItems
+            };
+          } else {
+            incomingCatalogs.push(initialModCat);
+          }
+        }
+        setCatalogs(incomingCatalogs);
         try {
-          safeSetLocalStorage(STORAGE_KEYS.CATALOGS, JSON.stringify(data.catalogs));
+          safeSetLocalStorage(STORAGE_KEYS.CATALOGS, JSON.stringify(incomingCatalogs));
         } catch {}
       }
 

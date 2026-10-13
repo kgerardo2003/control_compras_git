@@ -234,7 +234,7 @@ export const PurchasesView: React.FC = () => {
       'Estatus del Evento': p.estatusEvento,
       'Categoría Tecnológica': p.categoriaTecnologica || 'N/A',
       'Dependencia Solicitante': p.dependenciaSolicitante || 'N/A',
-      'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre,
+      'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre,
       'Proveedor Adjudicado': p.proveedorAdjudicado || 'N/A',
     }));
     exportToCSV(`Adquisiciones_GIT_OJ_${new Date().toISOString().slice(0, 10)}`, rows);
@@ -1003,16 +1003,22 @@ export const PurchasesView: React.FC = () => {
                       {/* Monto */}
                       <td className="px-3 py-3 text-right font-bold text-slate-900 whitespace-nowrap">
                         <span>{formatQuetzales(p.monto)}</span>
-                        {p.renglonPresupuestario && (
-                          <div className="mt-0.5">
+                        <div className="mt-0.5 flex items-center justify-end gap-1 flex-wrap">
+                          {p.renglonPresupuestario && (
                             <span 
                               className="inline-block text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200" 
                               title={p.nombreRenglon || `Renglón presupuestario ${p.renglonPresupuestario}`}
                             >
                               Reng. {p.renglonPresupuestario}
                             </span>
-                          </div>
-                        )}
+                          )}
+                          <span 
+                            className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded border ${getModalidadCompraByMonto(p.monto, p.modalidadCompra).badgeClass}`}
+                            title={getModalidadCompraByMonto(p.monto, p.modalidadCompra).descripcionRango}
+                          >
+                            {p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Cantidad de Ofertas */}

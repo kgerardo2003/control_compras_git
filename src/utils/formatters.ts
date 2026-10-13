@@ -105,7 +105,7 @@ export function exportToCSV(filename: string, rows: Record<string, any>[]) {
  * - Excede Q 90,000.00 hasta Q 900,000.00: "Cotización"
  * - Supera Q 900,000.00: "Licitación"
  */
-export type ModalidadCompraLCE = 'Baja Cuantía' | 'Compra Directa' | 'Cotización' | 'Licitación';
+export type ModalidadCompraLCE = 'Baja Cuantía' | 'Compra Directa' | 'Cotización' | 'Licitación' | 'Fondo Rotativo';
 
 export interface ModalidadInfo {
   nombre: ModalidadCompraLCE;
@@ -118,12 +118,37 @@ export interface ModalidadInfo {
   limiteSuperior?: number;
 }
 
+export function determineModalidadNameByMonto(monto: number | string | undefined | null): string {
+  const num = typeof monto === 'string' ? parseFloat(monto) : Number(monto);
+  if (isNaN(num) || num <= 0) return 'Baja Cuantía';
+  if (num > 0.01 && num <= 25000) return 'Baja Cuantía';
+  if (num > 25000 && num <= 90000) return 'Compra Directa';
+  if (num > 90000 && num <= 900000) return 'Cotización';
+  if (num > 900000) return 'Licitación';
+  return 'Baja Cuantía';
+}
+
 export function getModalidadCompraByMonto(
   monto: number | string | undefined | null,
   explicitModalidad?: string
 ): ModalidadInfo {
   const norm = (explicitModalidad || '').trim().toLowerCase();
 
+  // 1. Modalidad Fondo Rotativo
+  if (norm.includes('rotativ') || norm.includes('fondo')) {
+    return {
+      nombre: 'Fondo Rotativo',
+      descripcionRango: 'Gastos menores y urgentes institucional',
+      badgeClass: 'bg-teal-50 text-teal-800 border-teal-300',
+      badgeBorderClass: 'border-teal-300 bg-teal-50/70',
+      badgeDotColor: 'bg-teal-500',
+      fundamentoLegal: 'Normas y Régimen de Fondos Rotativos del Organismo Judicial',
+      limiteInferior: 0,
+      limiteSuperior: 25000,
+    };
+  }
+
+  // 2. Modalidades explícitas
   if (norm.includes('licita')) {
     return {
       nombre: 'Licitación',
@@ -139,7 +164,7 @@ export function getModalidadCompraByMonto(
   if (norm.includes('cotiza')) {
     return {
       nombre: 'Cotización',
-      descripcionRango: 'Excede Q90,000.00 hasta Q900,000.00',
+      descripcionRango: 'Mayor de Q90,000.00 hasta Q900,000.00',
       badgeClass: 'bg-amber-50 text-amber-800 border-amber-300',
       badgeBorderClass: 'border-amber-300 bg-amber-50/70',
       badgeDotColor: 'bg-amber-500',
@@ -152,12 +177,12 @@ export function getModalidadCompraByMonto(
   if (norm.includes('baja cuant')) {
     return {
       nombre: 'Baja Cuantía',
-      descripcionRango: 'Hasta Q25,000.00',
+      descripcionRango: 'Mayor de Q0.01 y menor o igual a Q25,000.00',
       badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300',
       badgeBorderClass: 'border-emerald-300 bg-emerald-50/70',
       badgeDotColor: 'bg-emerald-500',
       fundamentoLegal: 'Art. 43 literal a) Ley de Contrataciones del Estado',
-      limiteInferior: 0,
+      limiteInferior: 0.01,
       limiteSuperior: 25000,
     };
   }
@@ -165,36 +190,49 @@ export function getModalidadCompraByMonto(
   if (norm.includes('directa')) {
     return {
       nombre: 'Compra Directa',
-      descripcionRango: 'Hasta Q90,000.00 con NOG / Oferta Electrónica',
+      descripcionRango: 'Mayor de Q25,000.00 y menor o igual a Q90,000.00',
       badgeClass: 'bg-blue-50 text-blue-800 border-blue-300',
       badgeBorderClass: 'border-blue-300 bg-blue-50/70',
       badgeDotColor: 'bg-blue-500',
       fundamentoLegal: 'Art. 43 literal b) Ley de Contrataciones del Estado',
-      limiteInferior: 0,
+      limiteInferior: 25000.01,
       limiteSuperior: 90000,
     };
   }
 
-  // Si no se especifica explícitamente, deducir por el monto
+  // 3. Determinación automática estricta según el monto LCE
   const num = typeof monto === 'string' ? parseFloat(monto) : Number(monto);
   
-  if (isNaN(num) || num <= 90000) {
+  if (!isNaN(num) && num > 0.01 && num <= 25000) {
+    return {
+      nombre: 'Baja Cuantía',
+      descripcionRango: 'Mayor de Q0.01 y menor o igual a Q25,000.00',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+      badgeBorderClass: 'border-emerald-300 bg-emerald-50/70',
+      badgeDotColor: 'bg-emerald-500',
+      fundamentoLegal: 'Art. 43 literal a) Ley de Contrataciones del Estado',
+      limiteInferior: 0.01,
+      limiteSuperior: 25000,
+    };
+  }
+
+  if (!isNaN(num) && num > 25000 && num <= 90000) {
     return {
       nombre: 'Compra Directa',
-      descripcionRango: 'Hasta Q90,000.00',
+      descripcionRango: 'Mayor de Q25,000.00 y menor o igual a Q90,000.00',
       badgeClass: 'bg-blue-50 text-blue-800 border-blue-300',
       badgeBorderClass: 'border-blue-300 bg-blue-50/70',
       badgeDotColor: 'bg-blue-500',
       fundamentoLegal: 'Art. 43 literal b) Ley de Contrataciones del Estado',
-      limiteInferior: 0,
+      limiteInferior: 25000.01,
       limiteSuperior: 90000,
     };
   }
 
-  if (num <= 900000) {
+  if (!isNaN(num) && num > 90000 && num <= 900000) {
     return {
       nombre: 'Cotización',
-      descripcionRango: 'Excede Q90,000.00 hasta Q900,000.00',
+      descripcionRango: 'Mayor de Q90,000.00 y menor o igual a Q900,000.00',
       badgeClass: 'bg-amber-50 text-amber-800 border-amber-300',
       badgeBorderClass: 'border-amber-300 bg-amber-50/70',
       badgeDotColor: 'bg-amber-500',
@@ -204,14 +242,28 @@ export function getModalidadCompraByMonto(
     };
   }
 
+  if (!isNaN(num) && num > 900000) {
+    return {
+      nombre: 'Licitación',
+      descripcionRango: 'Mayor de Q900,000.00',
+      badgeClass: 'bg-purple-50 text-purple-800 border-purple-300',
+      badgeBorderClass: 'border-purple-300 bg-purple-50/70',
+      badgeDotColor: 'bg-purple-500',
+      fundamentoLegal: 'Art. 17 Ley de Contrataciones del Estado',
+      limiteInferior: 900000.01,
+    };
+  }
+
+  // Por defecto si num <= 0.01 o no definido
   return {
-    nombre: 'Licitación',
-    descripcionRango: 'Supera los Q900,000.00',
-    badgeClass: 'bg-purple-50 text-purple-800 border-purple-300',
-    badgeBorderClass: 'border-purple-300 bg-purple-50/70',
-    badgeDotColor: 'bg-purple-500',
-    fundamentoLegal: 'Art. 17 Ley de Contrataciones del Estado',
-    limiteInferior: 900000.01,
+    nombre: 'Baja Cuantía',
+    descripcionRango: 'Mayor de Q0.01 y menor o igual a Q25,000.00',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+    badgeBorderClass: 'border-emerald-300 bg-emerald-50/70',
+    badgeDotColor: 'bg-emerald-500',
+    fundamentoLegal: 'Art. 43 literal a) Ley de Contrataciones del Estado',
+    limiteInferior: 0.01,
+    limiteSuperior: 25000,
   };
 }
 

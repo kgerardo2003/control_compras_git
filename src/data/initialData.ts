@@ -200,11 +200,11 @@ export const INITIAL_CATALOGS: Catalog[] = [
     descripcion: 'Modalidades de contratación pública según Ley de Contrataciones y Normas del Organismo Judicial',
     esSistema: false,
     items: [
-      { id: 'mod-bc', codigo: 'BAJA_CUANTIA', valor: 'Baja cuantía', descripcion: 'Orden 1: Montos de hasta Q.25,000.00', activo: true },
-      { id: 'mod-cd', codigo: 'COMPRA_DIRECTA', valor: 'Compra directa', descripcion: 'Orden 2: De Q.25,000.01 hasta Q.90,000.00', activo: true },
-      { id: 'mod-cot', codigo: 'COTIZACION', valor: 'Cotización', descripcion: 'Orden 3: De Q.90,000.01 hasta Q.900,000.00', activo: true },
-      { id: 'mod-lic', codigo: 'LICITACION', valor: 'Licitación', descripcion: 'Orden 4: Supera los Q.900,000.00', activo: true },
-      { id: 'mod-fr', codigo: 'FONDO_ROTATIVO', valor: 'Fondo rotativo', descripcion: 'Orden 5: Fondo privativo institucional para gastos menores y urgentes', activo: true },
+      { id: 'mod-bc', codigo: 'BAJA_CUANTIA', valor: 'Baja Cuantía', descripcion: 'Mayor de Q0.01 y menor o igual a Q25,000.00 (Art. 43 literal a LCE)', activo: true },
+      { id: 'mod-cd', codigo: 'COMPRA_DIRECTA', valor: 'Compra Directa', descripcion: 'Mayor de Q25,000.00 y menor o igual a Q90,000.00 (Art. 43 literal b LCE)', activo: true },
+      { id: 'mod-cot', codigo: 'COTIZACION', valor: 'Cotización', descripcion: 'Mayor de Q90,000.00 y menor o igual a Q900,000.00 (Art. 38 LCE)', activo: true },
+      { id: 'mod-lic', codigo: 'LICITACION', valor: 'Licitación', descripcion: 'Mayor de Q900,000.00 (Art. 17 LCE)', activo: true },
+      { id: 'mod-fr', codigo: 'FONDO_ROTATIVO', valor: 'Fondo Rotativo', descripcion: 'Fondo privativo institucional para gastos menores y urgentes del Organismo Judicial', activo: true },
       { id: 'mod-ca', codigo: 'CONTRATO_ABIERTO', valor: 'Contrato Abierto', descripcion: 'Convenio marco con precios fijados por Minfin', activo: true },
     ]
   }

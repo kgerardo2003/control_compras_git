@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   X, 
@@ -23,7 +23,7 @@ import {
   ListTree
 } from 'lucide-react';
 import { EvaluacionGIT, AttachedDocument, PurchaseRecord } from '../types';
-import { formatQuetzales, getModalidadCompraByMonto } from '../utils/formatters';
+import { formatQuetzales, getModalidadCompraByMonto, determineModalidadNameByMonto } from '../utils/formatters';
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { DocumentPreview } from './DocumentPreview';
 import { processAttachedFile, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
@@ -102,7 +102,8 @@ export const PurchaseFormModal: React.FC = () => {
   const [areaSolicitante, setAreaSolicitante] = useState('Soporte técnico');
   const [categoriaTecnologica, setCategoriaTecnologica] = useState('');
   const [dependenciaSolicitante, setDependenciaSolicitante] = useState('');
-  const [modalidadCompra, setModalidadCompra] = useState('Compra Directa');
+  const [modalidadCompra, setModalidadCompra] = useState('Baja Cuantía');
+  const [isManualModality, setIsManualModality] = useState(false);
   const [proveedorAdjudicado, setProveedorAdjudicado] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
@@ -146,15 +147,46 @@ export const PurchaseFormModal: React.FC = () => {
   ];
 
   const modalityCatalog = catalogs.find(c => c.codigo === 'MODALIDAD_COMPRA');
-  const modalityOptions = modalityCatalog?.items.filter(it => it.activo).map(it => it.valor) || [
-    'Compra Directa', 'Cotización Pública', 'Licitación Pública', 'Contrato Abierto'
-  ];
+  const modalityOptions = useMemo(() => {
+    const baseList = ['Baja Cuantía', 'Compra Directa', 'Cotización', 'Licitación', 'Fondo Rotativo', 'Contrato Abierto'];
+    if (modalityCatalog?.items && modalityCatalog.items.length > 0) {
+      const activeItems = modalityCatalog.items.filter(it => it.activo).map(it => it.valor.trim());
+      const merged = [...activeItems];
+      baseList.forEach(item => {
+        if (!merged.some(m => m.toLowerCase() === item.toLowerCase())) {
+          merged.push(item);
+        }
+      });
+      return merged;
+    }
+    return baseList;
+  }, [modalityCatalog]);
+
+  // Determinar automáticamente la modalidad según los rangos normados de la LCE
+  const getAutoModalityByMonto = useCallback((val: number | string | undefined | null): string => {
+    const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+    let target = 'Baja Cuantía';
+    if (!isNaN(num) && num > 0.01 && num <= 25000) {
+      target = 'Baja Cuantía';
+    } else if (!isNaN(num) && num > 25000 && num <= 90000) {
+      target = 'Compra Directa';
+    } else if (!isNaN(num) && num > 90000 && num <= 900000) {
+      target = 'Cotización';
+    } else if (!isNaN(num) && num > 900000) {
+      target = 'Licitación';
+    } else {
+      target = 'Baja Cuantía';
+    }
+    const match = modalityOptions.find(opt => opt.toLowerCase().trim() === target.toLowerCase().trim());
+    return match || target;
+  }, [modalityOptions]);
 
   // Cálculo de modalidad y obligatoriedad de NOG
   const modalidadInfo = getModalidadCompraByMonto(Number(monto) || 0, modalidadCompra);
   const currentModalityName = modalidadCompra || modalidadInfo.nombre;
   const isBajaCuantia = currentModalityName.toLowerCase().includes('baja cuant');
-  const isMandatoryNog = !isBajaCuantia;
+  const isFondoRotativo = currentModalityName.toLowerCase().includes('rotativ') || currentModalityName.toLowerCase().includes('fondo');
+  const isMandatoryNog = !isBajaCuantia && !isFondoRotativo;
 
   // Verificación reactiva en tiempo real si el NOG ya existe en otro registro
   const duplicateNogError = useMemo(() => {
@@ -204,8 +236,10 @@ export const PurchaseFormModal: React.FC = () => {
       setFechaAdjudicacion(purchaseToEdit.fechaAdjudicacion || '');
       setAreaSolicitante(purchaseToEdit.areaSolicitante || areaOptions[0] || 'Soporte técnico');
       setCategoriaTecnologica(purchaseToEdit.categoriaTecnologica || categoryOptions[0] || '');
-      setDependenciaSolicitante(purchaseToEdit.dependenciaSolicitante || dependencyOptions[0] || '');
-      setModalidadCompra(purchaseToEdit.modalidadCompra || 'Compra Directa');
+      const initialMod = purchaseToEdit.modalidadCompra || getAutoModalityByMonto(purchaseToEdit.monto);
+      const matchedMod = modalityOptions.find(opt => opt.toLowerCase().trim() === initialMod.toLowerCase().trim()) || initialMod;
+      setModalidadCompra(matchedMod);
+      setIsManualModality(Boolean(purchaseToEdit.modalidadCompra && purchaseToEdit.modalidadCompra.toLowerCase().includes('rotativ')));
       setProveedorAdjudicado(purchaseToEdit.proveedorAdjudicado || '');
       setObservaciones(purchaseToEdit.observaciones || '');
     } else {
@@ -233,7 +267,8 @@ export const PurchaseFormModal: React.FC = () => {
       setAreaSolicitante(areaOptions[0] || 'Soporte técnico');
       setCategoriaTecnologica(categoryOptions[0] || 'Servidores y Almacenamiento');
       setDependenciaSolicitante(dependencyOptions[0] || 'Subgerencia de Infraestructura GIT');
-      setModalidadCompra('Cotización Pública');
+      setModalidadCompra('Baja Cuantía');
+      setIsManualModality(false);
       setProveedorAdjudicado('');
       setObservaciones('');
     }
@@ -384,11 +419,19 @@ export const PurchaseFormModal: React.FC = () => {
     if (!digitsOnly || parseInt(digitsOnly, 10) === 0) {
       setMontoInput('');
       setMonto('');
+      if (!isManualModality || !modalidadCompra.toLowerCase().includes('rotativ')) {
+        setModalidadCompra(getAutoModalityByMonto(0));
+      }
       return;
     }
     const { display, value } = formatMontoRTL(digitsOnly);
     setMontoInput(display);
     setMonto(value);
+    // Determinar automáticamente la modalidad según los rangos LCE si no es Fondo Rotativo
+    if (!isManualModality || !modalidadCompra.toLowerCase().includes('rotativ')) {
+      const autoMod = getAutoModalityByMonto(value);
+      setModalidadCompra(autoMod);
+    }
   };
 
   const handleMontoPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -402,6 +445,10 @@ export const PurchaseFormModal: React.FC = () => {
       const { display, value } = formatMontoRTL(String(cents));
       setMontoInput(display);
       setMonto(value);
+      if (!isManualModality || !modalidadCompra.toLowerCase().includes('rotativ')) {
+        const autoMod = getAutoModalityByMonto(value);
+        setModalidadCompra(autoMod);
+      }
     }
   };
 
@@ -1025,8 +1072,8 @@ export const PurchaseFormModal: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label htmlFor="input-purchase-nog" className="block text-xs font-bold text-slate-800">
-                  {isBajaCuantia ? (
-                    <span>NOG <span className="text-slate-500 font-normal">(Opcional en Baja Cuantía)</span></span>
+                  {!isMandatoryNog ? (
+                    <span>NOG <span className="text-slate-500 font-normal">(Opcional en {currentModalityName})</span></span>
                   ) : (
                     <span>NOG ({currentModalityName}) <span className="text-rose-600">*</span></span>
                   )}
@@ -1155,25 +1202,45 @@ export const PurchaseFormModal: React.FC = () => {
 
               {/* Modalidad de Contratación */}
               <div className="mt-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <label htmlFor="select-purchase-modalidad" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                     Modalidad LCE:
                   </label>
                   <select
                     id="select-purchase-modalidad"
-                    value={modalidadCompra}
-                    onChange={(e) => setModalidadCompra(e.target.value)}
-                    className="p-1 text-xs font-bold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 text-slate-800"
+                    value={
+                      modalityOptions.find(opt => opt.toLowerCase().trim() === (modalidadCompra || '').toLowerCase().trim()) || modalidadCompra
+                    }
+                    onChange={(e) => {
+                      setModalidadCompra(e.target.value);
+                      setIsManualModality(true);
+                    }}
+                    className="p-1.5 text-xs font-bold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 text-slate-800"
                   >
-                    <option value="Compra Directa">Compra Directa</option>
-                    <option value="Cotización">Cotización</option>
-                    <option value="Licitación">Licitación</option>
-                    <option value="Baja Cuantía">Baja Cuantía</option>
+                    {modalityOptions.map(opt => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
                   </select>
+                  {isManualModality && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const autoMod = getAutoModalityByMonto(monto);
+                        setModalidadCompra(autoMod);
+                        setIsManualModality(false);
+                      }}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
+                      title="Restablecer al cálculo automático según la escala de montos LCE"
+                    >
+                      Calcular por Monto
+                    </button>
+                  )}
                 </div>
                 <div className="text-[10px] text-slate-500 sm:text-right">
-                  <span className="font-semibold text-slate-700">{getModalidadCompraByMonto(monto, modalidadCompra).descripcionRango}</span>
-                  <span className="block text-[9px] text-slate-400 italic">{getModalidadCompraByMonto(monto, modalidadCompra).fundamentoLegal}</span>
+                  <span className="font-semibold text-slate-700 block">{getModalidadCompraByMonto(monto, modalidadCompra).descripcionRango}</span>
+                  <span className="text-[9px] text-slate-400 italic block">{getModalidadCompraByMonto(monto, modalidadCompra).fundamentoLegal}</span>
                 </div>
               </div>
 

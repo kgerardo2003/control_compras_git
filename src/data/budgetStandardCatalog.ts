@@ -75,33 +75,33 @@ export const OFFICIAL_BUDGET_GROUPS: OfficialBudgetGroup[] = [
 // 2. MODALIDADES DE COMPRA (ORDENADAS)
 export const OFFICIAL_MODALIDADES: OfficialModalidadCompra[] = [
   { 
-    modalidad: 'Baja cuantía', 
+    modalidad: 'Baja Cuantía', 
     order: 1, 
-    descripcion: 'Contratación directa para montos de hasta Q.25,000.00',
+    descripcion: 'Contratación para montos mayores de Q.0.01 y menores o iguales a Q.25,000.00',
     fundamentoLegal: 'Artículo 43 inciso a) Ley de Contrataciones del Estado'
   },
   { 
-    modalidad: 'Compra directa', 
+    modalidad: 'Compra Directa', 
     order: 2, 
-    descripcion: 'Procedimiento para adquisiciones de más de Q.25,000.00 hasta Q.90,000.00',
+    descripcion: 'Procedimiento para adquisiciones mayores de Q.25,000.00 y menores o iguales a Q.90,000.00',
     fundamentoLegal: 'Artículo 43 inciso b) Ley de Contrataciones del Estado'
   },
   { 
     modalidad: 'Cotización', 
     order: 3, 
-    descripcion: 'Procedimiento público para adquisiciones mayores a Q.90,000.00 hasta Q.900,000.00',
+    descripcion: 'Procedimiento público para adquisiciones mayores a Q.90,000.00 y menores o iguales a Q.900,000.00',
     fundamentoLegal: 'Artículo 38 Ley de Contrataciones del Estado'
   },
   { 
     modalidad: 'Licitación', 
     order: 4, 
-    descripcion: 'Concurso público para contrataciones que superan los Q.900,000.00',
+    descripcion: 'Concurso público para contrataciones mayores a Q.900,000.00',
     fundamentoLegal: 'Artículo 17 Ley de Contrataciones del Estado'
   },
   { 
-    modalidad: 'Fondo rotativo', 
+    modalidad: 'Fondo Rotativo', 
     order: 5, 
-    descripcion: 'Fondo privativo de caja chica para compras urgentes menores',
+    descripcion: 'Fondo privativo institucional para compras menores y urgentes',
     fundamentoLegal: 'Normas de Ejecución Presupuestaria y Régimen de Fondos Rotativos del OJ'
   }
 ];

@@ -11,7 +11,7 @@ interface InstitutionalReportModalProps {
 }
 
 export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> = ({ purchase, onClose }) => {
-  const modalidadLCE = getModalidadCompraByMonto(purchase.monto);
+  const modalidadLCE = getModalidadCompraByMonto(purchase.monto, purchase.modalidadCompra);
   const timelineEvents = getPurchaseTimeline(purchase);
 
   const handlePrint = () => {

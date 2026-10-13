@@ -93,14 +93,21 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     estatusMap[est].count += 1;
     estatusMap[est].amount += monto;
 
-    if (Number(p.cantidadOfertas) === 0 || est === 'Desierto') {
+    const rawModLower = (p.modalidadCompra || '').toLowerCase();
+    const cleanNog = (p.nog || '').trim().toLowerCase();
+    const isExemptBidding = rawModLower.includes('baja cuant') || rawModLower.includes('rotativ') || rawModLower.includes('fondo') || !cleanNog || cleanNog === '0' || cleanNog === 'n/a';
+    if (!isExemptBidding && (Number(p.cantidadOfertas) === 0 || est === 'Desierto')) {
+      sinOfertasCount += 1;
+    } else if (isExemptBidding && est === 'Desierto') {
       sinOfertasCount += 1;
     }
 
     // Modalidad
     const rawMod = (p.modalidadCompra || '').trim();
     let mod: string;
-    if (rawMod.toLowerCase().includes('licita')) {
+    if (rawMod.toLowerCase().includes('rotativ') || rawMod.toLowerCase().includes('fondo')) {
+      mod = 'Fondo Rotativo';
+    } else if (rawMod.toLowerCase().includes('licita')) {
       mod = 'Licitación';
     } else if (rawMod.toLowerCase().includes('cotiza')) {
       mod = 'Cotización';
@@ -112,8 +119,10 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
       mod = 'Licitación';
     } else if (monto > 90000) {
       mod = 'Cotización';
-    } else {
+    } else if (monto > 25000) {
       mod = 'Compra Directa';
+    } else {
+      mod = 'Baja Cuantía';
     }
     if (!modalidadMap[mod]) {
       modalidadMap[mod] = { count: 0, amount: 0 };
@@ -231,6 +240,7 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     'Compra Directa': '#2563EB', // Blue 600
     'Cotización': '#D97706',     // Amber 600
     'Licitación': '#7C3AED',     // Purple 600
+    'Fondo Rotativo': '#0D9488', // Teal 600
   };
 
   const modalidadChartData: ChartDataItem[] = Object.entries(modalidadMap)

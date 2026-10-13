@@ -169,7 +169,7 @@ export const ReportsView: React.FC = () => {
   const adjudicadosModalidadChartData = useMemo(() => {
     const map: Record<string, { count: number; amount: number }> = {};
     adjudicados.forEach(p => {
-      const mod = p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre;
+      const mod = p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre;
       if (!map[mod]) map[mod] = { count: 0, amount: 0 };
       map[mod].count += 1;
       map[mod].amount += Number(p.monto) || 0;
@@ -217,7 +217,7 @@ export const ReportsView: React.FC = () => {
   const gitModalidadChartData = useMemo(() => {
     const map: Record<string, number> = {};
     evaluadosGIT.forEach(p => {
-      const mod = p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre;
+      const mod = p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre;
       map[mod] = (map[mod] || 0) + 1;
     });
     const palette = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'];
@@ -1024,7 +1024,7 @@ export const ReportsView: React.FC = () => {
         'Renglón Presupuestario': p.renglonPresupuestario || '158',
         'Descripción del Requerimiento': p.descripcion,
         'Fecha Solicitud': p.fechaSolicitud,
-        'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre,
+        'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre,
         'Estatus Evento': p.estatusEvento,
         'Dictamen GIT': p.evaluadoGIT === 'Sí' ? 'Sí (Emitido)' : 'No',
         'Monto (GTQ)': p.monto,
@@ -1054,7 +1054,7 @@ export const ReportsView: React.FC = () => {
         'Descripción': p.descripcion,
         'Proveedor Adjudicado': p.proveedorAdjudicado || 'N/A',
         'Fecha Adjudicación': p.fechaAdjudicacion || p.fechaSolicitud,
-        'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre,
+        'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre,
         'Renglón': p.renglonPresupuestario || '158',
         'Monto Adjudicado (GTQ)': p.monto,
       }));
@@ -1132,7 +1132,7 @@ export const ReportsView: React.FC = () => {
               'F56-e': p.f56e,
               'Área Solicitante': p.areaSolicitante || 'N/A',
               'Descripción': p.descripcion,
-              'Modalidad': p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre,
+              'Modalidad': p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre,
               'Estatus': p.estatusEvento,
               'Monto (GTQ)': p.monto,
             });
@@ -2390,7 +2390,7 @@ export const ReportsView: React.FC = () => {
                         <td className="p-2.5 text-center font-mono font-semibold text-slate-800">{p.renglonPresupuestario || '158'}</td>
                         <td className="p-2.5 max-w-xs">{p.descripcion}</td>
                         <td className="p-2.5 whitespace-nowrap text-slate-600">{formatDate(p.fechaSolicitud)}</td>
-                        <td className="p-2.5 whitespace-nowrap text-slate-600">{p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre}</td>
+                        <td className="p-2.5 whitespace-nowrap text-slate-600">{p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre}</td>
                         <td className="p-2.5 text-center font-bold uppercase text-[10px] whitespace-nowrap">
                           <span className={`px-2 py-0.5 rounded-full ${
                             p.estatusEvento === 'Adjudicación' ? 'bg-blue-100 text-blue-800' :
@@ -2700,7 +2700,7 @@ export const ReportsView: React.FC = () => {
                         <td className="p-2.5 whitespace-nowrap text-slate-600">
                           {formatDate(p.fechaAdjudicacion || p.fechaSolicitud)}
                         </td>
-                        <td className="p-2.5 whitespace-nowrap text-slate-600">{p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre}</td>
+                        <td className="p-2.5 whitespace-nowrap text-slate-600">{p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre}</td>
                         <td className="p-2.5 text-center font-mono font-semibold text-slate-800">{p.renglonPresupuestario || '158'}</td>
                         <td className="p-2.5 text-right font-bold text-emerald-700 font-mono whitespace-nowrap">
                           {formatQuetzales(p.monto)}
@@ -5253,7 +5253,7 @@ export const ReportsView: React.FC = () => {
                                     </td>
                                   )}
                                   <td className="p-2 max-w-sm text-slate-800">{p.descripcion}</td>
-                                  <td className="p-2 whitespace-nowrap text-slate-600">{p.modalidadCompra || getModalidadCompraByMonto(p.monto).nombre}</td>
+                                  <td className="p-2 whitespace-nowrap text-slate-600">{p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre}</td>
                                   <td className="p-2 text-center whitespace-nowrap">
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                                       p.estatusEvento === 'Adjudicación' ? 'bg-blue-100 text-blue-800' :
