@@ -135,7 +135,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   const renderMetadataBox = (currentY: number) => {
     const totalMonto = purchases.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
     const conDictamen = purchases.filter(p => p.evaluadoGIT === 'Sí' || Boolean(p.fechaDictamenGIT)).length;
-    const adjudicados = purchases.filter(p => p.estatusEvento === 'Adjudicación').length;
+    const adjudicados = purchases.filter(p => (p.estatusEvento || '').toLowerCase().includes('adjudic')).length;
 
     const boxHeight = 16;
     doc.setFillColor(248, 250, 252);
@@ -275,7 +275,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
 
   const totalMonto = purchases.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
   const conDictamen = purchases.filter(p => p.evaluadoGIT === 'Sí' || Boolean(p.fechaDictamenGIT)).length;
-  const adjudicados = purchases.filter(p => p.estatusEvento === 'Adjudicación').length;
+  const adjudicados = purchases.filter(p => (p.estatusEvento || '').toLowerCase().includes('adjudic')).length;
 
   const tableHeaders = [
     '#',
@@ -307,7 +307,7 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
       dictamenText,
       p.estatusEvento || 'Evaluación',
       `${formatQuetzales(p.monto || 0)}\n(${modName})`,
-      p.proveedorAdjudicado || (p.estatusEvento === 'Adjudicación' ? 'Sin registrar' : 'N/A'),
+      p.proveedorAdjudicado || ((p.estatusEvento || '').toLowerCase().includes('adjudic') ? 'Sin registrar' : 'N/A'),
     ];
   });
 
@@ -352,8 +352,8 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
       // Resaltado de estatus
       if (data.section === 'body' && data.column.index === 6) {
         const val = String(data.cell.raw);
-        if (val === 'Adjudicación') {
-          data.cell.styles.textColor = [29, 78, 216]; // Blue 700
+        if (val.toLowerCase().includes('adjudic')) {
+          data.cell.styles.textColor = [4, 120, 87]; // Emerald 700
         } else if (val === 'Evaluación') {
           data.cell.styles.textColor = [180, 83, 9]; // Amber 700
         } else if (val === 'Prescindido') {

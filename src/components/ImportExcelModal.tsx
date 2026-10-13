@@ -545,6 +545,44 @@ export const ImportExcelModal: React.FC = () => {
     const rawObs = String(getVal(['observaciones', 'observacion', 'observación', 'notas', 'comentarios', 'detalle adicional', 'nota'])).trim();
     const observaciones = !isValueEmptyOrNA(rawObs) ? rawObs : undefined;
 
+    // 19. Renglón Presupuestario y Nombre de Renglón
+    const rawRenglon = String(getVal([
+      'renglon',
+      'renglón',
+      'renglon presupuestario',
+      'renglón presupuestario',
+      'partida',
+      'partida presupuestaria',
+      'codigo renglon',
+      'código renglón',
+      'renglon gasto',
+      'renglón gasto',
+      'reng'
+    ])).trim();
+
+    let renglonPresupuestario: string | undefined = undefined;
+    let nombreRenglon: string | undefined = undefined;
+
+    if (!isValueEmptyOrNA(rawRenglon)) {
+      const cleanR = rawRenglon.replace(/\D/g, '');
+      if (cleanR.length > 0) {
+        renglonPresupuestario = cleanR;
+      } else {
+        renglonPresupuestario = rawRenglon;
+      }
+    }
+
+    const rawNombreRenglon = String(getVal([
+      'nombre renglon',
+      'nombre renglón',
+      'descripcion renglon',
+      'descripción renglón',
+      'nombre partida'
+    ])).trim();
+    if (!isValueEmptyOrNA(rawNombreRenglon)) {
+      nombreRenglon = rawNombreRenglon;
+    }
+
     const purchaseData: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'> = {
       nog,
       f56e,
@@ -568,6 +606,8 @@ export const ImportExcelModal: React.FC = () => {
       fechaAdjudicacion,
       proveedorAdjudicado,
       observaciones,
+      renglonPresupuestario,
+      nombreRenglon,
     };
 
     return {

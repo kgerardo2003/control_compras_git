@@ -87,9 +87,31 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
     // Reconciliar con el almacén local en disco
     const current = getStoreState();
     
-    // Si Firestore tiene compras, actualizar sin resucitar compras eliminadas
+    // Si Firestore tiene compras, sincronizar bidireccionalmente preservando renglones e información local
     const deletedPurchasesSet = new Set(current.deletedPurchaseIds || []);
-    const updatedPurchases = purchases.filter(p => !deletedPurchasesSet.has(p.id));
+    let updatedPurchases = current.purchases;
+    if (purchases.length > 0) {
+      const pMap = new Map<string, any>();
+      // 1. Conservar compras locales en su orden exacto original
+      current.purchases.forEach(p => pMap.set(p.id, p));
+      // 2. Fusionar datos de Firestore respetando renglón presupuestario y adjuntos locales
+      purchases.forEach(p => {
+        if (p && p.id && !deletedPurchasesSet.has(p.id)) {
+          const localItem = pMap.get(p.id);
+          pMap.set(p.id, {
+            ...(localItem || {}),
+            ...p,
+            renglonPresupuestario: p.renglonPresupuestario || localItem?.renglonPresupuestario,
+            nombreRenglon: p.nombreRenglon || localItem?.nombreRenglon,
+            modalidadCompra: p.modalidadCompra || localItem?.modalidadCompra,
+            f56Documento: (localItem?.f56Documento?.dataUrl && (!p.f56Documento?.dataUrl || p.f56Documento.dataUrl.length < localItem.f56Documento.dataUrl.length))
+              ? localItem.f56Documento
+              : (p.f56Documento || localItem?.f56Documento)
+          });
+        }
+      });
+      updatedPurchases = Array.from(pMap.values());
+    }
 
     // Sincronizar judicaturas bidireccionalmente
     let updatedJudicaturas = current.judicaturas;
@@ -146,6 +168,21 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
       );
     }
 
+    // Sincronizar matriz presupuestaria bidireccionalmente sin perder registros locales
+    let updatedBudgetLines = current.budgetLines;
+    if (budgetLines.length > 0) {
+      const bMap = new Map<string, any>();
+      current.budgetLines.forEach(b => bMap.set(b.id || b.renglonPresupuestario, b));
+      budgetLines.forEach(b => {
+        const key = b.id || b.renglonPresupuestario;
+        if (key) {
+          const localLine = bMap.get(key);
+          bMap.set(key, { ...(localLine || {}), ...b });
+        }
+      });
+      updatedBudgetLines = Array.from(bMap.values());
+    }
+
     const updated = {
       ...current,
       version: Date.now(),
@@ -155,7 +192,7 @@ export async function syncFirestoreData(): Promise<{ success: boolean; message: 
       servicios: updatedServicios,
       users: updatedUsers,
       catalogs: catalogs.length > 0 ? catalogs : current.catalogs,
-      budgetLines: budgetLines.length > 0 ? budgetLines : current.budgetLines,
+      budgetLines: updatedBudgetLines,
       budgetModifications: budgetModifications.length > 0 ? budgetModifications : current.budgetModifications,
       auditLogs: auditLogs.length > 0 ? auditLogs : current.auditLogs
     };

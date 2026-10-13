@@ -229,7 +229,7 @@ export function getPurchaseTimeline(purchase: PurchaseRecord): StatusTimelineEve
   }
 
   // 8. Adjudicación
-  if (purchase.estatusEvento === 'Adjudicación' || purchase.fechaAdjudicacion) {
+  if (purchase.estatusEvento === 'Adjudicación' || purchase.estatusEvento === 'Adjudicada' || (purchase.estatusEvento || '').toLowerCase().includes('adjudic') || purchase.fechaAdjudicacion) {
     baseTimeline.push({
       id: `base_adjudicacion_${purchase.id}`,
       titulo: 'Adjudicación Definitiva',
@@ -313,7 +313,7 @@ export function detectAutomaticEventsOnUpdate(
   if (update.estatusEvento && update.estatusEvento !== prev.estatusEvento) {
     let fase = 'Gestión';
     let responsable = 'Autoridad Competente';
-    if (update.estatusEvento === 'Adjudicación') {
+    if (update.estatusEvento === 'Adjudicación' || update.estatusEvento === 'Adjudicada' || (update.estatusEvento || '').toLowerCase().includes('adjudic')) {
       fase = 'Adjudicación';
       responsable = 'Autoridad Superior / Compras';
     } else if (update.estatusEvento === 'Evaluación') {

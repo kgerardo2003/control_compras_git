@@ -206,6 +206,9 @@ export const PurchasesView: React.FC = () => {
         } else if (sortBy === 'nog') {
           comparison = (a.nog || '').localeCompare(b.nog || '');
         }
+        if (comparison === 0) {
+          comparison = (a.id || '').localeCompare(b.id || '');
+        }
         return sortOrder === 'asc' ? comparison : -comparison;
       });
   }, [currentPurchases, showOnlyImported, recentlyImportedIds, searchTerm, filterEstatus, filterGIT, filterCategory, sortBy, sortOrder]);

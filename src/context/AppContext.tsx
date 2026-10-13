@@ -983,25 +983,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
 
-      // 2. Incorporar y actualizar con registros autoritativos del servidor central
+      // 2. Incorporar y actualizar con registros autoritativos del servidor central respetando renglones
       serverPurchases.forEach(sp => {
         if (!deletedPurchaseIdsRef.current.has(sp.id)) {
           const localMatch = localPurchasesMap.get(sp.id);
-          // Si localmente tiene adjunto base64 completo y el servidor aún no, preservar el adjunto
-          if (sp.f56Documento && localMatch?.f56Documento?.dataUrl && (!sp.f56Documento.dataUrl || sp.f56Documento.dataUrl.length < localMatch.f56Documento.dataUrl.length)) {
-            combinedPurchasesMap.set(sp.id, {
-              ...sp,
-              f56Documento: localMatch.f56Documento
-            });
-          } else {
-            combinedPurchasesMap.set(sp.id, sp);
-          }
+          const mergedDoc = (localMatch?.f56Documento?.dataUrl && (!sp.f56Documento?.dataUrl || sp.f56Documento.dataUrl.length < localMatch.f56Documento.dataUrl.length))
+            ? localMatch.f56Documento
+            : (sp.f56Documento || localMatch?.f56Documento);
+
+          combinedPurchasesMap.set(sp.id, {
+            ...(localMatch || {}),
+            ...sp,
+            renglonPresupuestario: sp.renglonPresupuestario || localMatch?.renglonPresupuestario,
+            nombreRenglon: sp.nombreRenglon || localMatch?.nombreRenglon,
+            modalidadCompra: sp.modalidadCompra || localMatch?.modalidadCompra,
+            f56Documento: mergedDoc
+          });
         }
       });
 
-      const finalPurchasesList = Array.from(combinedPurchasesMap.values())
-        .filter(p => !deletedPurchaseIdsRef.current.has(p.id))
-        .sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || ''));
+      // 3. Mantener el orden estable de los renglones/registros: conservar orden original del servidor y compras locales nuevas al inicio
+      const seenIds = new Set<string>();
+      const finalPurchasesList: PurchaseRecord[] = [];
+
+      // A) Compras locales recién creadas que aún no están en el servidor
+      localPurchasesMap.forEach((lp, id) => {
+        if (!deletedPurchaseIdsRef.current.has(id) && !serverPurchases.some(sp => sp.id === id)) {
+          seenIds.add(id);
+          finalPurchasesList.push(lp);
+        }
+      });
+
+      // B) Compras del servidor en su orden exacto original
+      serverPurchases.forEach(sp => {
+        if (!deletedPurchaseIdsRef.current.has(sp.id) && !seenIds.has(sp.id)) {
+          seenIds.add(sp.id);
+          const item = combinedPurchasesMap.get(sp.id);
+          if (item) finalPurchasesList.push(item);
+        }
+      });
+
+      // C) Cualquier restante asegurado
+      combinedPurchasesMap.forEach((item, id) => {
+        if (!seenIds.has(id) && !deletedPurchaseIdsRef.current.has(id)) {
+          seenIds.add(id);
+          finalPurchasesList.push(item);
+        }
+      });
 
       setPurchases(finalPurchasesList);
       try {
@@ -1243,25 +1271,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         setPurchases(prevPurchases => {
           const prevMap = new Map<string, PurchaseRecord>(prevPurchases.map(p => [p.id, p]));
-          const updated = remoteItems.map(item => {
+          const mergedRemoteMap = new Map<string, PurchaseRecord>();
+          remoteItems.forEach(item => {
             const prevItem = prevMap.get(item.id);
+            let mergedItem: PurchaseRecord = {
+              ...(prevItem || {}),
+              ...item,
+              renglonPresupuestario: item.renglonPresupuestario || prevItem?.renglonPresupuestario,
+              nombreRenglon: item.nombreRenglon || prevItem?.nombreRenglon,
+              modalidadCompra: item.modalidadCompra || prevItem?.modalidadCompra,
+            };
             if (item.f56Documento && prevItem?.f56Documento?.dataUrl) {
               if (!item.f56Documento.dataUrl || item.f56Documento.dataUrl.length < prevItem.f56Documento.dataUrl.length) {
-                return {
-                  ...item,
-                  f56Documento: {
-                    ...item.f56Documento,
-                    dataUrl: prevItem.f56Documento.dataUrl,
-                    nombre: item.f56Documento.nombre || prevItem.f56Documento.nombre,
-                    tamano: item.f56Documento.tamano || prevItem.f56Documento.tamano,
-                    tipo: item.f56Documento.tipo || prevItem.f56Documento.tipo,
-                    fechaSubida: item.f56Documento.fechaSubida || prevItem.f56Documento.fechaSubida
-                  }
+                mergedItem.f56Documento = {
+                  ...item.f56Documento,
+                  dataUrl: prevItem.f56Documento.dataUrl,
+                  nombre: item.f56Documento.nombre || prevItem.f56Documento.nombre,
+                  tamano: item.f56Documento.tamano || prevItem.f56Documento.tamano,
+                  tipo: item.f56Documento.tipo || prevItem.f56Documento.tipo,
+                  fechaSubida: item.f56Documento.fechaSubida || prevItem.f56Documento.fechaSubida
                 };
               }
             }
-            return item;
+            mergedRemoteMap.set(item.id, mergedItem);
           });
+
+          // Mantener el orden estable de las compras previas
+          const updated: PurchaseRecord[] = [];
+          const seen = new Set<string>();
+
+          prevPurchases.forEach(p => {
+            if (!deletedPurchaseIdsRef.current.has(p.id)) {
+              seen.add(p.id);
+              updated.push(mergedRemoteMap.get(p.id) || p);
+            }
+          });
+
+          remoteItems.forEach(ri => {
+            if (!seen.has(ri.id) && !deletedPurchaseIdsRef.current.has(ri.id)) {
+              seen.add(ri.id);
+              updated.push(mergedRemoteMap.get(ri.id) || ri);
+            }
+          });
+
           try {
             safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
           } catch {}
@@ -2737,7 +2789,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    if (data.estatusEvento === 'Adjudicación') {
+    if (data.estatusEvento === 'Adjudicación' || data.estatusEvento === 'Adjudicada' || (data.estatusEvento || '').toLowerCase().includes('adjudic')) {
       initialEvents.push({
         id: `auto_${now.getTime()}_adjudicacion`,
         titulo: 'Adjudicación Definitiva',
@@ -3117,7 +3169,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         { estatusEvento: data.estatusEvento }
       );
 
-      const notifType = data.estatusEvento === 'Adjudicación' ? 'exito' : data.estatusEvento === 'Desierto' ? 'alerta' : 'info';
+      const notifType = (data.estatusEvento === 'Adjudicación' || data.estatusEvento === 'Adjudicada' || (data.estatusEvento || '').toLowerCase().includes('adjudic')) ? 'exito' : data.estatusEvento === 'Desierto' ? 'alerta' : 'info';
       addNotification({
         tipo: notifType,
         titulo: `Estatus Actualizado: ${data.estatusEvento}`,

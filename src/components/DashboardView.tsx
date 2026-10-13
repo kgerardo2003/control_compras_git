@@ -63,6 +63,18 @@ export const isPurchaseVigente = (p: { estatusEvento?: string }): boolean => {
   return false;
 };
 
+// Helper institucional para determinar si un evento NOG está adjudicado (Adjudicación, Adjudicada, Adjudicado)
+export const isPurchaseAdjudicado = (p: { estatusEvento?: string }): boolean => {
+  const st = (p.estatusEvento || '').trim().toLowerCase();
+  return (
+    st === 'adjudicada' ||
+    st === 'adjudicación' ||
+    st === 'adjudicacion' ||
+    st === 'adjudicado' ||
+    st.includes('adjudic')
+  );
+};
+
 // Formateador institucional para el eje Y de valores monetarios
 const formatYAxisCurrency = (val: number): string => {
   if (val >= 1000000) return `Q ${(val / 1000000).toFixed(1)}M`;
@@ -359,10 +371,13 @@ const CustomComparativeTooltip: React.FC<ComparativeTooltipProps> = ({ active, p
 };
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
-  'Adjudicación': 'bg-blue-100 text-blue-700',
+  'Adjudicación': 'bg-emerald-100 text-emerald-800 border border-emerald-300',
+  'Adjudicada': 'bg-emerald-100 text-emerald-800 border border-emerald-300',
+  'Adjudicado': 'bg-emerald-100 text-emerald-800 border border-emerald-300',
   'Evaluación': 'bg-amber-100 text-amber-700',
   'Prescindido': 'bg-red-100 text-red-700',
   'Desierto': 'bg-slate-100 text-slate-700',
+  'Vigente': 'bg-blue-100 text-blue-700',
 };
 
 const ACTION_BADGE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
@@ -764,7 +779,10 @@ export const DashboardView: React.FC = () => {
     const categoryMap: Record<string, { label: string; cantidad: number; monto: number; color: string }> = {};
 
     filteredPurchases.forEach(p => {
-      const st = p.estatusEvento || 'Evaluación';
+      let st = p.estatusEvento || 'Evaluación';
+      if (isPurchaseAdjudicado(p)) {
+        st = 'Adjudicación';
+      }
       if (!statusMap[st]) {
         statusMap[st] = { label: st, cantidad: 0, monto: 0, color: '#3b82f6' };
       }
@@ -817,7 +835,7 @@ export const DashboardView: React.FC = () => {
     const totalMonto = filteredPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
 
     // 1. Indicador de NOG adjudicados
-    const adjudicados = filteredPurchases.filter(p => p.estatusEvento === 'Adjudicación');
+    const adjudicados = filteredPurchases.filter(p => isPurchaseAdjudicado(p));
     const adjudicadosCount = adjudicados.length;
     const adjudicadosMonto = adjudicados.reduce((acc, p) => acc + (p.monto || 0), 0);
     const adjudicadosPorcentaje = totalEventos > 0 ? Math.round((adjudicadosCount / totalEventos) * 100) : 0;
@@ -1018,7 +1036,7 @@ export const DashboardView: React.FC = () => {
       }
       deptMap[deptName].monto += (p.monto || 0);
       deptMap[deptName].cantidad += 1;
-      if (p.estatusEvento === 'Adjudicación') {
+      if (isPurchaseAdjudicado(p)) {
         deptMap[deptName].adjudicado += (p.monto || 0);
       } else if (p.estatusEvento === 'Evaluación') {
         deptMap[deptName].enEvaluacion += (p.monto || 0);
@@ -1053,7 +1071,10 @@ export const DashboardView: React.FC = () => {
     const totalCompras = filteredPurchases.length;
 
     filteredPurchases.forEach(p => {
-      const statusKey = p.estatusEvento || 'Evaluación';
+      let statusKey = p.estatusEvento || 'Evaluación';
+      if (isPurchaseAdjudicado(p)) {
+        statusKey = 'Adjudicación';
+      }
       if (!statusTotals[statusKey]) {
         statusTotals[statusKey] = {
           name: statusConfig[statusKey]?.name || statusKey,
@@ -1091,7 +1112,7 @@ export const DashboardView: React.FC = () => {
     const totalMonto = deptPurchases.reduce((acc, p) => acc + (p.monto || 0), 0);
 
     // 1. NOG Adjudicados de esta unidad
-    const adjudicados = deptPurchases.filter(p => p.estatusEvento === 'Adjudicación');
+    const adjudicados = deptPurchases.filter(p => isPurchaseAdjudicado(p));
     const adjudicadosCount = adjudicados.length;
     const adjudicadosMonto = adjudicados.reduce((acc, p) => acc + (p.monto || 0), 0);
     const adjudicadosPorcentaje = totalEventos > 0 ? Math.round((adjudicadosCount / totalEventos) * 100) : 0;
@@ -1124,7 +1145,10 @@ export const DashboardView: React.FC = () => {
     };
 
     deptPurchases.forEach(p => {
-      const st = p.estatusEvento || 'Evaluación';
+      let st = p.estatusEvento || 'Evaluación';
+      if (isPurchaseAdjudicado(p)) {
+        st = 'Adjudicación';
+      }
       if (!statusTotals[st]) {
         statusTotals[st] = {
           estado: st,
@@ -1218,7 +1242,7 @@ export const DashboardView: React.FC = () => {
 
     let list = filteredPurchases.filter(p => {
       if (nogModalType === 'adjudicados') {
-        return p.estatusEvento === 'Adjudicación' || p.estatusEvento === 'Adjudicada';
+        return isPurchaseAdjudicado(p);
       } else if (nogModalType === 'vigentes') {
         return isPurchaseVigente(p);
       } else if (nogModalType === 'desiertos') {
@@ -4276,7 +4300,7 @@ export const DashboardView: React.FC = () => {
                   ) : (
                     displayedModalPurchases.map((p) => {
                       const delayDays = getEventDelayDays(p);
-                      const isAdjudicado = p.estatusEvento === 'Adjudicación' || p.estatusEvento === 'Adjudicada';
+                      const isAdjudicado = isPurchaseAdjudicado(p);
 
                       return (
                         <tr key={p.id} className="hover:bg-slate-50 transition-colors">

@@ -253,6 +253,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     proveedorAdjudicado: 'Tecnologías y Sistemas Corporativos, S.A.',
     creadoPor: 'Lic. Kevin Gerarado López de León',
     fechaCreacion: '2026-01-15T09:00:00Z',
+    renglonPresupuestario: '328',
+    nombreRenglon: 'Equipo de Cómputo',
     observaciones: 'Adjudicado a proveedor con mayor puntaje técnico. Garantía de 3 años On-Site 24x7.'
   },
   {
@@ -295,6 +297,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     modalidadCompra: 'Licitación Pública',
     creadoPor: 'Mario Gómez',
     fechaCreacion: '2026-02-01T10:15:00Z',
+    renglonPresupuestario: '186',
+    nombreRenglon: 'Servicios de Informática y Sistemas Computarizados',
     observaciones: 'En revisión de ofertas técnicas y cumplimiento de SLAs solicitados.'
   },
   {
@@ -323,6 +327,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     proveedorAdjudicado: 'Soluciones Informáticas de Guatemala, S.A.',
     creadoPor: 'Jorge Fuentes',
     fechaCreacion: '2026-01-20T11:30:00Z',
+    renglonPresupuestario: '328',
+    nombreRenglon: 'Equipo de Cómputo',
     observaciones: 'Equipo con procesadores i7, 16GB RAM y discos NVMe de 512GB con sello OJ.'
   },
   {
@@ -348,6 +354,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     modalidadCompra: 'Cotización Pública',
     creadoPor: 'Lic. Kevin Gerarado López de León',
     fechaCreacion: '2026-02-10T14:20:00Z',
+    renglonPresupuestario: '113',
+    nombreRenglon: 'Telefonía, Enlaces y Telecomunicaciones',
     observaciones: 'Publicado en Guatecompras. Convocatoria vigente para recepción de plicas.'
   },
   {
@@ -391,6 +399,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     proveedorAdjudicado: 'CyberSec Solutions Centroamérica, S.A.',
     creadoPor: 'Mario Gómez',
     fechaCreacion: '2026-01-10T09:45:00Z',
+    renglonPresupuestario: '328',
+    nombreRenglon: 'Equipo de Cómputo',
     observaciones: 'Adjudicación aprobada por el Comité Técnico de Adquisiciones.'
   },
   {
@@ -416,6 +426,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     modalidadCompra: 'Cotización Pública',
     creadoPor: 'Jorge Fuentes',
     fechaCreacion: '2026-01-05T08:30:00Z',
+    renglonPresupuestario: '329',
+    nombreRenglon: 'Otras Maquinarias y Equipos',
     observaciones: 'El único oferente no presentó la solvencia fiscal SAT ni la constancia de colegiado activo requerida.'
   },
   {
@@ -441,6 +453,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     modalidadCompra: 'Cotización Pública',
     creadoPor: 'Lic. Kevin Gerarado López de León',
     fechaCreacion: '2026-01-08T10:00:00Z',
+    renglonPresupuestario: '113',
+    nombreRenglon: 'Telefonía, Enlaces y Telecomunicaciones',
     observaciones: 'Se prescindió debido a reestructuración de fondos hacia proyecto de fibra óptica departamental.'
   },
   {
@@ -466,6 +480,8 @@ export const INITIAL_PURCHASES: PurchaseRecord[] = [
     modalidadCompra: 'Cotización Pública',
     creadoPor: 'Mario Gómez',
     fechaCreacion: '2026-02-15T15:00:00Z',
+    renglonPresupuestario: '186',
+    nombreRenglon: 'Servicios de Informática y Sistemas Computarizados',
     observaciones: 'Cumpliendo requerimientos del Registro de Prestadores de Servicios de Certificación.'
   }
 ];

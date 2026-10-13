@@ -1263,6 +1263,12 @@ export const PurchaseFormModal: React.FC = () => {
                       onChange={(e) => setRenglonPresupuestario(e.target.value)}
                       className="w-full p-2 text-xs font-semibold bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
                     >
+                      {/* Renglón actual de la compra en caso no figure explícitamente en la matriz cargada */}
+                      {renglonPresupuestario && !budgetAvailability.some(l => l.renglonPresupuestario === renglonPresupuestario) && renglonPresupuestario !== '113' && (
+                        <option value={renglonPresupuestario}>
+                          Renglón {renglonPresupuestario} - {purchaseToEdit?.nombreRenglon || `Renglón ${renglonPresupuestario}`}
+                        </option>
+                      )}
                       {/* Renglón 113 Telefonía (Referencia - Gerencia Administrativa) */}
                       {!budgetAvailability.some(l => l.renglonPresupuestario === '113') && (
                         <option value="113">

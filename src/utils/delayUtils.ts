@@ -28,7 +28,7 @@ export function getEventDelayDays(p: PurchaseRecord): number {
   }
 
   // Si no tiene diasAtraso explícito, calcular según fechas
-  if (p.estatusEvento === 'Adjudicación') {
+  if (p.estatusEvento === 'Adjudicación' || p.estatusEvento === 'Adjudicada' || (p.estatusEvento || '').toLowerCase().includes('adjudic')) {
     if (p.fechaAdjudicacion && p.fechaOfertas) {
       const ms = new Date(p.fechaAdjudicacion).getTime() - new Date(p.fechaOfertas).getTime();
       return Math.max(0, Math.round(ms / (1000 * 60 * 60 * 24)));

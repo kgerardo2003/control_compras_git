@@ -113,7 +113,19 @@ export function initDataStore(): DataStoreState {
       // Filtrar de inmediato compras eliminadas
       storeMemory.purchases = storeMemory.purchases.filter(p => 
         !storeMemory!.deletedPurchaseIds.includes(p.id)
-      );
+      ).map(p => {
+        if (!p.renglonPresupuestario) {
+          const initMatch = INITIAL_PURCHASES.find(ip => ip.id === p.id);
+          if (initMatch?.renglonPresupuestario) {
+            return {
+              ...p,
+              renglonPresupuestario: initMatch.renglonPresupuestario,
+              nombreRenglon: p.nombreRenglon || initMatch.nombreRenglon
+            };
+          }
+        }
+        return p;
+      });
 
       // Filtrar de inmediato cualquier usuario que esté en la lista negra de eliminados
       storeMemory.users = storeMemory.users.filter(u => 
