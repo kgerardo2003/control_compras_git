@@ -209,7 +209,7 @@ app.get('/api/db/version', (req, res) => {
 });
 
 // Obtener estado sincronizado completo para cualquier equipo/dispositivo conectado
-app.get('/api/db/state', (req, res) => {
+app.get(['/api/db', '/api/db/state'], (req, res) => {
   try {
     const state = getStoreState();
     res.json({ success: true, data: state });
