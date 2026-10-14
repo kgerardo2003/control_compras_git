@@ -223,6 +223,7 @@ interface AppContextType {
   addCatalogItem: (catalogId: string, item: Omit<CatalogItem, 'id'>) => void;
   updateCatalogItem: (catalogId: string, itemId: string, item: Partial<CatalogItem>) => void;
   deleteCatalogItem: (catalogId: string, itemId: string) => void;
+  syncCatalogsWithSystem: () => Promise<{ updatedCatalogsCount: number; updatedPurchasesCount: number }>;
 
   // Usuarios CRUD
   addUser: (data: Omit<User, 'id' | 'fechaCreacion'>) => User;
@@ -551,12 +552,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         let parsed: Catalog[] = JSON.parse(saved);
-        const hasAreaCat = parsed.some(c => c.codigo === 'AREA_SOLICITANTE');
-        if (!hasAreaCat) {
+        const areaCatIdx = parsed.findIndex(c => c.codigo === 'AREA_SOLICITANTE');
+        if (areaCatIdx === -1) {
           const areaCat = INITIAL_CATALOGS.find(c => c.codigo === 'AREA_SOLICITANTE');
           if (areaCat) {
             parsed = [...parsed, areaCat];
           }
+        } else {
+          const areaCat = parsed[areaCatIdx];
+          const updatedItems = areaCat.items.map(it => {
+            if (
+              it.codigo === 'SOPORTE_REMOTO' ||
+              it.valor.toLowerCase().trim() === 'soporte tecnico remoto' ||
+              it.valor.toLowerCase().trim() === 'soporte técnico remoto'
+            ) {
+              return { ...it, codigo: 'SOPORTE_REMOTO', valor: 'Soporte Remoto' };
+            }
+            return it;
+          });
+          if (!updatedItems.some(it => it.valor.toLowerCase().trim() === 'soporte remoto')) {
+            updatedItems.push({
+              id: 'area-soporte-remoto',
+              codigo: 'SOPORTE_REMOTO',
+              valor: 'Soporte Remoto',
+              descripcion: 'Mesa de ayuda y soporte a distancia',
+              activo: true,
+              color: 'cyan'
+            });
+          }
+          parsed[areaCatIdx] = { ...areaCat, items: updatedItems };
         }
         const hasJudEstatusCat = parsed.some(c => c.codigo === 'ESTATUS_JUDICATURA');
         if (!hasJudEstatusCat) {
@@ -1094,6 +1118,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else {
             incomingCatalogs.push(initialModCat);
           }
+        }
+        // Asegurar que el catálogo AREA_SOLICITANTE contenga Soporte Remoto
+        const areaCatIdx = incomingCatalogs.findIndex(c => c.codigo === 'AREA_SOLICITANTE');
+        if (areaCatIdx >= 0) {
+          const areaCat = incomingCatalogs[areaCatIdx];
+          const updatedItems = areaCat.items.map(it => {
+            if (
+              it.codigo === 'SOPORTE_REMOTO' ||
+              it.valor.toLowerCase().trim() === 'soporte tecnico remoto' ||
+              it.valor.toLowerCase().trim() === 'soporte técnico remoto'
+            ) {
+              return { ...it, codigo: 'SOPORTE_REMOTO', valor: 'Soporte Remoto' };
+            }
+            return it;
+          });
+          if (!updatedItems.some(it => it.valor.toLowerCase().trim() === 'soporte remoto')) {
+            updatedItems.push({
+              id: 'area-soporte-remoto',
+              codigo: 'SOPORTE_REMOTO',
+              valor: 'Soporte Remoto',
+              descripcion: 'Mesa de ayuda y soporte a distancia',
+              activo: true,
+              color: 'cyan'
+            });
+          }
+          incomingCatalogs[areaCatIdx] = { ...areaCat, items: updatedItems };
         }
         setCatalogs(incomingCatalogs);
         try {
@@ -3586,8 +3636,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateCatalogItem = (catalogId: string, itemId: string, item: Partial<CatalogItem>) => {
     let updatedCatalog: Catalog | null = null;
+    let oldItem: CatalogItem | undefined;
+
     setCatalogs(prev => prev.map(cat => {
       if (cat.id === catalogId) {
+        oldItem = cat.items.find(it => it.id === itemId);
         updatedCatalog = {
           ...cat,
           items: cat.items.map(it => it.id === itemId ? { ...it, ...item } : it)
@@ -3596,10 +3649,154 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return cat;
     }));
+
     if (updatedCatalog) {
       saveCatalogToFirestore(updatedCatalog);
+      fetch('/api/db/catalogs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedCatalog)
+      }).catch(() => {});
     }
-    logAudit('EDITAR_CATALOGO', 'Catálogos', `Modificado elemento ${itemId} en catálogo ID: ${catalogId}`, catalogId);
+
+    // Sincronización en cascada si se modificó el nombre/valor del elemento
+    if (updatedCatalog && oldItem && item.valor && oldItem.valor !== item.valor) {
+      const oldVal = oldItem.valor.trim();
+      const newVal = item.valor.trim();
+      const catCode = (updatedCatalog as Catalog).codigo;
+
+      // 1. Catálogo AREA_SOLICITANTE: actualizar compras y usuarios
+      if (catCode === 'AREA_SOLICITANTE') {
+        setPurchases(prev => {
+          let modified = false;
+          const updated = prev.map(p => {
+            const currentArea = (p.areaSolicitante || '').trim();
+            if (
+              currentArea === oldVal ||
+              currentArea.toLowerCase() === oldVal.toLowerCase() ||
+              (oldVal.toLowerCase().includes('soporte') && oldVal.toLowerCase().includes('remoto') && currentArea.toLowerCase().includes('soporte') && currentArea.toLowerCase().includes('remoto'))
+            ) {
+              modified = true;
+              return { ...p, areaSolicitante: newVal };
+            }
+            return p;
+          });
+          if (modified) {
+            try {
+              safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+            } catch {}
+            fetch('/api/db/purchases/batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            }).catch(() => {});
+          }
+          return updated;
+        });
+
+        setUsers(prev => {
+          let modified = false;
+          const updated = prev.map(u => {
+            const uArea = (u.area || '').trim();
+            const uDep = (u.departamento || '').trim();
+            const matchArea = uArea === oldVal || uArea.toLowerCase() === oldVal.toLowerCase();
+            const matchDep = uDep === oldVal || uDep.toLowerCase() === oldVal.toLowerCase();
+            if (matchArea || matchDep) {
+              modified = true;
+              return {
+                ...u,
+                area: matchArea ? newVal : u.area,
+                departamento: matchDep ? newVal : u.departamento
+              };
+            }
+            return u;
+          });
+          if (modified) {
+            try {
+              safeSetLocalStorage(STORAGE_KEYS.USERS, JSON.stringify(updated));
+            } catch {}
+          }
+          return updated;
+        });
+      }
+
+      // 2. Catálogo CATEGORIA_TECNOLOGICA
+      if (catCode === 'CATEGORIA_TECNOLOGICA') {
+        setPurchases(prev => {
+          let modified = false;
+          const updated = prev.map(p => {
+            if (p.categoriaTecnologica === oldVal || (p.categoriaTecnologica && p.categoriaTecnologica.toLowerCase().trim() === oldVal.toLowerCase())) {
+              modified = true;
+              return { ...p, categoriaTecnologica: newVal };
+            }
+            return p;
+          });
+          if (modified) {
+            try {
+              safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+            } catch {}
+            fetch('/api/db/purchases/batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            }).catch(() => {});
+          }
+          return updated;
+        });
+      }
+
+      // 3. Catálogo DEPENDENCIA_SOLICITANTE
+      if (catCode === 'DEPENDENCIA_SOLICITANTE') {
+        setPurchases(prev => {
+          let modified = false;
+          const updated = prev.map(p => {
+            if (p.dependenciaSolicitante === oldVal || (p.dependenciaSolicitante && p.dependenciaSolicitante.toLowerCase().trim() === oldVal.toLowerCase())) {
+              modified = true;
+              return { ...p, dependenciaSolicitante: newVal };
+            }
+            return p;
+          });
+          if (modified) {
+            try {
+              safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+            } catch {}
+            fetch('/api/db/purchases/batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            }).catch(() => {});
+          }
+          return updated;
+        });
+      }
+
+      // 4. Catálogo ESTATUS_EVENTO
+      if (catCode === 'ESTATUS_EVENTO') {
+        setPurchases(prev => {
+          let modified = false;
+          const updated = prev.map(p => {
+            if (p.estatusEvento === oldVal || (p.estatusEvento && p.estatusEvento.toLowerCase().trim() === oldVal.toLowerCase())) {
+              modified = true;
+              return { ...p, estatusEvento: newVal as any };
+            }
+            return p;
+          });
+          if (modified) {
+            try {
+              safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+            } catch {}
+            fetch('/api/db/purchases/batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            }).catch(() => {});
+          }
+          return updated;
+        });
+      }
+    }
+
+    logAudit('EDITAR_CATALOGO', 'Catálogos', `Modificado elemento "${item.valor || itemId}" en catálogo ID: ${catalogId}`, catalogId);
   };
 
   const deleteCatalogItem = (catalogId: string, itemId: string) => {
@@ -3616,8 +3813,130 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
     if (updatedCatalog) {
       saveCatalogToFirestore(updatedCatalog);
+      fetch('/api/db/catalogs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedCatalog)
+      }).catch(() => {});
     }
     logAudit('EDITAR_CATALOGO', 'Catálogos', `Eliminado elemento ${itemId} de catálogo ID: ${catalogId}`, catalogId);
+  };
+
+  /**
+   * Sincronización integral de catálogos de sistema con las listas y compras:
+   * Sincroniza nombres de áreas (incluyendo 'Soporte Remoto'), categorías y dependencias
+   * entre catálogos y compras, asegurando concordancia total y persistencia inmediata.
+   */
+  const syncCatalogsWithSystem = async (): Promise<{ updatedCatalogsCount: number; updatedPurchasesCount: number }> => {
+    let updatedPurchasesCount = 0;
+    let updatedCatalogsCount = 0;
+
+    // 1. Sincronizar catálogo AREA_SOLICITANTE asegurando Soporte Remoto
+    let currentCatalogs = [...catalogs];
+    const areaCatIdx = currentCatalogs.findIndex(c => c.codigo === 'AREA_SOLICITANTE');
+
+    if (areaCatIdx >= 0) {
+      const areaCat = currentCatalogs[areaCatIdx];
+      let itemsModified = false;
+      let newItems = areaCat.items.map(it => {
+        if (
+          it.codigo === 'SOPORTE_REMOTO' ||
+          it.valor.toLowerCase().trim() === 'soporte tecnico remoto' ||
+          it.valor.toLowerCase().trim() === 'soporte técnico remoto'
+        ) {
+          if (it.valor !== 'Soporte Remoto') {
+            itemsModified = true;
+            return { ...it, codigo: 'SOPORTE_REMOTO', valor: 'Soporte Remoto' };
+          }
+        }
+        return it;
+      });
+
+      if (!newItems.some(it => it.valor.toLowerCase().trim() === 'soporte remoto')) {
+        newItems.push({
+          id: 'area-soporte-remoto',
+          codigo: 'SOPORTE_REMOTO',
+          valor: 'Soporte Remoto',
+          descripcion: 'Mesa de ayuda y soporte a distancia',
+          activo: true,
+          color: 'cyan'
+        });
+        itemsModified = true;
+      }
+
+      // Integrar cualquier área existente en compras que no esté en el catálogo
+      purchases.forEach(p => {
+        if (p.areaSolicitante && p.areaSolicitante.trim()) {
+          const val = p.areaSolicitante.trim();
+          const exists = newItems.some(it => it.valor.toLowerCase().trim() === val.toLowerCase().trim());
+          if (!exists) {
+            newItems.push({
+              id: `area-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              codigo: val.toUpperCase().replace(/\s+/g, '_').normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+              valor: val,
+              descripcion: 'Área incorporada desde adquisiciones del sistema',
+              activo: true,
+              color: 'slate'
+            });
+            itemsModified = true;
+          }
+        }
+      });
+
+      if (itemsModified) {
+        currentCatalogs[areaCatIdx] = { ...areaCat, items: newItems };
+        updatedCatalogsCount++;
+      }
+    }
+
+    // 2. Sincronizar compras: si tenían 'Soporte Técnico Remoto', actualizar a 'Soporte Remoto'
+    let currentPurchasesList = purchases.map(p => {
+      const a = (p.areaSolicitante || '').toLowerCase().trim();
+      if (a === 'soporte técnico remoto' || a === 'soporte tecnico remoto') {
+        updatedPurchasesCount++;
+        return { ...p, areaSolicitante: 'Soporte Remoto' };
+      }
+      return p;
+    });
+
+    if (updatedCatalogsCount > 0) {
+      setCatalogs(currentCatalogs);
+      try {
+        safeSetLocalStorage(STORAGE_KEYS.CATALOGS, JSON.stringify(currentCatalogs));
+      } catch {}
+      const areaCat = currentCatalogs[areaCatIdx];
+      if (areaCat) {
+        saveCatalogToFirestore(areaCat);
+        fetch('/api/db/catalogs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(areaCat)
+        }).catch(() => {});
+      }
+    }
+
+    if (updatedPurchasesCount > 0) {
+      setPurchases(currentPurchasesList);
+      try {
+        safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(currentPurchasesList));
+      } catch {}
+      fetch('/api/db/purchases/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentPurchasesList)
+      }).catch(() => {});
+    }
+
+    logAudit('EDITAR_CATALOGO', 'Catálogos', `Sincronización integral: ${updatedCatalogsCount} catálogos actualizados y ${updatedPurchasesCount} compras alineadas con Soporte Remoto y listas del sistema.`);
+
+    showToast({
+      type: 'success',
+      title: 'Sincronización de Catálogos Exitosa',
+      message: `Catálogo de áreas y listas sincronizados. El filtro "Soporte Remoto" está disponible en Adquisiciones.`,
+      duration: 4000
+    });
+
+    return { updatedCatalogsCount, updatedPurchasesCount };
   };
 
   // Usuarios CRUD
@@ -4414,9 +4733,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fechaInicioAdecuaciones: data.fechaInicioAdecuaciones,
       fechaFinAdecuaciones: data.fechaFinAdecuaciones,
       equipoComputo: data.equipoComputo,
+      estatusEquipoComputo: data.estatusEquipoComputo || (data.equipoComputo === 'Si' ? 'Se cuenta con equipo' : 'Pendiente'),
+      equipoComputoInstalado: data.equipoComputoInstalado || (data.estatusEquipoComputo === 'Instalado' ? 'Si' : 'No'),
       equipoAudio: data.equipoAudio,
+      estatusEquipoAudio: data.estatusEquipoAudio || (data.equipoAudio === 'Si' ? 'Se cuenta con equipo' : 'Pendiente'),
+      equipoAudioInstalado: data.equipoAudioInstalado || (data.estatusEquipoAudio === 'Instalado' ? 'Si' : 'No'),
       cableadoEstructurado: data.cableadoEstructurado,
+      estatusCableadoEstructurado: data.estatusCableadoEstructurado || (data.cableadoEstructurado === 'Si' ? 'Terminado' : 'Pendiente'),
+      cableadoEstructuradoInstalado: data.cableadoEstructuradoInstalado || (data.estatusCableadoEstructurado === 'Terminado' ? 'Si' : 'No'),
       enlaceDatos: data.enlaceDatos,
+      estatusEnlaceDatos: data.estatusEnlaceDatos || (data.enlaceDatos === 'Si' ? 'Instalado' : 'Pendiente'),
+      enlaceDatosInstalado: data.enlaceDatosInstalado || ((data.estatusEnlaceDatos === 'Instalado' || data.estatusEnlaceDatos === 'Equipo Satelital Temporal') ? 'Si' : 'No'),
       fechaInauguracion: data.fechaInauguracion || '',
       estadoInauguracion: data.estadoInauguracion || (data.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'),
       priorizado: data.priorizado || 'No',
@@ -4632,9 +4959,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fechaInicioAdecuaciones: rec.fechaInicioAdecuaciones || nowIso.slice(0, 10),
         fechaFinAdecuaciones: rec.fechaFinAdecuaciones || nowIso.slice(0, 10),
         equipoComputo: rec.equipoComputo === 'Si' ? 'Si' : 'No',
+        estatusEquipoComputo: rec.estatusEquipoComputo || existing?.estatusEquipoComputo || (rec.equipoComputo === 'Si' ? 'Se cuenta con equipo' : 'Pendiente'),
+        equipoComputoInstalado: rec.equipoComputoInstalado || existing?.equipoComputoInstalado || (rec.estatusEquipoComputo === 'Instalado' ? 'Si' : 'No'),
         equipoAudio: rec.equipoAudio === 'Si' ? 'Si' : 'No',
+        estatusEquipoAudio: rec.estatusEquipoAudio || existing?.estatusEquipoAudio || (rec.equipoAudio === 'Si' ? 'Se cuenta con equipo' : 'Pendiente'),
+        equipoAudioInstalado: rec.equipoAudioInstalado || existing?.equipoAudioInstalado || (rec.estatusEquipoAudio === 'Instalado' ? 'Si' : 'No'),
         cableadoEstructurado: rec.cableadoEstructurado === 'Si' ? 'Si' : 'No',
+        estatusCableadoEstructurado: rec.estatusCableadoEstructurado || existing?.estatusCableadoEstructurado || (rec.cableadoEstructurado === 'Si' ? 'Terminado' : 'Pendiente'),
+        cableadoEstructuradoInstalado: rec.cableadoEstructuradoInstalado || existing?.cableadoEstructuradoInstalado || (rec.estatusCableadoEstructurado === 'Terminado' ? 'Si' : 'No'),
         enlaceDatos: rec.enlaceDatos === 'Si' ? 'Si' : 'No',
+        estatusEnlaceDatos: rec.estatusEnlaceDatos || existing?.estatusEnlaceDatos || (rec.enlaceDatos === 'Si' ? 'Instalado' : 'Pendiente'),
+        enlaceDatosInstalado: rec.enlaceDatosInstalado || existing?.enlaceDatosInstalado || ((rec.estatusEnlaceDatos === 'Instalado' || rec.estatusEnlaceDatos === 'Equipo Satelital Temporal') ? 'Si' : 'No'),
         fechaInauguracion: rec.fechaInauguracion || undefined,
         estadoInauguracion: rec.estadoInauguracion || 'Pendiente Fecha',
         priorizado: rec.priorizado === 'Si' ? 'Si' : (existing?.priorizado || 'No'),
@@ -5374,6 +5709,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCatalogItem,
         updateCatalogItem,
         deleteCatalogItem,
+        syncCatalogsWithSystem,
         addUser,
         updateUser,
         toggleUserStatus,

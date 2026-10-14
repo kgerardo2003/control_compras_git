@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   UserPlus, 
@@ -21,12 +21,13 @@ import {
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { formatDateTime } from '../utils/formatters';
-import { TECHNICAL_AREAS_LIST, ALL_AREAS_LABEL, isUserGlobalAdmin } from '../utils/rbacUtils';
+import { TECHNICAL_AREAS_LIST, ALL_AREAS_LABEL, getSystemAreas, isUserGlobalAdmin } from '../utils/rbacUtils';
 import { validatePhoneNumber, formatPhoneNumber } from '../utils/smsService';
 
 export const UsersView: React.FC = () => {
   const { 
     users, 
+    purchases,
     addUser, 
     updateUser, 
     toggleUserStatus, 
@@ -64,6 +65,10 @@ export const UsersView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendingEmailUserId, setResendingEmailUserId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const userAreaOptions = useMemo(() => {
+    const list = getSystemAreas(catalogs, purchases).filter(a => a !== ALL_AREAS_LABEL);
+    return [ALL_AREAS_LABEL, ...list];
+  }, [catalogs, purchases]);
 
   const canManage = currentUser?.rol === 'administrador';
 
@@ -724,7 +729,7 @@ export const UsersView: React.FC = () => {
                   }}
                   className="w-full p-2 bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-semibold text-xs text-slate-800"
                 >
-                  {TECHNICAL_AREAS_LIST.map((item) => (
+                  {userAreaOptions.map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>

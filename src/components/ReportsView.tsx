@@ -53,6 +53,7 @@ import {
   getUserAssignedArea, 
   getVisiblePurchasesForUser, 
   TECHNICAL_AREAS_LIST,
+  getSystemAreas,
   normalizeAreaName 
 } from '../utils/rbacUtils';
 import { InstitutionalReportModal } from './InstitutionalReportModal';
@@ -77,11 +78,16 @@ export interface AnaliticoGrupoNode {
 }
 
 export const ReportsView: React.FC = () => {
-  const { purchases, logAudit, currentUser, showToast, budgetAvailability } = useApp();
+  const { purchases, catalogs, logAudit, currentUser, showToast, budgetAvailability } = useApp();
 
   // Roles y Permisos de Área (RBAC)
   const isAdmin = isUserGlobalAdmin(currentUser);
   const userAssignedArea = getUserAssignedArea(currentUser);
+
+  // Lista dinámica de Áreas Solicitantes sincronizada con el Catálogo de Sistema
+  const reportAreaOptions = useMemo(() => {
+    return getSystemAreas(catalogs, purchases);
+  }, [catalogs, purchases]);
 
   // Estado del tipo de informe activo
   const [selectedReportType, setSelectedReportType] = useState<
@@ -104,19 +110,26 @@ export const ReportsView: React.FC = () => {
     if (adminAreaFilter !== 'todas') {
       const clean = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
       const lowerFilter = clean(adminAreaFilter);
+      const isTargetSoporteRemoto = lowerFilter.includes('soporte') && lowerFilter.includes('remoto');
+
       return purchases.filter(p => {
         const pArea = clean(p.areaSolicitante || '');
         const pDep = clean(p.dependenciaSolicitante || '');
-        return pArea === lowerFilter || pDep === lowerFilter;
+        if (pArea === lowerFilter || pDep === lowerFilter) return true;
+        if (isTargetSoporteRemoto && pArea.includes('soporte') && pArea.includes('remoto')) return true;
+        return false;
       });
     }
     // Administrador con todas las áreas
     return purchases;
   }, [purchases, currentUser, isAdmin, adminAreaFilter]);
 
-  // 2. Datasets especializados según el tipo de informe
+  // 2. Datasets especializados según el tipo de informe (incluyendo Adjudicación y Adjudicada)
   const adjudicados = useMemo(() => {
-    return basePurchases.filter(p => p.estatusEvento === 'Adjudicación');
+    return basePurchases.filter(p => {
+      const st = (p.estatusEvento || '').toLowerCase();
+      return st === 'adjudicación' || st === 'adjudicacion' || st === 'adjudicada' || st === 'adjudicado';
+    });
   }, [basePurchases]);
 
   const evaluadosGIT = useMemo(() => {
@@ -1698,7 +1711,7 @@ export const ReportsView: React.FC = () => {
               className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-2xs focus:ring-1 focus:ring-blue-500"
             >
               <option value="todas">Todas las Áreas Técnicas ({purchases.length} eventos)</option>
-              {TECHNICAL_AREAS_LIST.map((areaName) => (
+              {reportAreaOptions.map((areaName) => (
                 <option key={areaName} value={areaName}>
                   {areaName}
                 </option>

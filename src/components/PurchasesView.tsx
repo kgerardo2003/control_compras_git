@@ -32,7 +32,7 @@ import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } f
 import { ExportPdfModal } from './ExportPdfModal';
 import { generatePurchasesPDF } from '../utils/pdfExport';
 import { downloadDocumentFile } from '../utils/documentUtils';
-import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
+import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, getSystemAreas, canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Vigente': 'bg-sky-100 text-sky-800 border-sky-300',
@@ -107,22 +107,27 @@ export const PurchasesView: React.FC = () => {
   const isAdmin = isUserGlobalAdmin(currentUser);
   const userAssignedArea = getUserAssignedArea(currentUser);
 
-  // 1. Filtrado RBAC estricto: usuarios no administradores SOLO ven eventos de su área
+  // 1. Filtrado RBAC institucional: todos los usuarios institucionales acceden al inventario consolidado
   const rbacPurchases = useMemo(() => {
     return purchases.filter(p => isPurchaseVisibleToUser(p, currentUser));
   }, [purchases, currentUser]);
 
-  // Si el usuario es administrador, puede además usar el filtro interactivo de área
+  // 2. Filtro interactivo de área solicitante disponible para todos los usuarios
   const currentPurchases = useMemo(() => {
-    if (!isAdmin) return rbacPurchases;
     if (filterArea === 'todos') return rbacPurchases;
     const clean = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
     const targetArea = clean(filterArea);
+    const isTargetSoporteRemoto = targetArea.includes('soporte') && targetArea.includes('remoto');
+
     return rbacPurchases.filter(p => {
       const pArea = clean(p.areaSolicitante || '');
-      return pArea === targetArea;
+      if (pArea === targetArea) return true;
+      if (isTargetSoporteRemoto && pArea.includes('soporte') && pArea.includes('remoto')) {
+        return true;
+      }
+      return false;
     });
-  }, [rbacPurchases, isAdmin, filterArea]);
+  }, [rbacPurchases, filterArea]);
 
   useEffect(() => {
     setLastSyncTime(new Date());
@@ -176,6 +181,11 @@ export const PurchasesView: React.FC = () => {
   const categoryCatalog = catalogs.find(c => c.codigo === 'CATEGORIA_TECNOLOGICA');
   const categoryOptions = categoryCatalog?.items.map(it => it.valor) || [];
 
+  // Lista dinámica de Áreas Solicitantes sincronizada con el Catálogo de Sistema y Adquisiciones
+  const systemAreaOptions = useMemo(() => {
+    return getSystemAreas(catalogs, purchases);
+  }, [catalogs, purchases]);
+
   // Filtrado y Búsqueda sobre los datos oficiales permitidos por RBAC
   const filteredPurchases = useMemo(() => {
     return currentPurchases
@@ -188,7 +198,8 @@ export const PurchasesView: React.FC = () => {
           const matchF56e = (p.f56e || '').toLowerCase().includes(query);
           const matchF56 = (p.f56 || '').toLowerCase().includes(query);
           const matchProv = (p.proveedorAdjudicado || '').toLowerCase().includes(query);
-          if (!matchDesc && !matchNOG && !matchF56e && !matchF56 && !matchProv) return false;
+          const matchArea = (p.areaSolicitante || '').toLowerCase().includes(query);
+          if (!matchDesc && !matchNOG && !matchF56e && !matchF56 && !matchProv && !matchArea) return false;
         }
         if (filterEstatus !== 'todos' && p.estatusEvento !== filterEstatus) return false;
         if (filterGIT !== 'todos' && p.evaluadoGIT !== filterGIT) return false;
@@ -708,10 +719,10 @@ export const PurchasesView: React.FC = () => {
 
       {/* Barra de Búsqueda y Filtros */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
           
           {/* Input de Búsqueda */}
-          <div className={isAdmin ? "md:col-span-4 relative" : "md:col-span-6 relative"}>
+          <div className="sm:col-span-2 lg:col-span-4 relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
               <Search className="w-4 h-4" />
             </div>
@@ -720,13 +731,13 @@ export const PurchasesView: React.FC = () => {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por NOG (8 dígitos), F56-e, F56, descripción..."
+              placeholder="Buscar por NOG, F56-e, área (Soporte Remoto), descripción..."
               className="w-full pl-9 pr-4 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
             />
           </div>
 
           {/* Filtro Estatus */}
-          <div className={isAdmin ? "md:col-span-3" : "md:col-span-3"}>
+          <div className="lg:col-span-2 sm:col-span-1">
             <select
               id="filter-select-estatus"
               value={filterEstatus}
@@ -740,8 +751,40 @@ export const PurchasesView: React.FC = () => {
             </select>
           </div>
 
+          {/* Filtro Área Solicitante (Sincronizado con Catálogo de Sistema y accesible para todos) */}
+          <div className="lg:col-span-3 sm:col-span-1 flex flex-col gap-1">
+            <select
+              id="filter-select-area"
+              value={filterArea}
+              onChange={(e) => setFilterArea(e.target.value)}
+              className={`w-full p-2 text-xs border rounded-lg font-semibold focus:outline-none focus:ring-1 transition-colors ${
+                filterArea !== 'todos'
+                  ? 'border-blue-500 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
+                  : 'border-slate-300 bg-white text-slate-700 focus:ring-amber-500'
+              }`}
+            >
+              <option value="todos">Área: Todas las Áreas</option>
+              {systemAreaOptions.map((areaName) => (
+                <option key={areaName} value={areaName}>
+                  {areaName}
+                </option>
+              ))}
+            </select>
+            {filterArea !== 'todos' && (
+              <button
+                type="button"
+                onClick={() => handleOpenExportByArea(filterArea)}
+                className="w-full px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                title={`Exportar adquisiciones de ${filterArea} en PDF con portada, KPIs y gráficas circulares`}
+              >
+                <FileText className="w-3 h-3 text-amber-300" />
+                <span>Reporte PDF de {filterArea}</span>
+              </button>
+            )}
+          </div>
+
           {/* Filtro GIT */}
-          <div className={isAdmin ? "md:col-span-2" : "md:col-span-3"}>
+          <div className="lg:col-span-3 sm:col-span-2 flex items-center gap-2">
             <select
               id="filter-select-git"
               value={filterGIT}
@@ -752,49 +795,17 @@ export const PurchasesView: React.FC = () => {
               <option value="Sí">Evaluado: Sí</option>
               <option value="No">Evaluado: No</option>
             </select>
-          </div>
-
-          {/* Filtro Área Solicitante para Administradores */}
-          {isAdmin && (
-            <div className="md:col-span-3 flex flex-col gap-1">
-              <select
-                id="filter-select-area-admin"
-                value={filterArea}
-                onChange={(e) => setFilterArea(e.target.value)}
-                className="w-full p-2 text-xs border border-blue-200 rounded-lg bg-blue-50/50 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold text-blue-900"
-              >
-                <option value="todos">Área: Todas (Vista Global)</option>
-                {TECHNICAL_AREAS_LIST.filter(a => !a.includes('Global')).map((a) => (
-                  <option key={a} value={a}>{a}</option>
-                ))}
-              </select>
-              {filterArea !== 'todos' && (
-                <button
-                  type="button"
-                  onClick={() => handleOpenExportByArea(filterArea)}
-                  className="w-full px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs"
-                  title={`Exportar adquisiciones de ${filterArea} en PDF con portada, KPIs y gráficas circulares`}
-                >
-                  <FileText className="w-3 h-3 text-amber-300" />
-                  <span>Reporte PDF de {filterArea}</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {!isAdmin && userAssignedArea && (
-            <div className="md:col-span-3 flex items-center">
+            {filterArea !== 'todos' && (
               <button
                 type="button"
-                onClick={() => handleOpenExportByArea(userAssignedArea)}
-                className="w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                title={`Exportar adquisiciones de ${userAssignedArea} en PDF con portada ejecutiva, KPIs y gráficas`}
+                onClick={() => setFilterArea('todos')}
+                className="px-2 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors whitespace-nowrap cursor-pointer"
+                title="Limpiar filtro de área"
               >
-                <Building2 className="w-3.5 h-3.5 text-blue-700" />
-                <span>Exportar Reporte de Mi Área ({userAssignedArea})</span>
+                ✕ Limpiar Área
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
         </div>
 

@@ -7,6 +7,13 @@ import {
   generateJudicaturasExecutiveDashboardImage,
   generateIndividualJudicaturaGaugeImage,
 } from './judicaturasChartRenderer';
+import {
+  getJudicaturaComputoInfo,
+  getJudicaturaAudioInfo,
+  getJudicaturaRedInfo,
+  getJudicaturaEnlaceInfo,
+  getJudicaturaComponentMetrics
+} from './judicaturaComponentUtils';
 
 export interface ExportJudicaturasPDFOptions {
   judicaturas: JudicaturaRecord[];
@@ -1710,59 +1717,81 @@ export function generateIndividualJudicaturaPDF(
     }
   }
 
-  const equipCount = 
-    (judicatura.equipoComputo === 'Si' ? 1 : 0) +
-    (judicatura.equipoAudio === 'Si' ? 1 : 0) +
-    (judicatura.cableadoEstructurado === 'Si' ? 1 : 0) +
-    (judicatura.enlaceDatos === 'Si' ? 1 : 0);
-  const equipPct = Math.round((equipCount / 4) * 100);
+  const metrics = getJudicaturaComponentMetrics(judicatura);
+  const computo = metrics.computo;
+  const audio = metrics.audio;
+  const red = metrics.red;
+  const enlace = metrics.enlace;
 
   autoTable(doc, {
     startY: currentY,
     margin: { left: marginX, right: marginX },
-    head: [['PARÁMETRO DE EJECUCIÓN', 'VALOR REGISTRADO', 'COMPONENTE TIC', 'ESTADO INSTALADO']],
+    head: [['PARÁMETRO DE EJECUCIÓN', 'VALOR REGISTRADO', 'COMPONENTE TIC', 'ESTATUS REGISTRADO', '¿INSTALADO?']],
     body: [
-      ['Inicio de Adecuaciones', fechaIni, 'Equipo de Cómputo (PC)', judicatura.equipoComputo === 'Si' ? 'Instalado (Sí)' : 'Pendiente (No)'],
-      ['Finalización de Adecuaciones', fechaFin, 'Equipo de Audio', judicatura.equipoAudio === 'Si' ? 'Instalado (Sí)' : 'Pendiente (No)'],
-      ['Plazo Total de Adecuación', `${diffDays} días calendario`, 'Cableado Estructurado', judicatura.cableadoEstructurado === 'Si' ? 'Instalado (Sí)' : 'Pendiente (No)'],
-      ['Fecha Apertura / Inauguración', judicatura.fechaInauguracion ? formatDate(judicatura.fechaInauguracion) : 'Pendiente de calendarizar', 'Enlace de Datos', judicatura.enlaceDatos === 'Si' ? 'Instalado (Sí)' : 'Pendiente (No)'],
-      ['Estatus Operativo Actual', estatusActual, 'Cobertura Global TIC', `${equipPct}% (${equipCount}/4 componentes listos)`],
-      ['Nivel de Priorización', isPriorizado ? 'Priorizado (Alta Prioridad OJ)' : 'Ordinario (No Priorizado)', 'Estado Prioritario', isPriorizado ? 'Atención Prioritaria GIT' : 'Seguimiento Estándar']
+      ['Inicio de Adecuaciones', fechaIni, 'Equipo de Cómputo (PC)', computo.status, computo.instalado === 'Si' ? 'Sí' : 'No'],
+      ['Finalización de Adecuaciones', fechaFin, 'Equipo de Audio', audio.status, audio.instalado === 'Si' ? 'Sí' : 'No'],
+      ['Plazo Total de Adecuación', `${diffDays} días calendario`, 'Cableado Estructurado (Red)', red.status, red.instalado === 'Si' ? 'Sí' : 'No'],
+      ['Fecha Apertura / Inauguración', judicatura.fechaInauguracion ? formatDate(judicatura.fechaInauguracion) : 'Pendiente de calendarizar', 'Enlace de Datos', enlace.status, enlace.instalado === 'Si' ? 'Sí' : 'No'],
+      ['Estatus Operativo Actual', estatusActual, 'Disponibilidad Componentes', `${metrics.disponiblesCount}/4 disponibles (${metrics.pctDisponibles}%)`, `Instalados: ${metrics.instaladosCount}/4`],
+      ['Nivel de Priorización', isPriorizado ? 'Priorizado (Alta Prioridad OJ)' : 'Ordinario (No Priorizado)', 'Condición Tecnológica', metrics.es100Instalados ? '100% Instalado en Sede' : metrics.es100Disponibles ? 'Se cuenta con componentes (Instalando)' : 'En gestión de componentes', metrics.es100Instalados ? 'Listo' : 'Pendiente']
     ],
     theme: 'grid',
     headStyles: {
       fillColor: [10, 10, 105], // #0A0A69
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: 7.2,
       halign: 'left',
     },
     styles: {
-      fontSize: 7.2,
+      fontSize: 7.0,
       textColor: [15, 23, 42],
       cellPadding: 2,
       overflow: 'linebreak',
     },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 50 },
-      1: { cellWidth: 42 },
-      2: { fontStyle: 'bold', cellWidth: 48 },
-      3: { cellWidth: 48 }
+      0: { fontStyle: 'bold', cellWidth: 46 },
+      1: { cellWidth: 38 },
+      2: { fontStyle: 'bold', cellWidth: 46 },
+      3: { cellWidth: 38 },
+      4: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }
     },
     didParseCell: (data) => {
-      if (data.section === 'body' && (data.column.index === 3 || data.column.index === 1)) {
-        const val = String(data.cell.raw);
-        if (val.includes('Sí') || val.includes('100%') || val.includes('Inaugurado')) {
-          data.cell.styles.textColor = [4, 120, 87]; // Emerald
-          data.cell.styles.fontStyle = 'bold';
-        } else if (val.includes('No') || val.includes('Pendiente')) {
-          data.cell.styles.textColor = [180, 83, 9]; // Amber
+      if (data.section === 'body') {
+        if (data.column.index === 4) {
+          const val = String(data.cell.raw);
+          if (val === 'Sí' || val === 'Listo') {
+            data.cell.styles.textColor = [4, 120, 87]; // Emerald
+            data.cell.styles.fontStyle = 'bold';
+          } else if (val === 'No' || val === 'Pendiente') {
+            data.cell.styles.textColor = [180, 83, 9]; // Amber
+          }
+        }
+        if (data.column.index === 3 || data.column.index === 1) {
+          const val = String(data.cell.raw);
+          if (val.includes('Instalado') || val.includes('Terminado') || val.includes('Inaugurado')) {
+            data.cell.styles.textColor = [4, 120, 87]; // Emerald
+          } else if (val.includes('Se cuenta con equipo') || val.includes('Satelital')) {
+            data.cell.styles.textColor = [2, 132, 199]; // Blue
+          } else if (val.includes('Solicit') || val.includes('Pendiente')) {
+            data.cell.styles.textColor = [180, 83, 9]; // Amber
+          }
         }
       }
     }
   });
 
-  currentY = (doc as any).lastAutoTable.finalY + 6;
+  const finalTableY = (doc as any).lastAutoTable?.finalY || currentY + 45;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(
+    '* Aclaración de Control TIC: "Se cuenta con equipo" certifica asignación de activos; no equivale a que ya esté instalado en la sede física ("¿Instalado?: Sí / No").',
+    marginX,
+    finalTableY + 4
+  );
+
+  currentY = finalTableY + 8;
 
   // 3. SECCIÓN: ÁRBOL CRONOLÓGICO DE ACCIONES Y OBSERVACIONES
   doc.setFont('helvetica', 'bold');

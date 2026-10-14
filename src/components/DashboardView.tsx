@@ -451,6 +451,7 @@ export const DashboardView: React.FC = () => {
     'Redes y Telecomunicaciones': 1600000,
     'Soporte técnico': 1500000,
     'Soporte Técnico': 1500000,
+    'Soporte Remoto': 600000,
     'Soporte Técnico Remoto': 600000,
     'Seguridad Informática': 1200000,
     'Sección de Videoaudiencias': 800000,

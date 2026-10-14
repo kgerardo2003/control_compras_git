@@ -28,6 +28,7 @@ import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { DocumentPreview } from './DocumentPreview';
 import { processAttachedFile, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { PurchaseActionTree } from './PurchaseActionTree';
+import { getSystemAreas } from '../utils/rbacUtils';
 
 // Función para campo F56e tipo texto de 10 posiciones
 const formatF56eInput = (raw: string): string => {
@@ -117,15 +118,9 @@ export const PurchaseFormModal: React.FC = () => {
   ];
 
   const areaCatalog = catalogs.find(c => c.codigo === 'AREA_SOLICITANTE');
-  const areaOptions = areaCatalog?.items.filter(it => it.activo).map(it => it.valor) || [
-    'Soporte técnico',
-    'Soporte Técnico Remoto',
-    'Sección de Videoaudiencias',
-    'Redes y Telecomunicaciones',
-    'Desarrollo y Administración de Sistemas',
-    'Departamento de Servicios Informáticos',
-    'Seguridad Informática'
-  ];
+  const areaOptions = useMemo(() => {
+    return getSystemAreas(catalogs, purchases);
+  }, [catalogs, purchases]);
 
   const categoryCatalog = catalogs.find(c => c.codigo === 'CATEGORIA_TECNOLOGICA');
   const categoryOptions = categoryCatalog?.items.filter(it => it.activo).map(it => it.valor) || [

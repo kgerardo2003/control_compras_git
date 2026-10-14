@@ -70,6 +70,19 @@ import {
 import { exportJudicaturasToExcel, exportJudicaturasToCSV, downloadJudicaturasImportTemplate } from '../utils/judicaturasExport';
 import { ImportJudicaturasModal } from './ImportJudicaturasModal';
 import { JudicaturaDocumentsSection } from './judicaturas/JudicaturaDocumentsSection';
+import {
+  getJudicaturaComputoInfo,
+  getJudicaturaAudioInfo,
+  getJudicaturaRedInfo,
+  getJudicaturaEnlaceInfo,
+  getComponentStatusBadgeClass,
+  getJudicaturaComponentMetrics,
+  COMPONENT_COMPUTO_OPTIONS,
+  COMPONENT_AUDIO_OPTIONS,
+  COMPONENT_RED_OPTIONS,
+  COMPONENT_ENLACE_OPTIONS
+} from '../utils/judicaturaComponentUtils';
+import { EstatusComputo, EstatusAudio, EstatusRed, EstatusEnlace } from '../types';
 
 export const JudicaturasView: React.FC = () => {
   const {
@@ -111,6 +124,7 @@ export const JudicaturasView: React.FC = () => {
   const [consolidatedModalInitialType, setConsolidatedModalInitialType] = useState<'consolidado' | 'estatus' | 'penal' | 'civil' | 'amparos'>('consolidado');
   const [consolidatedModalInitialStatus, setConsolidatedModalInitialStatus] = useState<string>('Todos');
   const [selectedBoletaJudicatura, setSelectedBoletaJudicatura] = useState<JudicaturaRecord | null>(null);
+  const [formModalTab, setFormModalTab] = useState<'datos' | 'observaciones' | 'documentos'>('datos');
 
   // Form Fields (Cámara Penal, Cámara Civil y Cámara Amparos)
   const [nombreJudicatura, setNombreJudicatura] = useState('');
@@ -118,9 +132,21 @@ export const JudicaturasView: React.FC = () => {
   const [fechaInicioAdecuaciones, setFechaInicioAdecuaciones] = useState('');
   const [fechaFinAdecuaciones, setFechaFinAdecuaciones] = useState('');
   const [equipoComputo, setEquipoComputo] = useState<'Si' | 'No'>('No');
+  const [estatusEquipoComputo, setEstatusEquipoComputo] = useState<EstatusComputo>('Pendiente');
+  const [equipoComputoInstalado, setEquipoComputoInstalado] = useState<'Si' | 'No'>('No');
+
   const [equipoAudio, setEquipoAudio] = useState<'Si' | 'No'>('No');
+  const [estatusEquipoAudio, setEstatusEquipoAudio] = useState<EstatusAudio>('Pendiente');
+  const [equipoAudioInstalado, setEquipoAudioInstalado] = useState<'Si' | 'No'>('No');
+
   const [cableadoEstructurado, setCableadoEstructurado] = useState<'Si' | 'No'>('No');
+  const [estatusCableadoEstructurado, setEstatusCableadoEstructurado] = useState<EstatusRed>('Pendiente');
+  const [cableadoEstructuradoInstalado, setCableadoEstructuradoInstalado] = useState<'Si' | 'No'>('No');
+
   const [enlaceDatos, setEnlaceDatos] = useState<'Si' | 'No'>('No');
+  const [estatusEnlaceDatos, setEstatusEnlaceDatos] = useState<EstatusEnlace>('Pendiente');
+  const [enlaceDatosInstalado, setEnlaceDatosInstalado] = useState<'Si' | 'No'>('No');
+
   const [fechaInauguracion, setFechaInauguracion] = useState('');
   const [estadoInauguracion, setEstadoInauguracion] = useState<EstadoInauguracionJudicatura>('Pendiente Fecha');
   const [priorizado, setPriorizado] = useState<'Si' | 'No'>('No');
@@ -160,6 +186,41 @@ export const JudicaturasView: React.FC = () => {
     });
     return catItems;
   }, [catalogs]);
+
+  // Duración calculada en días para el modal de formulario
+  const diasAdecuacionCalculados = useMemo(() => {
+    if (fechaInicioAdecuaciones && fechaFinAdecuaciones) {
+      const s = new Date(fechaInicioAdecuaciones);
+      const e = new Date(fechaFinAdecuaciones);
+      if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+        return Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)));
+      }
+    }
+    return 0;
+  }, [fechaInicioAdecuaciones, fechaFinAdecuaciones]);
+
+  // Contadores en tiempo real de componentes en el formulario
+  const formComponentMetrics = useMemo(() => {
+    const computoListo = estatusEquipoComputo !== 'Solicitado F56' && estatusEquipoComputo !== 'Pendiente' && equipoComputo === 'Si';
+    const audioListo = estatusEquipoAudio !== 'Solicitado F56' && estatusEquipoAudio !== 'Pendiente' && equipoAudio === 'Si';
+    const redLista = estatusCableadoEstructurado !== 'Solicitud F56' && estatusCableadoEstructurado !== 'Pendiente' && cableadoEstructurado === 'Si';
+    const enlaceListo = estatusEnlaceDatos !== 'Solicitado' && estatusEnlaceDatos !== 'Pendiente' && enlaceDatos === 'Si';
+
+    const disponibles = [computoListo, audioListo, redLista, enlaceListo].filter(Boolean).length;
+    const instalados = [
+      equipoComputoInstalado === 'Si',
+      equipoAudioInstalado === 'Si',
+      cableadoEstructuradoInstalado === 'Si',
+      enlaceDatosInstalado === 'Si'
+    ].filter(Boolean).length;
+
+    return { disponibles, instalados };
+  }, [
+    estatusEquipoComputo, equipoComputo, equipoComputoInstalado,
+    estatusEquipoAudio, equipoAudio, equipoAudioInstalado,
+    estatusCableadoEstructurado, cableadoEstructurado, cableadoEstructuradoInstalado,
+    estatusEnlaceDatos, enlaceDatos, enlaceDatosInstalado
+  ]);
 
   // Encontrar Judicatura Seleccionada para Detalle
   const activeDetailJudicatura = useMemo(() => {
@@ -719,6 +780,119 @@ export const JudicaturasView: React.FC = () => {
     }
   };
 
+  // Controladores inteligentes de Estatus y Condición de Instalación por Componente
+  const handleComputoStatusChange = (val: EstatusComputo) => {
+    setEstatusEquipoComputo(val);
+    if (val === 'Instalado') {
+      setEquipoComputoInstalado('Si');
+      setEquipoComputo('Si');
+    } else if (val === 'Se cuenta con equipo') {
+      setEquipoComputo('Si');
+      setEquipoComputoInstalado('No');
+    } else if (val === 'Solicitado F56' || val === 'Pendiente') {
+      setEquipoComputoInstalado('No');
+      setEquipoComputo('No');
+    }
+  };
+
+  const handleComputoInstaladoChange = (val: 'Si' | 'No') => {
+    setEquipoComputoInstalado(val);
+    if (val === 'Si') {
+      setEquipoComputo('Si');
+      if (estatusEquipoComputo === 'Pendiente' || estatusEquipoComputo === 'Solicitado F56') {
+        setEstatusEquipoComputo('Instalado');
+      }
+    } else {
+      if (estatusEquipoComputo === 'Instalado') {
+        setEstatusEquipoComputo('Se cuenta con equipo');
+      }
+    }
+  };
+
+  const handleAudioStatusChange = (val: EstatusAudio) => {
+    setEstatusEquipoAudio(val);
+    if (val === 'Instalado') {
+      setEquipoAudioInstalado('Si');
+      setEquipoAudio('Si');
+    } else if (val === 'Se cuenta con equipo') {
+      setEquipoAudio('Si');
+      setEquipoAudioInstalado('No');
+    } else if (val === 'Solicitado F56' || val === 'Pendiente') {
+      setEquipoAudioInstalado('No');
+      setEquipoAudio('No');
+    }
+  };
+
+  const handleAudioInstaladoChange = (val: 'Si' | 'No') => {
+    setEquipoAudioInstalado(val);
+    if (val === 'Si') {
+      setEquipoAudio('Si');
+      if (estatusEquipoAudio === 'Pendiente' || estatusEquipoAudio === 'Solicitado F56') {
+        setEstatusEquipoAudio('Instalado');
+      }
+    } else {
+      if (estatusEquipoAudio === 'Instalado') {
+        setEstatusEquipoAudio('Se cuenta con equipo');
+      }
+    }
+  };
+
+  const handleRedStatusChange = (val: EstatusRed) => {
+    setEstatusCableadoEstructurado(val);
+    if (val === 'Terminado') {
+      setCableadoEstructuradoInstalado('Si');
+      setCableadoEstructurado('Si');
+    } else if (val === 'Instalando') {
+      setCableadoEstructurado('Si');
+      setCableadoEstructuradoInstalado('No');
+    } else if (val === 'Solicitud F56' || val === 'Pendiente') {
+      setCableadoEstructuradoInstalado('No');
+      setCableadoEstructurado('No');
+    }
+  };
+
+  const handleRedInstaladoChange = (val: 'Si' | 'No') => {
+    setCableadoEstructuradoInstalado(val);
+    if (val === 'Si') {
+      setCableadoEstructurado('Si');
+      if (estatusCableadoEstructurado !== 'Terminado') {
+        setEstatusCableadoEstructurado('Terminado');
+      }
+    } else {
+      if (estatusCableadoEstructurado === 'Terminado') {
+        setEstatusCableadoEstructurado('Instalando');
+      }
+    }
+  };
+
+  const handleEnlaceStatusChange = (val: EstatusEnlace) => {
+    setEstatusEnlaceDatos(val);
+    if (val === 'Instalado' || val === 'Equipo Satelital Temporal') {
+      setEnlaceDatosInstalado('Si');
+      setEnlaceDatos('Si');
+    } else if (val === 'Solicitado') {
+      setEnlaceDatosInstalado('No');
+      setEnlaceDatos('No');
+    } else if (val === 'Pendiente') {
+      setEnlaceDatosInstalado('No');
+      setEnlaceDatos('No');
+    }
+  };
+
+  const handleEnlaceInstaladoChange = (val: 'Si' | 'No') => {
+    setEnlaceDatosInstalado(val);
+    if (val === 'Si') {
+      setEnlaceDatos('Si');
+      if (estatusEnlaceDatos === 'Pendiente' || estatusEnlaceDatos === 'Solicitado') {
+        setEstatusEnlaceDatos('Instalado');
+      }
+    } else {
+      if (estatusEnlaceDatos === 'Instalado') {
+        setEstatusEnlaceDatos('Solicitado');
+      }
+    }
+  };
+
   // Apertura de Formulario de Creación
   const handleOpenCreate = () => {
     setEditingJudicatura(null);
@@ -730,15 +904,29 @@ export const JudicaturasView: React.FC = () => {
 
     setFechaInicioAdecuaciones(today.toISOString().split('T')[0]);
     setFechaFinAdecuaciones(endAdecuaciones.toISOString().split('T')[0]);
+
     setEquipoComputo('No');
+    setEstatusEquipoComputo('Pendiente');
+    setEquipoComputoInstalado('No');
+
     setEquipoAudio('No');
+    setEstatusEquipoAudio('Pendiente');
+    setEquipoAudioInstalado('No');
+
     setCableadoEstructurado('No');
+    setEstatusCableadoEstructurado('Pendiente');
+    setCableadoEstructuradoInstalado('No');
+
     setEnlaceDatos('No');
+    setEstatusEnlaceDatos('Pendiente');
+    setEnlaceDatosInstalado('No');
+
     setFechaInauguracion(''); // Opcional por defecto
     setEstadoInauguracion('Pendiente Fecha');
     setPriorizado('No');
     setObservacionesIniciales('');
     setFormErrors({});
+    setFormModalTab('datos');
     setIsFormModalOpen(true);
   };
 
@@ -749,16 +937,34 @@ export const JudicaturasView: React.FC = () => {
     setTipoRamo(jud.tipoRamo);
     setFechaInicioAdecuaciones(jud.fechaInicioAdecuaciones);
     setFechaFinAdecuaciones(jud.fechaFinAdecuaciones);
+
+    const compInfo = getJudicaturaComputoInfo(jud);
     setEquipoComputo(jud.equipoComputo);
+    setEstatusEquipoComputo(compInfo.status);
+    setEquipoComputoInstalado(compInfo.instalado);
+
+    const audioInfo = getJudicaturaAudioInfo(jud);
     setEquipoAudio(jud.equipoAudio);
+    setEstatusEquipoAudio(audioInfo.status);
+    setEquipoAudioInstalado(audioInfo.instalado);
+
+    const redInfo = getJudicaturaRedInfo(jud);
     setCableadoEstructurado(jud.cableadoEstructurado);
+    setEstatusCableadoEstructurado(redInfo.status);
+    setCableadoEstructuradoInstalado(redInfo.instalado);
+
+    const enlaceInfo = getJudicaturaEnlaceInfo(jud);
     setEnlaceDatos(jud.enlaceDatos);
+    setEstatusEnlaceDatos(enlaceInfo.status);
+    setEnlaceDatosInstalado(enlaceInfo.instalado);
+
     setFechaInauguracion(jud.fechaInauguracion || '');
     setEstadoInauguracion(jud.estadoInauguracion || (jud.fechaInauguracion ? 'Reprogramado' : 'Pendiente Fecha'));
     setPriorizado(jud.priorizado || 'No');
     setObservacionesIniciales('');
     setNuevaObservacionModal('');
     setFormErrors({});
+    setFormModalTab('datos');
     setIsFormModalOpen(true);
   };
 
@@ -843,15 +1049,28 @@ export const JudicaturasView: React.FC = () => {
           await addJudicaturaObservacion(editingJudicatura.id, nuevaObservacionModal.trim());
           setNuevaObservacionModal('');
         }
+        const finalEquipoComputo = (estatusEquipoComputo === 'Se cuenta con equipo' || estatusEquipoComputo === 'Instalado' || equipoComputoInstalado === 'Si') ? 'Si' : equipoComputo;
+        const finalEquipoAudio = (estatusEquipoAudio === 'Se cuenta con equipo' || estatusEquipoAudio === 'Instalado' || equipoAudioInstalado === 'Si') ? 'Si' : equipoAudio;
+        const finalCableado = (estatusCableadoEstructurado === 'Terminado' || estatusCableadoEstructurado === 'Instalando' || cableadoEstructuradoInstalado === 'Si') ? 'Si' : cableadoEstructurado;
+        const finalEnlace = (estatusEnlaceDatos === 'Instalado' || estatusEnlaceDatos === 'Equipo Satelital Temporal' || enlaceDatosInstalado === 'Si') ? 'Si' : enlaceDatos;
+
         await updateJudicatura(editingJudicatura.id, {
           nombreJudicatura: nombreJudicatura.trim(),
           tipoRamo,
           fechaInicioAdecuaciones,
           fechaFinAdecuaciones,
-          equipoComputo,
-          equipoAudio,
-          cableadoEstructurado,
-          enlaceDatos,
+          equipoComputo: finalEquipoComputo,
+          estatusEquipoComputo,
+          equipoComputoInstalado,
+          equipoAudio: finalEquipoAudio,
+          estatusEquipoAudio,
+          equipoAudioInstalado,
+          cableadoEstructurado: finalCableado,
+          estatusCableadoEstructurado,
+          cableadoEstructuradoInstalado,
+          enlaceDatos: finalEnlace,
+          estatusEnlaceDatos,
+          enlaceDatosInstalado,
           fechaInauguracion: fechaInauguracion || '',
           estadoInauguracion,
           priorizado,
@@ -862,15 +1081,28 @@ export const JudicaturasView: React.FC = () => {
           type: 'success'
         });
       } else {
+        const finalEquipoComputo = (estatusEquipoComputo === 'Se cuenta con equipo' || estatusEquipoComputo === 'Instalado' || equipoComputoInstalado === 'Si') ? 'Si' : equipoComputo;
+        const finalEquipoAudio = (estatusEquipoAudio === 'Se cuenta con equipo' || estatusEquipoAudio === 'Instalado' || equipoAudioInstalado === 'Si') ? 'Si' : equipoAudio;
+        const finalCableado = (estatusCableadoEstructurado === 'Terminado' || estatusCableadoEstructurado === 'Instalando' || cableadoEstructuradoInstalado === 'Si') ? 'Si' : cableadoEstructurado;
+        const finalEnlace = (estatusEnlaceDatos === 'Instalado' || estatusEnlaceDatos === 'Equipo Satelital Temporal' || enlaceDatosInstalado === 'Si') ? 'Si' : enlaceDatos;
+
         await addJudicatura({
           nombreJudicatura: nombreJudicatura.trim(),
           tipoRamo,
           fechaInicioAdecuaciones,
           fechaFinAdecuaciones,
-          equipoComputo,
-          equipoAudio,
-          cableadoEstructurado,
-          enlaceDatos,
+          equipoComputo: finalEquipoComputo,
+          estatusEquipoComputo,
+          equipoComputoInstalado,
+          equipoAudio: finalEquipoAudio,
+          estatusEquipoAudio,
+          equipoAudioInstalado,
+          cableadoEstructurado: finalCableado,
+          estatusCableadoEstructurado,
+          cableadoEstructuradoInstalado,
+          enlaceDatos: finalEnlace,
+          estatusEnlaceDatos,
+          enlaceDatosInstalado,
           fechaInauguracion: fechaInauguracion || '',
           estadoInauguracion,
           priorizado,
@@ -1149,10 +1381,10 @@ export const JudicaturasView: React.FC = () => {
             {!hideRamoColumn && <th className="px-4 py-3 min-w-[140px]">Cámara Asignada</th>}
             <th className="px-3 py-3 text-center min-w-[100px]" title="Judicatura Priorizada de Alta Prioridad">Priorizado</th>
             <th className="px-4 py-3 min-w-[160px]">Período de Adecuaciones</th>
-            <th className="px-3 py-3 text-center min-w-[55px]" title="Equipo de Cómputo">PC</th>
-            <th className="px-3 py-3 text-center min-w-[55px]" title="Equipo de Audio">Audio</th>
-            <th className="px-3 py-3 text-center min-w-[55px]" title="Cableado de Red Estructurado">Red</th>
-            <th className="px-3 py-3 text-center min-w-[55px]" title="Enlace de Datos">Enlace</th>
+            <th className="px-3 py-3 text-center min-w-[125px]" title="Equipo de Cómputo: Estatus e Instalación">PC (Cómputo)</th>
+            <th className="px-3 py-3 text-center min-w-[125px]" title="Equipo de Audio: Estatus e Instalación">Audio</th>
+            <th className="px-3 py-3 text-center min-w-[125px]" title="Cableado de Red Estructurado: Estatus e Instalación">Red</th>
+            <th className="px-3 py-3 text-center min-w-[125px]" title="Enlace de Datos: Estatus e Instalación">Enlace</th>
             <th className="px-4 py-3 text-center min-w-[150px]">Estatus y Fecha</th>
             <th className="px-4 py-3 min-w-[220px]">Última Acción / Bitácora</th>
             <th className="px-3 py-3 text-center min-w-[110px]" title="Expediente Digital y Documentos Adjuntos">Expediente</th>
@@ -1257,60 +1489,112 @@ export const JudicaturasView: React.FC = () => {
                   </td>
 
                   {/* 4. PC */}
-                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                    <span
-                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                        j.equipoComputo === 'Si'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
-                      }`}
-                      title={`Equipo de Cómputo (PC): ${j.equipoComputo}`}
-                    >
-                      {j.equipoComputo}
-                    </span>
-                  </td>
+                  {(() => {
+                    const compInfo = getJudicaturaComputoInfo(j);
+                    return (
+                      <td className="px-2 py-3 text-center whitespace-nowrap">
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold border ${getComponentStatusBadgeClass(compInfo.status)}`}
+                            title={`Estatus Cómputo: ${compInfo.status}`}
+                          >
+                            {compInfo.status}
+                          </span>
+                          <span
+                            className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-black border ${
+                              compInfo.instalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                            title={`¿Instalado en Sede?: ${compInfo.instalado === 'Si' ? 'Sí' : 'No'}`}
+                          >
+                            {compInfo.instalado === 'Si' ? '✓ Instalado' : 'Sin instalar'}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  })()}
 
                   {/* 5. Audio */}
-                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                    <span
-                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                        j.equipoAudio === 'Si'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
-                      }`}
-                      title={`Equipo de Audio: ${j.equipoAudio}`}
-                    >
-                      {j.equipoAudio}
-                    </span>
-                  </td>
+                  {(() => {
+                    const audioInfo = getJudicaturaAudioInfo(j);
+                    return (
+                      <td className="px-2 py-3 text-center whitespace-nowrap">
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold border ${getComponentStatusBadgeClass(audioInfo.status)}`}
+                            title={`Estatus Audio: ${audioInfo.status}`}
+                          >
+                            {audioInfo.status}
+                          </span>
+                          <span
+                            className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-black border ${
+                              audioInfo.instalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                            title={`¿Instalado en Sede?: ${audioInfo.instalado === 'Si' ? 'Sí' : 'No'}`}
+                          >
+                            {audioInfo.instalado === 'Si' ? '✓ Instalado' : 'Sin instalar'}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  })()}
 
                   {/* 6. Red */}
-                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                    <span
-                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                        j.cableadoEstructurado === 'Si'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
-                      }`}
-                      title={`Cableado de Red Estructurado: ${j.cableadoEstructurado}`}
-                    >
-                      {j.cableadoEstructurado}
-                    </span>
-                  </td>
+                  {(() => {
+                    const redInfo = getJudicaturaRedInfo(j);
+                    return (
+                      <td className="px-2 py-3 text-center whitespace-nowrap">
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold border ${getComponentStatusBadgeClass(redInfo.status)}`}
+                            title={`Estatus Red: ${redInfo.status}`}
+                          >
+                            {redInfo.status}
+                          </span>
+                          <span
+                            className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-black border ${
+                              redInfo.instalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                            title={`¿Instalado / Terminado en Sede?: ${redInfo.instalado === 'Si' ? 'Sí' : 'No'}`}
+                          >
+                            {redInfo.instalado === 'Si' ? '✓ Instalado' : 'Sin instalar'}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  })()}
 
                   {/* 7. Enlace */}
-                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                    <span
-                      className={`inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-md text-[11px] font-black border ${
-                        j.enlaceDatos === 'Si'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
-                      }`}
-                      title={`Enlace de Datos: ${j.enlaceDatos}`}
-                    >
-                      {j.enlaceDatos}
-                    </span>
-                  </td>
+                  {(() => {
+                    const enlaceInfo = getJudicaturaEnlaceInfo(j);
+                    return (
+                      <td className="px-2 py-3 text-center whitespace-nowrap">
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold border ${getComponentStatusBadgeClass(enlaceInfo.status)}`}
+                            title={`Estatus Enlace: ${enlaceInfo.status}`}
+                          >
+                            {enlaceInfo.status}
+                          </span>
+                          <span
+                            className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-black border ${
+                              enlaceInfo.instalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                            title={`¿Instalado en Sede?: ${enlaceInfo.instalado === 'Si' ? 'Sí' : 'No'}`}
+                          >
+                            {enlaceInfo.instalado === 'Si' ? '✓ Instalado' : 'Sin instalar'}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  })()}
 
                   {/* 8. Estatus y Fecha */}
                   <td className="px-4 py-3.5 whitespace-nowrap text-center">
@@ -1465,11 +1749,7 @@ export const JudicaturasView: React.FC = () => {
     ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {items.map((j) => {
-          const isAllEquipped =
-            j.equipoComputo === 'Si' &&
-            j.equipoAudio === 'Si' &&
-            j.cableadoEstructurado === 'Si' &&
-            j.enlaceDatos === 'Si';
+          const cardMetrics = getJudicaturaComponentMetrics(j);
           const latestObs = j.observaciones && j.observaciones.length > 0 ? j.observaciones[0] : null;
 
           return (
@@ -1481,7 +1761,7 @@ export const JudicaturasView: React.FC = () => {
               <div className="p-5 border-b border-slate-100">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span
                         className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
                           j.tipoRamo === 'Penal'
@@ -1499,15 +1779,20 @@ export const JudicaturasView: React.FC = () => {
                           Priorizada
                         </span>
                       )}
-                      {isAllEquipped ? (
+                      {cardMetrics.es100Instalados ? (
                         <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          Equipamiento Completo
+                          100% Instalado en Sede
+                        </span>
+                      ) : cardMetrics.es100Disponibles ? (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                          Se cuenta con componentes ({cardMetrics.instaladosCount}/4 Instalados)
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
                           <Clock className="w-3 h-3 text-amber-600" />
-                          Equipamiento en Proceso
+                          Componentes ({cardMetrics.disponiblesCount}/4)
                         </span>
                       )}
                     </div>
@@ -1589,87 +1874,93 @@ export const JudicaturasView: React.FC = () => {
 
                 {/* Checklist de Equipamiento Tecnológico */}
                 <div className="mt-4 pt-3 border-t border-slate-100">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-2">
-                    Estado de Infraestructura TIC
-                  </span>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">
+                      Estado de Infraestructura TIC
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      Instalados: <strong className="text-emerald-800 font-mono">{cardMetrics.instaladosCount}/4</strong>
+                    </span>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div
-                      className={`p-2 rounded-xl border flex items-center justify-between ${
-                        j.equipoComputo === 'Si'
-                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                          : 'bg-slate-50 border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Monitor className="w-3.5 h-3.5 text-slate-600" />
-                        <span className="text-[11px] font-semibold">Cómputo</span>
+                    {/* Cómputo */}
+                    <div className="p-2 rounded-xl border bg-slate-50 border-slate-200 flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Monitor className="w-3.5 h-3.5 text-slate-600" />
+                          <span className="text-[11px] font-bold text-slate-800">Cómputo</span>
+                        </div>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${
+                          cardMetrics.computo.instalado === 'Si'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : 'bg-amber-50 text-amber-800 border-amber-300'
+                        }`}>
+                          {cardMetrics.computo.instalado === 'Si' ? 'Instalado' : 'Sin instalar'}
+                        </span>
                       </div>
-                      <span
-                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                          j.equipoComputo === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {j.equipoComputo}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(cardMetrics.computo.status)}`}>
+                        {cardMetrics.computo.status}
                       </span>
                     </div>
 
-                    <div
-                      className={`p-2 rounded-xl border flex items-center justify-between ${
-                        j.equipoAudio === 'Si'
-                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                          : 'bg-slate-50 border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Volume2 className="w-3.5 h-3.5 text-slate-600" />
-                        <span className="text-[11px] font-semibold">Audio</span>
+                    {/* Audio */}
+                    <div className="p-2 rounded-xl border bg-slate-50 border-slate-200 flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Volume2 className="w-3.5 h-3.5 text-slate-600" />
+                          <span className="text-[11px] font-bold text-slate-800">Audio</span>
+                        </div>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${
+                          cardMetrics.audio.instalado === 'Si'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : 'bg-amber-50 text-amber-800 border-amber-300'
+                        }`}>
+                          {cardMetrics.audio.instalado === 'Si' ? 'Instalado' : 'Sin instalar'}
+                        </span>
                       </div>
-                      <span
-                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                          j.equipoAudio === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {j.equipoAudio}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(cardMetrics.audio.status)}`}>
+                        {cardMetrics.audio.status}
                       </span>
                     </div>
 
-                    <div
-                      className={`p-2 rounded-xl border flex items-center justify-between ${
-                        j.cableadoEstructurado === 'Si'
-                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                          : 'bg-slate-50 border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Network className="w-3.5 h-3.5 text-slate-600" />
-                        <span className="text-[11px] font-semibold">Red</span>
+                    {/* Red */}
+                    <div className="p-2 rounded-xl border bg-slate-50 border-slate-200 flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Network className="w-3.5 h-3.5 text-slate-600" />
+                          <span className="text-[11px] font-bold text-slate-800">Red</span>
+                        </div>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${
+                          cardMetrics.red.instalado === 'Si'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : 'bg-amber-50 text-amber-800 border-amber-300'
+                        }`}>
+                          {cardMetrics.red.instalado === 'Si' ? 'Terminado' : 'Pendiente'}
+                        </span>
                       </div>
-                      <span
-                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                          j.cableadoEstructurado === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {j.cableadoEstructurado}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(cardMetrics.red.status)}`}>
+                        {cardMetrics.red.status}
                       </span>
                     </div>
 
-                    <div
-                      className={`p-2 rounded-xl border flex items-center justify-between ${
-                        j.enlaceDatos === 'Si'
-                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                          : 'bg-slate-50 border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Wifi className="w-3.5 h-3.5 text-slate-600" />
-                        <span className="text-[11px] font-semibold">Enlace</span>
+                    {/* Enlace */}
+                    <div className="p-2 rounded-xl border bg-slate-50 border-slate-200 flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Wifi className="w-3.5 h-3.5 text-slate-600" />
+                          <span className="text-[11px] font-bold text-slate-800">Enlace</span>
+                        </div>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${
+                          cardMetrics.enlace.instalado === 'Si'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : 'bg-amber-50 text-amber-800 border-amber-300'
+                        }`}>
+                          {cardMetrics.enlace.instalado === 'Si' ? 'Instalado' : 'Sin instalar'}
+                        </span>
                       </div>
-                      <span
-                        className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                          j.enlaceDatos === 'Si' ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {j.enlaceDatos}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(cardMetrics.enlace.status)}`}>
+                        {cardMetrics.enlace.status}
                       </span>
                     </div>
                   </div>
@@ -3725,438 +4016,733 @@ export const JudicaturasView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 1: FORMULARIO DE FICHA DE JUDICATURA (CREAR / EDITAR)              */}
+      {/* MODAL 1: FORMULARIO DE FICHA DE JUDICATURA (FORMATO HORIZONTAL)          */}
       {/* ========================================================================= */}
       {isFormModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden my-8">
-            {/* Cabecera del Formulario */}
-            <div className="p-5 bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-950 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-[96vw] xl:max-w-[1380px] w-full border border-slate-200 shadow-2xl overflow-hidden my-auto max-h-[94vh] flex flex-col">
+            
+            {/* Cabecera del Formulario Horizontal */}
+            <div className="px-5 py-3.5 bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-xl bg-white/10 border border-white/20">
                   <Scale className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
-                  <h2 className="text-base sm:text-lg font-black tracking-tight">
-                    {editingJudicatura ? 'Editar Ficha de Judicatura' : 'Ingreso de Nueva Judicatura por Inaugurar'}
-                  </h2>
-                  <p className="text-xs text-blue-200">
-                    Gerencia de Informática - Organismo Judicial de Guatemala
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm sm:text-base font-black tracking-tight">
+                      {editingJudicatura ? `Editar Ficha de Judicatura: ${nombreJudicatura || 'Sede'}` : 'Ingreso de Nueva Judicatura por Inaugurar'}
+                    </h2>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-300/30">
+                      Formato Horizontal
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-blue-200">
+                    Gerencia de Informática • Organismo Judicial de Guatemala
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsFormModalOpen(false)}
-                className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              {/* Selector de Pestañas en Edición y Métricas en Tiempo Real */}
+              <div className="flex items-center gap-3">
+                {editingJudicatura && (
+                  <div className="hidden sm:flex items-center gap-1 bg-black/30 p-1 rounded-xl border border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setFormModalTab('datos')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        formModalTab === 'datos' ? 'bg-white text-blue-950 shadow-xs' : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      Ficha y Componentes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormModalTab('observaciones')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        formModalTab === 'observaciones' ? 'bg-white text-blue-950 shadow-xs' : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      Bitácora ({(editingJudicatura.observaciones || []).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormModalTab('documentos')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        formModalTab === 'documentos' ? 'bg-white text-blue-950 shadow-xs' : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      Expediente ({(editingJudicatura.documentos || []).length})
+                    </button>
+                  </div>
+                )}
+
+                {/* Insignias de Conteo en Tiempo Real */}
+                <div className="hidden md:flex items-center gap-2 text-[10px] bg-white/10 px-3 py-1 rounded-xl border border-white/15">
+                  <span className="text-blue-200">
+                    TIC Disponibles: <strong className="text-white font-mono">{formComponentMetrics.disponibles}/4</strong>
+                  </span>
+                  <span className="text-white/30">•</span>
+                  <span className="text-emerald-300">
+                    Instalados: <strong className="text-white font-mono">{formComponentMetrics.instalados}/4</strong>
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFormModalOpen(false)}
+                  className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+                  title="Cerrar formulario"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Cuerpo del Formulario */}
-            <form onSubmit={handleSubmitForm} className="p-5 sm:p-6 space-y-4 text-xs">
-              {/* Nombre Judicatura */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Nombre de la Judicatura <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={nombreJudicatura}
-                  onChange={(e) => setNombreJudicatura(e.target.value)}
-                  placeholder="ej. Juzgado de Primera Instancia Penal de Delitos de Femicidio de Quetzaltenango"
-                  className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 focus:outline-none ${
-                    formErrors.nombreJudicatura ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
-                  }`}
-                />
-                {formErrors.nombreJudicatura && (
-                  <p className="text-[11px] text-rose-600 mt-1 font-semibold">{formErrors.nombreJudicatura}</p>
-                )}
-              </div>
+            <form onSubmit={handleSubmitForm} className="flex flex-col flex-1 overflow-hidden text-xs">
+              
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
+                
+                {/* PESTAÑA PRINCIPAL: DISTRIBUCIÓN HORIZONTAL (2 COLUMNAS SIDE-BY-SIDE) */}
+                {formModalTab === 'datos' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                    
+                    {/* COLUMNA 1 (5 columnas): IDENTIFICACIÓN Y PARÁMETROS OPERATIVOS */}
+                    <div className="lg:col-span-5 bg-slate-50/70 p-4 rounded-2xl border border-slate-200 space-y-4 shadow-2xs">
+                      
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                        <span className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4 text-blue-800" />
+                          1. Identificación y Sede Judicial
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">Datos Principales</span>
+                      </div>
 
-              {/* Tipo de Ramo: "Cámara Penal", "Cámara Civil" y "Cámara Amparos" */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Cámara Asignada <span className="text-rose-600">*</span>
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Opción Cámara Penal */}
-                  <label
-                    className={`p-3 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
-                      tipoRamo === 'Penal'
-                        ? 'bg-purple-50 border-purple-500 text-purple-950 ring-2 ring-purple-500/20'
-                        : 'border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="tipoRamo"
-                      value="Penal"
-                      checked={tipoRamo === 'Penal'}
-                      onChange={() => setTipoRamo('Penal')}
-                      className="sr-only"
-                    />
-                    <div className="w-4 h-4 rounded-full border-2 border-purple-600 flex items-center justify-center shrink-0">
-                      {tipoRamo === 'Penal' && <div className="w-2 h-2 rounded-full bg-purple-600" />}
-                    </div>
-                    <div>
-                      <span className="font-black text-xs block">Cámara Penal</span>
-                      <span className="text-[10px] text-slate-500">Juzgados y Salas del Ramo Penal</span>
-                    </div>
-                  </label>
+                      {/* Nombre Judicatura */}
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">
+                          Nombre de la Judicatura <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={nombreJudicatura}
+                          onChange={(e) => setNombreJudicatura(e.target.value)}
+                          placeholder="ej. Juzgado de Primera Instancia Penal de Delitos de Femicidio de Quetzaltenango"
+                          className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 focus:outline-none bg-white text-xs ${
+                            formErrors.nombreJudicatura ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                          }`}
+                        />
+                        {formErrors.nombreJudicatura && (
+                          <p className="text-[11px] text-rose-600 mt-1 font-semibold">{formErrors.nombreJudicatura}</p>
+                        )}
+                      </div>
 
-                  {/* Opción Cámara Civil */}
-                  <label
-                    className={`p-3 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
-                      tipoRamo === 'Civil'
-                        ? 'bg-blue-50 border-blue-500 text-blue-950 ring-2 ring-blue-500/20'
-                        : 'border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="tipoRamo"
-                      value="Civil"
-                      checked={tipoRamo === 'Civil'}
-                      onChange={() => setTipoRamo('Civil')}
-                      className="sr-only"
-                    />
-                    <div className="w-4 h-4 rounded-full border-2 border-blue-600 flex items-center justify-center shrink-0">
-                      {tipoRamo === 'Civil' && <div className="w-2 h-2 rounded-full bg-blue-600" />}
-                    </div>
-                    <div>
-                      <span className="font-black text-xs block">Cámara Civil</span>
-                      <span className="text-[10px] text-slate-500">Juzgados y Salas de Paz, Civil, Familia y Trabajo</span>
-                    </div>
-                  </label>
+                      {/* Tipo de Ramo (Cámara Asignada) */}
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">
+                          Cámara Asignada <span className="text-rose-600">*</span>
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {/* Opción Cámara Penal */}
+                          <label
+                            className={`p-2 rounded-xl border flex flex-col justify-center cursor-pointer transition-all ${
+                              tipoRamo === 'Penal'
+                                ? 'bg-purple-50 border-purple-500 text-purple-950 ring-2 ring-purple-500/20 shadow-2xs'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="tipoRamo"
+                              value="Penal"
+                              checked={tipoRamo === 'Penal'}
+                              onChange={() => setTipoRamo('Penal')}
+                              className="sr-only"
+                            />
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-purple-600 flex items-center justify-center shrink-0">
+                                {tipoRamo === 'Penal' && <div className="w-1.5 h-1.5 rounded-full bg-purple-600" />}
+                              </div>
+                              <span className="font-black text-[11px]">Penal</span>
+                            </div>
+                            <span className="text-[9.5px] text-slate-500 truncate">Cámara Penal</span>
+                          </label>
 
-                  {/* Opción Cámara Amparos */}
-                  <label
-                    className={`p-3 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
-                      tipoRamo === 'Amparos'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20'
-                        : 'border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="tipoRamo"
-                      value="Amparos"
-                      checked={tipoRamo === 'Amparos'}
-                      onChange={() => setTipoRamo('Amparos')}
-                      className="sr-only"
-                    />
-                    <div className="w-4 h-4 rounded-full border-2 border-emerald-600 flex items-center justify-center shrink-0">
-                      {tipoRamo === 'Amparos' && <div className="w-2 h-2 rounded-full bg-emerald-600" />}
-                    </div>
-                    <div>
-                      <span className="font-black text-xs block">Cámara Amparos</span>
-                      <span className="text-[10px] text-slate-500">Juzgados y Salas de Amparos y Antejuicios</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
+                          {/* Opción Cámara Civil */}
+                          <label
+                            className={`p-2 rounded-xl border flex flex-col justify-center cursor-pointer transition-all ${
+                              tipoRamo === 'Civil'
+                                ? 'bg-blue-50 border-blue-500 text-blue-950 ring-2 ring-blue-500/20 shadow-2xs'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="tipoRamo"
+                              value="Civil"
+                              checked={tipoRamo === 'Civil'}
+                              onChange={() => setTipoRamo('Civil')}
+                              className="sr-only"
+                            />
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-blue-600 flex items-center justify-center shrink-0">
+                                {tipoRamo === 'Civil' && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                              </div>
+                              <span className="font-black text-[11px]">Civil</span>
+                            </div>
+                            <span className="text-[9.5px] text-slate-500 truncate">Paz, Civil, Trab.</span>
+                          </label>
 
-              {/* Fechas de Adecuaciones */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Fecha Inicio de Adecuaciones <span className="text-rose-600">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={fechaInicioAdecuaciones}
-                    onChange={(e) => setFechaInicioAdecuaciones(e.target.value)}
-                    className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 ${
-                      formErrors.fechaInicioAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
-                    }`}
-                  />
-                  {formErrors.fechaInicioAdecuaciones && (
-                    <p className="text-[11px] text-rose-600 mt-1 font-semibold">{formErrors.fechaInicioAdecuaciones}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Fecha Final de Adecuaciones <span className="text-rose-600">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={fechaFinAdecuaciones}
-                    onChange={(e) => setFechaFinAdecuaciones(e.target.value)}
-                    className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 ${
-                      formErrors.fechaFinAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
-                    }`}
-                  />
-                  {formErrors.fechaFinAdecuaciones && (
-                    <p className="text-[11px] text-rose-600 mt-1 font-semibold">{formErrors.fechaFinAdecuaciones}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Campos tipo lista: Si / No para Equipamiento */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                  Infraestructura y Equipamiento Tecnológico
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Equipo de Cómputo */}
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                      <Monitor className="w-3.5 h-3.5 text-slate-500" />
-                      Equipo de Cómputo
-                    </label>
-                    <select
-                      value={equipoComputo}
-                      onChange={(e) => setEquipoComputo(e.target.value as 'Si' | 'No')}
-                      className="w-full p-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-800"
-                    >
-                      <option value="Si">Si</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-
-                  {/* Equipo de Audio */}
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                      <Volume2 className="w-3.5 h-3.5 text-slate-500" />
-                      Equipo de Audio
-                    </label>
-                    <select
-                      value={equipoAudio}
-                      onChange={(e) => setEquipoAudio(e.target.value as 'Si' | 'No')}
-                      className="w-full p-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-800"
-                    >
-                      <option value="Si">Si</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-
-                  {/* Cableado Estructurado */}
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                      <Network className="w-3.5 h-3.5 text-slate-500" />
-                      Cableado Estructurado
-                    </label>
-                    <select
-                      value={cableadoEstructurado}
-                      onChange={(e) => setCableadoEstructurado(e.target.value as 'Si' | 'No')}
-                      className="w-full p-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-800"
-                    >
-                      <option value="Si">Si</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-
-                  {/* Enlace de Datos */}
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                      <Wifi className="w-3.5 h-3.5 text-slate-500" />
-                      Enlace de Datos
-                    </label>
-                    <select
-                      value={enlaceDatos}
-                      onChange={(e) => setEnlaceDatos(e.target.value as 'Si' | 'No')}
-                      className="w-full p-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-800"
-                    >
-                      <option value="Si">Si</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Estatus, Priorizado y Fecha (Requisito Solicitado) */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-blue-50/50 p-3.5 rounded-xl border border-blue-100">
-                {/* Estatus */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Flag className="w-3.5 h-3.5 text-blue-900" />
-                    Estatus <span className="text-rose-600">*</span>
-                  </label>
-                  <select
-                    id="select-estado-inauguracion"
-                    value={estadoInauguracion}
-                    onChange={(e) => setEstadoInauguracion(e.target.value as EstadoInauguracionJudicatura)}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
-                  >
-                    {estatusOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Estatus actual de la judicatura
-                  </span>
-                </div>
-
-                {/* Priorizado */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-                    Priorizado <span className="text-amber-600">*</span>
-                  </label>
-                  <select
-                    id="select-priorizado"
-                    value={priorizado}
-                    onChange={(e) => setPriorizado(e.target.value as 'Si' | 'No')}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
-                  >
-                    <option value="Si">Si (Alta Prioridad)</option>
-                    <option value="No">No (Ordinario)</option>
-                  </select>
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Indicador prioritario institucional
-                  </span>
-                </div>
-
-                {/* Fecha */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                      Fecha
-                    </label>
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase bg-slate-100 px-1.5 py-0.2 rounded">
-                      Opcional
-                    </span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={fechaInauguracion}
-                      onChange={(e) => setFechaInauguracion(e.target.value)}
-                      className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 bg-white ${
-                        formErrors.fechaInauguracion ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
-                      }`}
-                    />
-                    {fechaInauguracion && (
-                      <button
-                        type="button"
-                        onClick={() => setFechaInauguracion('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-                        title="Quitar fecha"
-                      >
-                        Limpiar
-                      </button>
-                    )}
-                  </div>
-                  {formErrors.fechaInauguracion ? (
-                    <p className="text-[11px] text-rose-600 mt-1 font-semibold">{formErrors.fechaInauguracion}</p>
-                  ) : (
-                    <span className="text-[10px] text-slate-500 mt-1 block">
-                      Dejar en blanco si aún no hay fecha estipulada
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Sección de Observaciones: Edición (Permite agregar observaciones) o Creación */}
-              {editingJudicatura ? (
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <GitBranch className="w-3.5 h-3.5 text-blue-900" />
-                      Observaciones Registradas ({(editingJudicatura.observaciones || []).length})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateFicha(editingJudicatura)}
-                      className="text-[11px] font-bold text-blue-900 hover:text-blue-950 flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-blue-200 shadow-2xs hover:bg-blue-50 transition-colors cursor-pointer"
-                      title="Generar y descargar la Ficha Técnica Individual en PDF"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-blue-900" />
-                      <span>Generar Ficha PDF</span>
-                    </button>
-                  </div>
-
-                  {/* Listado de observaciones existentes */}
-                  {editingJudicatura.observaciones && editingJudicatura.observaciones.length > 0 ? (
-                    <div className="max-h-36 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-200">
-                      {editingJudicatura.observaciones.map((obs) => (
-                        <div key={obs.id} className="pt-2 first:pt-0 text-[11px]">
-                          <div className="flex items-center justify-between font-bold text-slate-700">
-                            <span className="text-blue-900">Acción #{obs.numeroAccion}</span>
-                            <span className="text-slate-400 font-mono text-[10px]">{formatDateTime(obs.fecha)}</span>
-                          </div>
-                          <p className="text-slate-800 mt-0.5">{obs.texto}</p>
-                          <span className="text-[9px] text-slate-400 italic">Por: {obs.autor}</span>
+                          {/* Opción Cámara Amparos */}
+                          <label
+                            className={`p-2 rounded-xl border flex flex-col justify-center cursor-pointer transition-all ${
+                              tipoRamo === 'Amparos'
+                                ? 'bg-emerald-50 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20 shadow-2xs'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="tipoRamo"
+                              value="Amparos"
+                              checked={tipoRamo === 'Amparos'}
+                              onChange={() => setTipoRamo('Amparos')}
+                              className="sr-only"
+                            />
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-600 flex items-center justify-center shrink-0">
+                                {tipoRamo === 'Amparos' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-600" />}
+                              </div>
+                              <span className="font-black text-[11px]">Amparos</span>
+                            </div>
+                            <span className="text-[9.5px] text-slate-500 truncate">Garantías Const.</span>
+                          </label>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-slate-400 italic">No hay observaciones previas registradas.</p>
-                  )}
+                      </div>
 
-                  {/* Agregar nueva observación en modo edición */}
-                  <div className="pt-2.5 border-t border-slate-200 space-y-1.5">
-                    <label className="block font-bold text-slate-700 text-xs">
-                      Agregar Observación / Acción al Historial
-                    </label>
-                    <div className="flex gap-2">
-                      <textarea
-                        rows={2}
-                        value={nuevaObservacionModal}
-                        onChange={(e) => setNuevaObservacionModal(e.target.value)}
-                        placeholder="Escriba aquí los avances o detalles de la observación para esta judicatura..."
-                        className="w-full p-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
-                      />
+                      {/* Fechas de Adecuaciones */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-bold text-slate-700 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-indigo-700" />
+                            Fechas de Adecuaciones <span className="text-rose-600">*</span>
+                          </label>
+                          {diasAdecuacionCalculados > 0 && (
+                            <span className="text-[10px] font-bold text-indigo-900 bg-indigo-50 px-2 py-0.2 rounded border border-indigo-200">
+                              {diasAdecuacionCalculados} días de ejecución
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="block text-[10px] text-slate-500 mb-0.5 font-semibold">Inicio</span>
+                            <input
+                              type="date"
+                              value={fechaInicioAdecuaciones}
+                              onChange={(e) => setFechaInicioAdecuaciones(e.target.value)}
+                              className={`w-full p-2 border rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs ${
+                                formErrors.fechaInicioAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-slate-500 mb-0.5 font-semibold">Finalización</span>
+                            <input
+                              type="date"
+                              value={fechaFinAdecuaciones}
+                              onChange={(e) => setFechaFinAdecuaciones(e.target.value)}
+                              className={`w-full p-2 border rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs ${
+                                formErrors.fechaFinAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                        {(formErrors.fechaInicioAdecuaciones || formErrors.fechaFinAdecuaciones) && (
+                          <p className="text-[11px] text-rose-600 mt-1 font-semibold">
+                            {formErrors.fechaInicioAdecuaciones || formErrors.fechaFinAdecuaciones}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Estatus, Priorizado y Fecha Inauguración */}
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200">
+                        {/* Estatus */}
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1 text-[11px]">
+                            <Flag className="w-3 h-3 text-blue-900" />
+                            Estatus <span className="text-rose-600">*</span>
+                          </label>
+                          <select
+                            id="select-estado-inauguracion"
+                            value={estadoInauguracion}
+                            onChange={(e) => setEstadoInauguracion(e.target.value as EstadoInauguracionJudicatura)}
+                            className="w-full p-2 text-xs border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                          >
+                            {estatusOptions.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Priorizado */}
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1 text-[11px]">
+                            <Star className="w-3 h-3 text-amber-500 fill-amber-400" />
+                            Prioridad <span className="text-amber-600">*</span>
+                          </label>
+                          <select
+                            id="select-priorizado"
+                            value={priorizado}
+                            onChange={(e) => setPriorizado(e.target.value as 'Si' | 'No')}
+                            className="w-full p-2 text-xs border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                          >
+                            <option value="Si">★ Alta Prioridad</option>
+                            <option value="No">Ordinario</option>
+                          </select>
+                        </div>
+
+                        {/* Fecha Inauguración */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-700 flex items-center gap-1 text-[11px]">
+                              <Calendar className="w-3 h-3 text-emerald-700" />
+                              Inauguración
+                            </label>
+                            {fechaInauguracion && (
+                              <button
+                                type="button"
+                                onClick={() => setFechaInauguracion('')}
+                                className="text-[9px] text-slate-400 hover:text-rose-600 font-bold cursor-pointer"
+                              >
+                                Limpiar
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="date"
+                            value={fechaInauguracion}
+                            onChange={(e) => setFechaInauguracion(e.target.value)}
+                            className="w-full p-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-800"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Observaciones Iniciales o Resumen si se edita */}
+                      {editingJudicatura ? (
+                        <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-[11px]">
+                          <div>
+                            <span className="font-bold text-slate-800 block">
+                              Acciones y Documentos Registrados
+                            </span>
+                            <span className="text-slate-500 text-[10px]">
+                              {(editingJudicatura.observaciones || []).length} acciones • {(editingJudicatura.documentos || []).length} documentos adjuntos
+                            </span>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setFormModalTab('observaciones')}
+                              className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 font-bold text-[10px] hover:bg-indigo-100 transition-colors cursor-pointer"
+                            >
+                              Ver Bitácora
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFormModalTab('documentos')}
+                              className="px-2 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[10px] hover:bg-amber-100 transition-colors cursor-pointer"
+                            >
+                              Expediente
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
+                            <FileText className="w-3 h-3 text-slate-500" />
+                            Observaciones Iniciales (Acción #1 en Bitácora)
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={observacionesIniciales}
+                            onChange={(e) => setObservacionesIniciales(e.target.value)}
+                            placeholder="Ingrese los antecedentes o detalles iniciales del proyecto de inauguración..."
+                            className="w-full p-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
+                          />
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* COLUMNA 2 (7 columnas): INFRAESTRUCTURA TIC Y CERTIFICACIÓN DE INSTALACIÓN */}
+                    <div className="lg:col-span-7 bg-white p-4 rounded-2xl border border-slate-200 space-y-3.5 shadow-2xs">
+                      
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-1.5 border-b border-slate-200">
+                        <div>
+                          <span className="text-xs font-black text-slate-900 uppercase tracking-wider block">
+                            2. Infraestructura y Componentes Tecnológicos TIC
+                          </span>
+                          <span className="text-[10.5px] text-slate-500">
+                            Estatus de inventario y condición de instalación física en sede.
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] shrink-0">
+                          <span className="px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-900 border border-blue-200">
+                            Disponibles: <strong className="font-mono">{formComponentMetrics.disponibles}/4</strong>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-900 border border-emerald-200">
+                            Instalados en Sede: <strong className="font-mono">{formComponentMetrics.instalados}/4</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Nota Aclaratoria Institucional */}
+                      <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 text-[10.5px] text-blue-950 flex items-start gap-2">
+                        <span className="font-black text-blue-800 shrink-0">ⓘ</span>
+                        <p>
+                          <strong>Aclaración Institucional:</strong> Si ya se cuenta con los equipos pero aún no están instalados físicamente en la judicatura, seleccione el estatus correspondiente (ej. <em>"Se cuenta con equipo"</em>) y en <strong>Instalado</strong> seleccione <strong>"No"</strong>.
+                        </p>
+                      </div>
+
+                      {/* Cuadrícula Horizontal 2x2 para los 4 Componentes */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        
+                        {/* 1. Equipo de Cómputo */}
+                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              <Monitor className="w-3.5 h-3.5 text-blue-800" />
+                              Equipo de Cómputo (PC)
+                            </label>
+                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
+                              equipoComputoInstalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {equipoComputoInstalado === 'Si' ? '✓ Instalado en Sede' : 'Sin instalar'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus</span>
+                              <select
+                                id="select-estatus-computo"
+                                value={estatusEquipoComputo}
+                                onChange={(e) => handleComputoStatusChange(e.target.value as EstatusComputo)}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                {COMPONENT_COMPUTO_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado en Sede?</span>
+                              <select
+                                id="select-instalado-computo"
+                                value={equipoComputoInstalado}
+                                onChange={(e) => handleComputoInstaladoChange(e.target.value as 'Si' | 'No')}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                <option value="No">No (Sin instalar)</option>
+                                <option value="Si">Si (Instalado)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
+                            <span>¿Se cuenta con equipo?: <strong>{equipoComputo}</strong></span>
+                            <span className="font-mono text-slate-400">Estaciones y monitores</span>
+                          </div>
+                        </div>
+
+                        {/* 2. Equipo de Audio */}
+                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              <Volume2 className="w-3.5 h-3.5 text-purple-800" />
+                              Equipo de Audio y Grabación
+                            </label>
+                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
+                              equipoAudioInstalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {equipoAudioInstalado === 'Si' ? '✓ Instalado en Sede' : 'Sin instalar'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus</span>
+                              <select
+                                id="select-estatus-audio"
+                                value={estatusEquipoAudio}
+                                onChange={(e) => handleAudioStatusChange(e.target.value as EstatusAudio)}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                {COMPONENT_AUDIO_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado en Sede?</span>
+                              <select
+                                id="select-instalado-audio"
+                                value={equipoAudioInstalado}
+                                onChange={(e) => handleAudioInstaladoChange(e.target.value as 'Si' | 'No')}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                <option value="No">No (Sin instalar)</option>
+                                <option value="Si">Si (Instalado)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
+                            <span>¿Se cuenta con equipo?: <strong>{equipoAudio}</strong></span>
+                            <span className="font-mono text-slate-400">Consolas y micrófonos</span>
+                          </div>
+                        </div>
+
+                        {/* 3. Cableado Estructurado */}
+                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              <Network className="w-3.5 h-3.5 text-teal-800" />
+                              Cableado Estructurado (Red)
+                            </label>
+                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
+                              cableadoEstructuradoInstalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {cableadoEstructuradoInstalado === 'Si' ? '✓ Terminado en Sede' : 'Sin terminar'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus de Red</span>
+                              <select
+                                id="select-estatus-red"
+                                value={estatusCableadoEstructurado}
+                                onChange={(e) => handleRedStatusChange(e.target.value as EstatusRed)}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                {COMPONENT_RED_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado / Terminado?</span>
+                              <select
+                                id="select-instalado-red"
+                                value={cableadoEstructuradoInstalado}
+                                onChange={(e) => handleRedInstaladoChange(e.target.value as 'Si' | 'No')}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                <option value="No">No (Pendiente)</option>
+                                <option value="Si">Si (Terminado)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
+                            <span>¿Se cuenta con red?: <strong>{cableadoEstructurado}</strong></span>
+                            <span className="font-mono text-slate-400">Puntos Cat 6A y rack</span>
+                          </div>
+                        </div>
+
+                        {/* 4. Enlace de Datos */}
+                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              <Wifi className="w-3.5 h-3.5 text-cyan-800" />
+                              Enlace de Datos
+                            </label>
+                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
+                              enlaceDatosInstalado === 'Si'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {enlaceDatosInstalado === 'Si' ? '✓ Instalado / Operativo' : 'Sin enlace'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus de Enlace</span>
+                              <select
+                                id="select-estatus-enlace"
+                                value={estatusEnlaceDatos}
+                                onChange={(e) => handleEnlaceStatusChange(e.target.value as EstatusEnlace)}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                {COMPONENT_ENLACE_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado en Sede?</span>
+                              <select
+                                id="select-instalado-enlace"
+                                value={enlaceDatosInstalado}
+                                onChange={(e) => handleEnlaceInstaladoChange(e.target.value as 'Si' | 'No')}
+                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
+                              >
+                                <option value="No">No (Sin instalar)</option>
+                                <option value="Si">Si (Instalado)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
+                            <span>¿Se cuenta con enlace?: <strong>{enlaceDatos}</strong></span>
+                            <span className="font-mono text-slate-400">Fibra óptica o satelital</span>
+                          </div>
+                        </div>
+
+                      </div>
+
+                    </div>
+
+                  </div>
+                )}
+
+                {/* PESTAÑA DE OBSERVACIONES (EN EDICIÓN) */}
+                {formModalTab === 'observaciones' && editingJudicatura && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <GitBranch className="w-4 h-4 text-blue-900" />
+                          Bitácora de Observaciones Registradas ({(editingJudicatura.observaciones || []).length})
+                        </span>
+                        <p className="text-[11px] text-slate-500">
+                          Historial cronológico de intervenciones para {nombreJudicatura}
+                        </p>
+                      </div>
                       <button
                         type="button"
-                        onClick={handleAddObservationInEdit}
-                        disabled={isAddingObsInEdit || !nuevaObservacionModal.trim()}
-                        className="px-3 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded-xl self-end shrink-0 disabled:opacity-50 text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                        title="Añadir esta observación ahora al historial"
+                        onClick={() => setFormModalTab('datos')}
+                        className="px-2.5 py-1 text-xs font-bold text-blue-900 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 cursor-pointer"
                       >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Añadir</span>
+                        ← Volver a Ficha
                       </button>
                     </div>
-                    <span className="text-[10px] text-slate-500 block">
-                      Nota: También se guardará automáticamente al hacer clic en "Actualizar Ficha".
-                    </span>
-                  </div>
 
-                  {/* Expediente Digital y Documentos Adjuntos en Edición de Ficha */}
-                  <div className="pt-3 border-t border-slate-200">
+                    {/* Listado de observaciones existentes */}
+                    {editingJudicatura.observaciones && editingJudicatura.observaciones.length > 0 ? (
+                      <div className="max-h-60 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-200">
+                        {editingJudicatura.observaciones.map((obs) => (
+                          <div key={obs.id} className="pt-2.5 first:pt-0 text-[11px]">
+                            <div className="flex items-center justify-between font-bold text-slate-700">
+                              <span className="text-blue-900">Acción #{obs.numeroAccion}</span>
+                              <span className="text-slate-400 font-mono text-[10px]">{formatDateTime(obs.fecha)}</span>
+                            </div>
+                            <p className="text-slate-800 mt-0.5">{obs.texto}</p>
+                            <span className="text-[9.5px] text-slate-400 italic">Por: {obs.autor}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic py-4 text-center">No hay observaciones previas registradas.</p>
+                    )}
+
+                    {/* Agregar nueva observación en modo edición */}
+                    <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                      <label className="block font-bold text-slate-700 text-xs">
+                        Agregar Observación / Acción al Historial
+                      </label>
+                      <div className="flex gap-2">
+                        <textarea
+                          rows={2}
+                          value={nuevaObservacionModal}
+                          onChange={(e) => setNuevaObservacionModal(e.target.value)}
+                          placeholder="Escriba aquí los avances o detalles de la observación para esta judicatura..."
+                          className="w-full p-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddObservationInEdit}
+                          disabled={isAddingObsInEdit || !nuevaObservacionModal.trim()}
+                          className="px-3.5 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded-xl self-end shrink-0 disabled:opacity-50 text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                          title="Añadir esta observación ahora al historial"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Añadir</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PESTAÑA DE EXPEDIENTE DIGITAL (EN EDICIÓN) */}
+                {formModalTab === 'documentos' && editingJudicatura && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Paperclip className="w-4 h-4 text-blue-900" />
+                          Expediente Digital y Documentos Adjuntos ({(editingJudicatura.documentos || []).length})
+                        </span>
+                        <p className="text-[11px] text-slate-500">
+                          Actas, certificaciones y dictámenes oficiales de {nombreJudicatura}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormModalTab('datos')}
+                        className="px-2.5 py-1 text-xs font-bold text-blue-900 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 cursor-pointer"
+                      >
+                        ← Volver a Ficha
+                      </button>
+                    </div>
+
                     <JudicaturaDocumentsSection
                       judicatura={editingJudicatura}
                       canEdit={canEdit}
                     />
                   </div>
-                </div>
-              ) : (
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Observaciones Iniciales (Acción #1 en el Árbol)
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={observacionesIniciales}
-                    onChange={(e) => setObservacionesIniciales(e.target.value)}
-                    placeholder="Ingrese los detalles iniciales del proyecto de inauguración..."
-                    className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 focus:outline-none"
-                  />
-                </div>
-              )}
-
-              {/* Botones del Formulario */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-between gap-2.5">
-                {editingJudicatura ? (
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateFicha(editingJudicatura)}
-                    className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                    title="Generar Ficha Técnica Oficial de la Judicatura (PDF)"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-blue-900" />
-                    <span>Generar Ficha</span>
-                  </button>
-                ) : (
-                  <div />
                 )}
+
+              </div>
+
+              {/* Barra Inferior del Formulario Horizontal */}
+              <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="text-[11px] text-slate-600 hidden sm:block">
+                    <span className="font-bold text-slate-800">Resumen Tecnológico TIC:</span>{' '}
+                    <strong className="text-blue-900 font-mono">{formComponentMetrics.disponibles}/4</strong> componentes con equipo •{' '}
+                    <strong className="text-emerald-800 font-mono">{formComponentMetrics.instalados}/4</strong> instalados en sede
+                  </div>
+                  {editingJudicatura && (
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateFicha(editingJudicatura)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-blue-900 border border-slate-300 font-bold text-[11px] flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                      title="Generar Ficha Técnica Oficial de la Judicatura (PDF)"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-900" />
+                      <span>Ficha PDF</span>
+                    </button>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -4182,6 +4768,7 @@ export const JudicaturasView: React.FC = () => {
                   </button>
                 </div>
               </div>
+
             </form>
           </div>
         </div>
@@ -4326,33 +4913,103 @@ export const JudicaturasView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Resumen de equipamiento */}
-                <div className="pt-2 border-t border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-[11px]">
-                    <span className="text-slate-600 font-medium">Cómputo</span>
-                    <span className={`font-black px-1.5 py-0.2 rounded text-[10px] ${activeDetailJudicatura.equipoComputo === 'Si' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                      {activeDetailJudicatura.equipoComputo}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-[11px]">
-                    <span className="text-slate-600 font-medium">Audio</span>
-                    <span className={`font-black px-1.5 py-0.2 rounded text-[10px] ${activeDetailJudicatura.equipoAudio === 'Si' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                      {activeDetailJudicatura.equipoAudio}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-[11px]">
-                    <span className="text-slate-600 font-medium">Cableado</span>
-                    <span className={`font-black px-1.5 py-0.2 rounded text-[10px] ${activeDetailJudicatura.cableadoEstructurado === 'Si' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                      {activeDetailJudicatura.cableadoEstructurado}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 text-[11px]">
-                    <span className="text-slate-600 font-medium">Enlace</span>
-                    <span className={`font-black px-1.5 py-0.2 rounded text-[10px] ${activeDetailJudicatura.enlaceDatos === 'Si' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                      {activeDetailJudicatura.enlaceDatos}
-                    </span>
-                  </div>
-                </div>
+                {/* Resumen de equipamiento y estatus de componentes */}
+                {(() => {
+                  const detMetrics = getJudicaturaComponentMetrics(activeDetailJudicatura);
+
+                  return (
+                    <div className="pt-2 border-t border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-slate-700 uppercase tracking-wider">
+                          Infraestructura TIC
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-500">
+                            Disponibles: <strong className="text-blue-900 font-mono">{detMetrics.disponiblesCount}/4</strong>
+                          </span>
+                          <span className="text-slate-300">•</span>
+                          <span className="font-semibold text-slate-500">
+                            Instalados en Sede: <strong className="text-emerald-800 font-mono">{detMetrics.instaladosCount}/4</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                        {/* Cómputo */}
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
+                              <Monitor className="w-3.5 h-3.5 text-blue-800" />
+                              Cómputo
+                            </span>
+                            <span className={`font-black text-[9px] px-1.5 py-0.2 rounded border ${
+                              detMetrics.computo.instalado === 'Si' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {detMetrics.computo.instalado === 'Si' ? '✓ Instalado' : 'Sin instalar'}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(detMetrics.computo.status)}`}>
+                            {detMetrics.computo.status}
+                          </span>
+                        </div>
+
+                        {/* Audio */}
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
+                              <Volume2 className="w-3.5 h-3.5 text-purple-800" />
+                              Audio
+                            </span>
+                            <span className={`font-black text-[9px] px-1.5 py-0.2 rounded border ${
+                              detMetrics.audio.instalado === 'Si' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {detMetrics.audio.instalado === 'Si' ? '✓ Instalado' : 'Sin instalar'}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(detMetrics.audio.status)}`}>
+                            {detMetrics.audio.status}
+                          </span>
+                        </div>
+
+                        {/* Red */}
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
+                              <Network className="w-3.5 h-3.5 text-teal-800" />
+                              Red
+                            </span>
+                            <span className={`font-black text-[9px] px-1.5 py-0.2 rounded border ${
+                              detMetrics.red.instalado === 'Si' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {detMetrics.red.instalado === 'Si' ? '✓ Terminado' : 'Pendiente'}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(detMetrics.red.status)}`}>
+                            {detMetrics.red.status}
+                          </span>
+                        </div>
+
+                        {/* Enlace */}
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
+                              <Wifi className="w-3.5 h-3.5 text-cyan-800" />
+                              Enlace
+                            </span>
+                            <span className={`font-black text-[9px] px-1.5 py-0.2 rounded border ${
+                              detMetrics.enlace.instalado === 'Si' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {detMetrics.enlace.instalado === 'Si' ? '✓ Instalado' : 'Sin instalar'}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold text-center truncate ${getComponentStatusBadgeClass(detMetrics.enlace.status)}`}>
+                            {detMetrics.enlace.status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* SELECTOR DE PESTAÑAS: ÁRBOL CRONOLÓGICO vs EXPEDIENTE DIGITAL */}

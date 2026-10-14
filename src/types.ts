@@ -429,16 +429,59 @@ export interface JudicaturaDocumento extends AttachedDocument {
   subidoPor?: string;
 }
 
+export const ESTATUS_COMPUTO_OPTIONS = [
+  'Solicitado F56',
+  'Se cuenta con equipo',
+  'Instalado',
+  'Pendiente'
+] as const;
+export type EstatusComputo = typeof ESTATUS_COMPUTO_OPTIONS[number] | string;
+
+export const ESTATUS_AUDIO_OPTIONS = [
+  'Solicitado F56',
+  'Se cuenta con equipo',
+  'Instalado',
+  'Pendiente'
+] as const;
+export type EstatusAudio = typeof ESTATUS_AUDIO_OPTIONS[number] | string;
+
+export const ESTATUS_ENLACE_OPTIONS = [
+  'Solicitado',
+  'Instalado',
+  'Equipo Satelital Temporal',
+  'Pendiente'
+] as const;
+export type EstatusEnlace = typeof ESTATUS_ENLACE_OPTIONS[number] | string;
+
+export const ESTATUS_RED_OPTIONS = [
+  'Solicitud F56',
+  'Instalando',
+  'Terminado',
+  'Pendiente'
+] as const;
+export type EstatusRed = typeof ESTATUS_RED_OPTIONS[number] | string;
+
 export interface JudicaturaRecord {
   id: string;
   nombreJudicatura: string;
   tipoRamo: TipoRamoJudicatura;
   fechaInicioAdecuaciones: string; // YYYY-MM-DD
   fechaFinAdecuaciones: string;    // YYYY-MM-DD
-  equipoComputo: OpcionSiNo;
-  equipoAudio: OpcionSiNo;
-  cableadoEstructurado: OpcionSiNo;
-  enlaceDatos: OpcionSiNo;
+  equipoComputo: OpcionSiNo;       // ¿Se cuenta con el componente/equipo? 'Si' | 'No'
+  equipoAudio: OpcionSiNo;         // ¿Se cuenta con el componente/equipo? 'Si' | 'No'
+  cableadoEstructurado: OpcionSiNo;// ¿Se cuenta con el componente/red? 'Si' | 'No'
+  enlaceDatos: OpcionSiNo;         // ¿Se cuenta con el enlace? 'Si' | 'No'
+
+  // Estatus específico y desglose de instalación por componente:
+  estatusEquipoComputo?: EstatusComputo;             // 'Solicitado F56' | 'Se cuenta con equipo' | 'Instalado'
+  equipoComputoInstalado?: OpcionSiNo;               // ¿Instalado en sede? 'Si' | 'No'
+  estatusEquipoAudio?: EstatusAudio;                 // 'Solicitado F56' | 'Se cuenta con equipo' | 'Instalado'
+  equipoAudioInstalado?: OpcionSiNo;                 // ¿Instalado en sede? 'Si' | 'No'
+  estatusCableadoEstructurado?: EstatusRed;          // 'Solicitud F56' | 'Instalando' | 'Terminado'
+  cableadoEstructuradoInstalado?: OpcionSiNo;        // ¿Instalado en sede? 'Si' | 'No'
+  estatusEnlaceDatos?: EstatusEnlace;                // 'Solicitado' | 'Instalado' | 'Equipo Satelital Temporal'
+  enlaceDatosInstalado?: OpcionSiNo;                 // ¿Instalado en sede? 'Si' | 'No'
+
   fechaInauguracion?: string;       // YYYY-MM-DD (Opcional)
   estadoInauguracion?: EstadoInauguracionJudicatura; // Reprogramado, Pendiente Fecha, Inaugurado
   priorizado?: OpcionSiNo;          // 'Si' | 'No' (Judicatura Priorizada de Alta Prioridad)

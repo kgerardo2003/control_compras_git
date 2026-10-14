@@ -288,6 +288,27 @@ export const ImportJudicaturasModal: React.FC<ImportJudicaturasModalProps> = ({
         const estadoInauguracion = normalizeEstatus(estatusVal);
         const priorizado = normalizeSiNo(priorizadoVal, 'No');
 
+        // Normalización de Estatus e Instalación de Componentes
+        const rawEstComp = String(row['Estatus Cómputo'] || row['Estatus Computo'] || row['estatusEquipoComputo'] || '').trim();
+        const estatusEquipoComputo = rawEstComp || (equipoComputo === 'Si' ? 'Se cuenta con equipo' : 'Pendiente');
+        const rawCompInst = row['Cómputo Instalado'] || row['Computo Instalado'] || row['equipoComputoInstalado'];
+        const equipoComputoInstalado = rawCompInst ? normalizeSiNo(rawCompInst, 'No') : (estatusEquipoComputo === 'Instalado' ? 'Si' : 'No');
+
+        const rawEstAudio = String(row['Estatus Audio'] || row['estatusEquipoAudio'] || '').trim();
+        const estatusEquipoAudio = rawEstAudio || (equipoAudio === 'Si' ? 'Se cuenta con equipo' : 'Pendiente');
+        const rawAudioInst = row['Audio Instalado'] || row['equipoAudioInstalado'];
+        const equipoAudioInstalado = rawAudioInst ? normalizeSiNo(rawAudioInst, 'No') : (estatusEquipoAudio === 'Instalado' ? 'Si' : 'No');
+
+        const rawEstRed = String(row['Estatus Red'] || row['estatusCableadoEstructurado'] || '').trim();
+        const estatusCableadoEstructurado = rawEstRed || (cableadoEstructurado === 'Si' ? 'Terminado' : 'Pendiente');
+        const rawRedInst = row['Red Instalada'] || row['Cableado Instalado'] || row['cableadoEstructuradoInstalado'];
+        const cableadoEstructuradoInstalado = rawRedInst ? normalizeSiNo(rawRedInst, 'No') : (estatusCableadoEstructurado === 'Terminado' ? 'Si' : 'No');
+
+        const rawEstEnlace = String(row['Estatus Enlace'] || row['estatusEnlaceDatos'] || '').trim();
+        const estatusEnlaceDatos = rawEstEnlace || (enlaceDatos === 'Si' ? 'Instalado' : 'Pendiente');
+        const rawEnlaceInst = row['Enlace Instalado'] || row['enlaceDatosInstalado'];
+        const enlaceDatosInstalado = rawEnlaceInst ? normalizeSiNo(rawEnlaceInst, 'No') : ((estatusEnlaceDatos === 'Instalado' || estatusEnlaceDatos === 'Equipo Satelital Temporal') ? 'Si' : 'No');
+
         const data: Partial<JudicaturaRecord> & { observacionesTexto?: string } = {
           id: idVal ? String(idVal).trim() : undefined,
           nombreJudicatura: nombreVal,
@@ -295,9 +316,17 @@ export const ImportJudicaturasModal: React.FC<ImportJudicaturasModalProps> = ({
           fechaInicioAdecuaciones: normFechaInicio,
           fechaFinAdecuaciones: normFechaFin,
           equipoComputo,
+          estatusEquipoComputo,
+          equipoComputoInstalado,
           equipoAudio,
+          estatusEquipoAudio,
+          equipoAudioInstalado,
           cableadoEstructurado,
+          estatusCableadoEstructurado,
+          cableadoEstructuradoInstalado,
           enlaceDatos,
+          estatusEnlaceDatos,
+          enlaceDatosInstalado,
           fechaInauguracion: normFechaInauguracion || undefined,
           estadoInauguracion,
           priorizado,

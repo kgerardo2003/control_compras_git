@@ -1,4 +1,11 @@
 import { JudicaturaRecord } from '../types';
+import {
+  getJudicaturaComputoInfo,
+  getJudicaturaAudioInfo,
+  getJudicaturaRedInfo,
+  getJudicaturaEnlaceInfo,
+  getJudicaturaComponentMetrics
+} from './judicaturaComponentUtils';
 
 export interface ChartDataItem {
   name: string;
@@ -626,12 +633,15 @@ export function generateIndividualJudicaturaGaugeImage(judicatura: JudicaturaRec
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, width, height);
 
-    const c = judicatura.equipoComputo === 'Si' ? 1 : 0;
-    const a = judicatura.equipoAudio === 'Si' ? 1 : 0;
-    const r = judicatura.cableadoEstructurado === 'Si' ? 1 : 0;
-    const e = judicatura.enlaceDatos === 'Si' ? 1 : 0;
-    const readyCount = c + a + r + e;
-    const pct = Math.round((readyCount / 4) * 100);
+    const metrics = getJudicaturaComponentMetrics(judicatura);
+    const computoInfo = metrics.computo;
+    const audioInfo = metrics.audio;
+    const redInfo = metrics.red;
+    const enlaceInfo = metrics.enlace;
+
+    const readyCount = metrics.disponiblesCount;
+    const installedCount = metrics.instaladosCount;
+    const pct = metrics.pctDisponibles;
 
     // Fondo del panel
     ctx.fillStyle = '#F8FAFC';
@@ -656,8 +666,8 @@ export function generateIndividualJudicaturaGaugeImage(judicatura: JudicaturaRec
     const innerRadius = 130;
 
     const slices: ChartDataItem[] = [
-      { name: 'Completado', value: readyCount, color: pct === 100 ? '#059669' : '#0284C7' },
-      { name: 'Pendiente', value: 4 - readyCount, color: '#E2E8F0' },
+      { name: 'Disponibles', value: readyCount, color: metrics.es100Instalados ? '#059669' : '#0284C7' },
+      { name: 'Pendientes', value: 4 - readyCount, color: '#E2E8F0' },
     ];
 
     drawDonutChart(
@@ -668,7 +678,11 @@ export function generateIndividualJudicaturaGaugeImage(judicatura: JudicaturaRec
       outerRadius,
       innerRadius,
       `${pct}%`,
-      'COBERTURA TIC'
+      metrics.es100Instalados
+        ? '100% INSTALADO'
+        : metrics.es100Disponibles
+        ? 'EQUIPO COMPLETO'
+        : `${readyCount}/4 COMPONENTES`
     );
 
     // 2. Indicadores en 5 tarjetas compactas a la derecha
@@ -683,31 +697,31 @@ export function generateIndividualJudicaturaGaugeImage(judicatura: JudicaturaRec
     const components = [
       {
         name: 'EQUIPO CÓMPUTO',
-        ready: c === 1,
-        statusText: c === 1 ? 'COMPLETADO' : 'PENDIENTE',
-        desc: c === 1 ? 'Instalado y operativo' : 'Pendiente de entrega',
-        activeColor: '#059669',
+        ready: computoInfo.tieneComponente,
+        statusText: computoInfo.status.toUpperCase(),
+        desc: computoInfo.instalado === 'Si' ? 'Instalado en Sede: SÍ' : 'Instalado en Sede: NO',
+        activeColor: computoInfo.instalado === 'Si' ? '#059669' : computoInfo.tieneComponente ? '#0284C7' : '#D97706',
       },
       {
         name: 'AUDIO DE SALA',
-        ready: a === 1,
-        statusText: a === 1 ? 'COMPLETADO' : 'PENDIENTE',
-        desc: a === 1 ? 'Instalado y calibrado' : 'Pendiente instalación',
-        activeColor: '#059669',
+        ready: audioInfo.tieneComponente,
+        statusText: audioInfo.status.toUpperCase(),
+        desc: audioInfo.instalado === 'Si' ? 'Instalado en Sede: SÍ' : 'Instalado en Sede: NO',
+        activeColor: audioInfo.instalado === 'Si' ? '#059669' : audioInfo.tieneComponente ? '#0284C7' : '#D97706',
       },
       {
         name: 'CABLEADO RED',
-        ready: r === 1,
-        statusText: r === 1 ? 'COMPLETADO' : 'PENDIENTE',
-        desc: r === 1 ? 'Certificado y probado' : 'Pendiente de tendido',
-        activeColor: '#059669',
+        ready: redInfo.tieneComponente,
+        statusText: redInfo.status.toUpperCase(),
+        desc: redInfo.instalado === 'Si' ? 'Instalado en Sede: SÍ' : 'Instalado en Sede: NO',
+        activeColor: redInfo.instalado === 'Si' ? '#059669' : redInfo.tieneComponente ? '#0284C7' : '#D97706',
       },
       {
         name: 'ENLACE DE DATOS',
-        ready: e === 1,
-        statusText: e === 1 ? 'COMPLETADO' : 'PENDIENTE',
-        desc: e === 1 ? 'Conectado a red OJ' : 'Sin enlace activo',
-        activeColor: '#059669',
+        ready: enlaceInfo.tieneComponente,
+        statusText: enlaceInfo.status.toUpperCase(),
+        desc: enlaceInfo.instalado === 'Si' ? 'Instalado en Sede: SÍ' : 'Instalado en Sede: NO',
+        activeColor: enlaceInfo.instalado === 'Si' ? '#059669' : enlaceInfo.tieneComponente ? '#0284C7' : '#D97706',
       },
       {
         name: 'PRIORIZACIÓN',
@@ -738,18 +752,23 @@ export function generateIndividualJudicaturaGaugeImage(judicatura: JudicaturaRec
 
       // Título
       ctx.fillStyle = '#1E293B';
-      ctx.font = 'bold 18px Helvetica, Arial, sans-serif';
+      ctx.font = 'bold 16px Helvetica, Arial, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(comp.name, cx + 16, cardY + 45);
 
-      // Estado
+      // Estado con tamaño adaptable para no truncar
       ctx.fillStyle = comp.ready ? comp.activeColor : '#64748B';
-      ctx.font = 'bold 30px Helvetica, Arial, sans-serif';
+      const statusLen = comp.statusText.length;
+      ctx.font = statusLen > 18
+        ? 'bold 17px Helvetica, Arial, sans-serif'
+        : statusLen > 12
+        ? 'bold 21px Helvetica, Arial, sans-serif'
+        : 'bold 26px Helvetica, Arial, sans-serif';
       ctx.fillText(comp.statusText, cx + 16, cardY + 115);
 
       // Descripción
       ctx.fillStyle = '#64748B';
-      ctx.font = 'normal 16px Helvetica, Arial, sans-serif';
+      ctx.font = 'normal 15px Helvetica, Arial, sans-serif';
       ctx.fillText(comp.desc, cx + 16, cardY + 170);
     });
 

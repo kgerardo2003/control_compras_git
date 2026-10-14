@@ -189,6 +189,81 @@ export function initDataStore(): DataStoreState {
         }
       }
 
+      // Asegurar que el catálogo AREA_SOLICITANTE contenga Soporte Remoto
+      const areaCatIdx = storeMemory.catalogs.findIndex(c => c.codigo === 'AREA_SOLICITANTE');
+      if (areaCatIdx >= 0) {
+        const currentAreaCat = storeMemory.catalogs[areaCatIdx];
+        let changed = false;
+        const updatedItems = currentAreaCat.items.map(it => {
+          if (
+            it.codigo === 'SOPORTE_REMOTO' || 
+            it.valor.toLowerCase().trim() === 'soporte tecnico remoto' || 
+            it.valor.toLowerCase().trim() === 'soporte técnico remoto'
+          ) {
+            changed = true;
+            return { ...it, codigo: 'SOPORTE_REMOTO', valor: 'Soporte Remoto' };
+          }
+          return it;
+        });
+        if (!updatedItems.some(it => it.valor.toLowerCase().trim() === 'soporte remoto')) {
+          updatedItems.push({
+            id: 'area-soporte-remoto',
+            codigo: 'SOPORTE_REMOTO',
+            valor: 'Soporte Remoto',
+            descripcion: 'Mesa de ayuda y soporte a distancia',
+            activo: true,
+            color: 'cyan'
+          });
+          changed = true;
+        }
+        if (changed) {
+          storeMemory.catalogs[areaCatIdx] = { ...currentAreaCat, items: updatedItems };
+        }
+      }
+
+      // Sincronizar adquisiciones que tengan nombres previos de Soporte Remoto
+      if (Array.isArray(storeMemory.purchases)) {
+        storeMemory.purchases = storeMemory.purchases.map(p => {
+          const a = (p.areaSolicitante || '').toLowerCase().trim();
+          if (a === 'soporte técnico remoto' || a === 'soporte tecnico remoto') {
+            return { ...p, areaSolicitante: 'Soporte Remoto' };
+          }
+          return p;
+        });
+      }
+
+      // Normalizar componentes e instalación en judicaturas almacenadas
+      if (Array.isArray(storeMemory.judicaturas)) {
+        storeMemory.judicaturas = storeMemory.judicaturas.map(j => {
+          let updated = { ...j };
+          if (!updated.estatusEquipoComputo) {
+            updated.estatusEquipoComputo = updated.equipoComputo === 'Si' ? 'Se cuenta con equipo' : 'Pendiente';
+          }
+          if (!updated.equipoComputoInstalado) {
+            updated.equipoComputoInstalado = updated.estatusEquipoComputo === 'Instalado' ? 'Si' : 'No';
+          }
+          if (!updated.estatusEquipoAudio) {
+            updated.estatusEquipoAudio = updated.equipoAudio === 'Si' ? 'Se cuenta con equipo' : 'Pendiente';
+          }
+          if (!updated.equipoAudioInstalado) {
+            updated.equipoAudioInstalado = updated.estatusEquipoAudio === 'Instalado' ? 'Si' : 'No';
+          }
+          if (!updated.estatusCableadoEstructurado) {
+            updated.estatusCableadoEstructurado = updated.cableadoEstructurado === 'Si' ? 'Terminado' : 'Pendiente';
+          }
+          if (!updated.cableadoEstructuradoInstalado) {
+            updated.cableadoEstructuradoInstalado = updated.estatusCableadoEstructurado === 'Terminado' ? 'Si' : 'No';
+          }
+          if (!updated.estatusEnlaceDatos) {
+            updated.estatusEnlaceDatos = updated.enlaceDatos === 'Si' ? 'Instalado' : 'Pendiente';
+          }
+          if (!updated.enlaceDatosInstalado) {
+            updated.enlaceDatosInstalado = (updated.estatusEnlaceDatos === 'Instalado' || updated.estatusEnlaceDatos === 'Equipo Satelital Temporal') ? 'Si' : 'No';
+          }
+          return updated;
+        });
+      }
+
       persistToDisk();
       console.log(`[DataStore] Cargado desde disco: ${storeMemory.purchases.length} compras, ${storeMemory.users.length} usuarios.`);
       return storeMemory;

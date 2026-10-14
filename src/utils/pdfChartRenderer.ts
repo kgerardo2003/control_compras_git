@@ -151,8 +151,8 @@ export function calculateExecutiveKPIs(purchases: PurchaseRecord[]): {
     const lowerArea = area.toLowerCase();
     if (lowerArea === 'soporte técnico' || lowerArea === 'soporte tecnico') {
       area = 'Soporte Técnico';
-    } else if (lowerArea === 'soporte técnico remoto' || lowerArea === 'soporte tecnico remoto') {
-      area = 'Soporte Técnico Remoto';
+    } else if (lowerArea === 'soporte remoto' || lowerArea === 'soporte técnico remoto' || lowerArea === 'soporte tecnico remoto') {
+      area = 'Soporte Remoto';
     } else if (lowerArea === 'estadistica' || lowerArea === 'estadística') {
       area = 'Estadística';
     }

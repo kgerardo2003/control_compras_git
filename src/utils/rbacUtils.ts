@@ -5,6 +5,7 @@ export const ALL_AREAS_LABEL = 'Todas las Áreas (Acceso Global)';
 export const TECHNICAL_AREAS_LIST = [
   ALL_AREAS_LABEL,
   'Soporte Técnico',
+  'Soporte Remoto',
   'Departamento de Servicios Informáticos',
   'Desarrollo y Administración de Sistemas',
   'Redes y Telecomunicaciones',
@@ -14,6 +15,47 @@ export const TECHNICAL_AREAS_LIST = [
   'Infraestructura',
   'Estadística',
 ] as const;
+
+/**
+ * Obtiene la lista dinámica de áreas técnicas institucionales sincronizada
+ * en tiempo real con el Catálogo de Sistema (AREA_SOLICITANTE) y las adquisiciones registradas.
+ */
+export function getSystemAreas(catalogs?: any[], purchases?: any[]): string[] {
+  const areasSet = new Set<string>();
+
+  // 1. Áreas activas definidas en el Catálogo de Sistema
+  if (Array.isArray(catalogs)) {
+    const areaCat = catalogs.find((c: any) => c.codigo === 'AREA_SOLICITANTE');
+    if (areaCat && Array.isArray(areaCat.items)) {
+      areaCat.items.forEach((it: any) => {
+        if (it && it.activo !== false && it.valor && typeof it.valor === 'string' && it.valor.trim()) {
+          areasSet.add(it.valor.trim());
+        }
+      });
+    }
+  }
+
+  // 2. Garantizar que "Soporte Remoto" esté siempre disponible para filtrado
+  areasSet.add('Soporte Remoto');
+
+  // 3. Áreas presentes en adquisiciones existentes
+  if (Array.isArray(purchases)) {
+    purchases.forEach((p: any) => {
+      if (p && p.areaSolicitante && typeof p.areaSolicitante === 'string' && p.areaSolicitante.trim()) {
+        areasSet.add(p.areaSolicitante.trim());
+      }
+    });
+  }
+
+  // 4. Áreas base institucionales predeterminadas
+  TECHNICAL_AREAS_LIST.forEach((item) => {
+    if (item !== ALL_AREAS_LABEL) {
+      areasSet.add(item);
+    }
+  });
+
+  return Array.from(areasSet).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+}
 
 /**
  * Determina si el usuario posee privilegios de Administrador General

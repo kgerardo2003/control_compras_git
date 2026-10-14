@@ -423,7 +423,10 @@ export const ImportExcelModal: React.FC = () => {
       'unidad',
       'departamento solicitante'
     ])).trim();
-    const areaSolicitante = !isValueEmptyOrNA(rawArea) ? rawArea : 'Soporte técnico';
+    let areaSolicitante = !isValueEmptyOrNA(rawArea) ? rawArea : 'Soporte técnico';
+    if (areaSolicitante.toLowerCase().trim() === 'soporte técnico remoto' || areaSolicitante.toLowerCase().trim() === 'soporte tecnico remoto') {
+      areaSolicitante = 'Soporte Remoto';
+    }
 
     // 6. Dependencia Solicitante
     const rawDep = String(getVal([

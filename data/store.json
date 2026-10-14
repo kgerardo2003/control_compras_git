@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-10-12T19:19:16.680Z",
+  "lastUpdated": "2026-10-14T16:26:01.435Z",
   "purchases": [
     {
       "id": "pur-2026-001",
@@ -35,7 +35,9 @@
       "proveedorAdjudicado": "Tecnologías y Sistemas Corporativos, S.A.",
       "creadoPor": "Lic. Kevin Gerarado López de León",
       "fechaCreacion": "2026-01-15T09:00:00Z",
-      "observaciones": "Adjudicado a proveedor con mayor puntaje técnico. Garantía de 3 años On-Site 24x7."
+      "observaciones": "Adjudicado a proveedor con mayor puntaje técnico. Garantía de 3 años On-Site 24x7.",
+      "renglonPresupuestario": "328",
+      "nombreRenglon": "Equipo de Cómputo"
     },
     {
       "id": "pur-2026-002",
@@ -68,7 +70,9 @@
       "modalidadCompra": "Licitación Pública",
       "creadoPor": "Mario Gómez",
       "fechaCreacion": "2026-02-01T10:15:00Z",
-      "observaciones": "En revisión de ofertas técnicas y cumplimiento de SLAs solicitados."
+      "observaciones": "En revisión de ofertas técnicas y cumplimiento de SLAs solicitados.",
+      "renglonPresupuestario": "186",
+      "nombreRenglon": "Servicios de Informática y Sistemas Computarizados"
     },
     {
       "id": "pur-2026-003",
@@ -96,7 +100,9 @@
       "proveedorAdjudicado": "Soluciones Informáticas de Guatemala, S.A.",
       "creadoPor": "Jorge Fuentes",
       "fechaCreacion": "2026-01-20T11:30:00Z",
-      "observaciones": "Equipo con procesadores i7, 16GB RAM y discos NVMe de 512GB con sello OJ."
+      "observaciones": "Equipo con procesadores i7, 16GB RAM y discos NVMe de 512GB con sello OJ.",
+      "renglonPresupuestario": "328",
+      "nombreRenglon": "Equipo de Cómputo"
     },
     {
       "id": "pur-2026-004",
@@ -121,7 +127,9 @@
       "modalidadCompra": "Cotización Pública",
       "creadoPor": "Lic. Kevin Gerarado López de León",
       "fechaCreacion": "2026-02-10T14:20:00Z",
-      "observaciones": "Publicado en Guatecompras. Convocatoria vigente para recepción de plicas."
+      "observaciones": "Publicado en Guatecompras. Convocatoria vigente para recepción de plicas.",
+      "renglonPresupuestario": "113",
+      "nombreRenglon": "Telefonía, Enlaces y Telecomunicaciones"
     },
     {
       "id": "pur-2026-005",
@@ -155,7 +163,9 @@
       "proveedorAdjudicado": "CyberSec Solutions Centroamérica, S.A.",
       "creadoPor": "Mario Gómez",
       "fechaCreacion": "2026-01-10T09:45:00Z",
-      "observaciones": "Adjudicación aprobada por el Comité Técnico de Adquisiciones."
+      "observaciones": "Adjudicación aprobada por el Comité Técnico de Adquisiciones.",
+      "renglonPresupuestario": "328",
+      "nombreRenglon": "Equipo de Cómputo"
     },
     {
       "id": "pur-2026-006",
@@ -180,7 +190,9 @@
       "modalidadCompra": "Cotización Pública",
       "creadoPor": "Jorge Fuentes",
       "fechaCreacion": "2026-01-05T08:30:00Z",
-      "observaciones": "El único oferente no presentó la solvencia fiscal SAT ni la constancia de colegiado activo requerida."
+      "observaciones": "El único oferente no presentó la solvencia fiscal SAT ni la constancia de colegiado activo requerida.",
+      "renglonPresupuestario": "329",
+      "nombreRenglon": "Otras Maquinarias y Equipos"
     },
     {
       "id": "pur-2026-007",
@@ -205,7 +217,9 @@
       "modalidadCompra": "Cotización Pública",
       "creadoPor": "Lic. Kevin Gerarado López de León",
       "fechaCreacion": "2026-01-08T10:00:00Z",
-      "observaciones": "Se prescindió debido a reestructuración de fondos hacia proyecto de fibra óptica departamental."
+      "observaciones": "Se prescindió debido a reestructuración de fondos hacia proyecto de fibra óptica departamental.",
+      "renglonPresupuestario": "113",
+      "nombreRenglon": "Telefonía, Enlaces y Telecomunicaciones"
     },
     {
       "id": "pur-2026-008",
@@ -230,7 +244,9 @@
       "modalidadCompra": "Cotización Pública",
       "creadoPor": "Mario Gómez",
       "fechaCreacion": "2026-02-15T15:00:00Z",
-      "observaciones": "Cumpliendo requerimientos del Registro de Prestadores de Servicios de Certificación."
+      "observaciones": "Cumpliendo requerimientos del Registro de Prestadores de Servicios de Certificación.",
+      "renglonPresupuestario": "186",
+      "nombreRenglon": "Servicios de Informática y Sistemas Computarizados"
     }
   ],
   "judicaturas": [
@@ -1031,7 +1047,7 @@
         {
           "id": "area-2",
           "codigo": "SOPORTE_REMOTO",
-          "valor": "Soporte Técnico Remoto",
+          "valor": "Soporte Remoto",
           "descripcion": "Mesa de ayuda y soporte a distancia",
           "activo": true,
           "color": "cyan"

@@ -155,7 +155,7 @@ export const INITIAL_CATALOGS: Catalog[] = [
     esSistema: false,
     items: [
       { id: 'area-1', codigo: 'SOPORTE_TECNICO', valor: 'Soporte técnico', descripcion: 'Atención presencial a usuarios y juzgados', activo: true, color: 'teal' },
-      { id: 'area-2', codigo: 'SOPORTE_REMOTO', valor: 'Soporte Técnico Remoto', descripcion: 'Mesa de ayuda y soporte a distancia', activo: true, color: 'cyan' },
+      { id: 'area-2', codigo: 'SOPORTE_REMOTO', valor: 'Soporte Remoto', descripcion: 'Mesa de ayuda y soporte a distancia', activo: true, color: 'cyan' },
       { id: 'area-3', codigo: 'VIDEOAUDIENCIAS', valor: 'Sección de Videoaudiencias', descripcion: 'Salas de audiencias y videoconferencias judiciales', activo: true, color: 'violet' },
       { id: 'area-4', codigo: 'REDES_TELECOM', valor: 'Redes y Telecomunicaciones', descripcion: 'Infraestructura de red, fibra óptica y telefonía', activo: true, color: 'blue' },
       { id: 'area-5', codigo: 'DESARROLLO_SISTEMAS', valor: 'Desarrollo y Administración de Sistemas', descripcion: 'Ingeniería de software, bases de datos y desarrollo', activo: true, color: 'indigo' },
