@@ -1,0 +1,764 @@
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { 
+  PurchaseRecord, 
+  User, 
+  UserProfile, 
+  Catalog, 
+  AuditLogEntry, 
+  BudgetLineItem, 
+  BudgetModification,
+  JudicaturaRecord,
+  JudicaturaObservacion,
+  ServicioContratado
+} from '../types';
+import { 
+  INITIAL_PURCHASES, 
+  INITIAL_USERS, 
+  INITIAL_CATALOGS, 
+  INITIAL_USER_PROFILES, 
+  INITIAL_AUDIT_LOGS 
+} from '../data/initialData';
+import { INITIAL_JUDICATURAS } from '../data/initialJudicaturasData';
+import { INITIAL_SERVICIOS_CONTRATADOS } from '../data/initialServiciosData';
+import { 
+  INITIAL_BUDGET_LINES, 
+  INITIAL_BUDGET_MODIFICATIONS 
+} from '../data/initialBudgetData';
+
+export interface DataStoreState {
+  version: number;
+  lastUpdated: string;
+  purchases: PurchaseRecord[];
+  judicaturas: JudicaturaRecord[];
+  servicios: ServicioContratado[];
+  users: User[];
+  catalogs: Catalog[];
+  budgetLines: BudgetLineItem[];
+  budgetModifications: BudgetModification[];
+  auditLogs: AuditLogEntry[];
+  userProfiles: UserProfile[];
+  deletedPurchaseIds: string[];
+  deletedUserIds: string[];
+  deletedServicioIds?: string[];
+  isPurchasesInitialized: boolean;
+  isServiciosInitialized?: boolean;
+}
+
+// Cuentas institucionales esenciales que NUNCA deben perderse (Lic. Kevin Gerardo López de León)
+export const ESSENTIAL_USER_USERNAMES = ['admin', 'kglopezd'];
+
+// Detección de entorno Vercel Serverless (donde solo /tmp es escribible)
+const isServerless = process.env.VERCEL === '1' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+const DATA_DIR = isServerless ? path.join(os.tmpdir(), 'control-compras-data') : path.join(process.cwd(), 'data');
+const DATA_FILE = path.join(DATA_DIR, 'store.json');
+const SEED_FILE = path.join(process.cwd(), 'data', 'store.json');
+
+let storeMemory: DataStoreState | null = null;
+
+function ensureDataDir(): void {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function persistToDisk(): void {
+  try {
+    ensureDataDir();
+    if (!storeMemory) return;
+    storeMemory.lastUpdated = new Date().toISOString();
+    const tempFile = `${DATA_FILE}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(storeMemory, null, 2), 'utf8');
+    fs.renameSync(tempFile, DATA_FILE);
+  } catch (err) {
+    console.error('[DataStore] Error persistiendo a disco:', err);
+  }
+}
+
+export function initDataStore(): DataStoreState {
+  if (storeMemory) {
+    return storeMemory;
+  }
+
+  ensureDataDir();
+
+  const fileToRead = fs.existsSync(DATA_FILE) ? DATA_FILE : (fs.existsSync(SEED_FILE) ? SEED_FILE : null);
+  if (fileToRead) {
+    try {
+      const raw = fs.readFileSync(fileToRead, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<DataStoreState>;
+      
+      const isPurchasesInitialized = parsed.isPurchasesInitialized !== undefined 
+        ? parsed.isPurchasesInitialized 
+        : true;
+
+      storeMemory = {
+        version: parsed.version || 1,
+        lastUpdated: parsed.lastUpdated || new Date().toISOString(),
+        purchases: Array.isArray(parsed.purchases) ? parsed.purchases : (isPurchasesInitialized ? [] : [...INITIAL_PURCHASES]),
+        judicaturas: Array.isArray(parsed.judicaturas) ? parsed.judicaturas : [...INITIAL_JUDICATURAS],
+        servicios: Array.isArray(parsed.servicios) ? parsed.servicios : [...INITIAL_SERVICIOS_CONTRATADOS],
+        users: Array.isArray(parsed.users) ? parsed.users : [...INITIAL_USERS],
+        catalogs: Array.isArray(parsed.catalogs) ? parsed.catalogs : [...INITIAL_CATALOGS],
+        budgetLines: Array.isArray(parsed.budgetLines) ? parsed.budgetLines : [...INITIAL_BUDGET_LINES],
+        budgetModifications: Array.isArray(parsed.budgetModifications) ? parsed.budgetModifications : [...INITIAL_BUDGET_MODIFICATIONS],
+        auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [...INITIAL_AUDIT_LOGS],
+        userProfiles: Array.isArray(parsed.userProfiles) ? parsed.userProfiles : [...INITIAL_USER_PROFILES],
+        deletedPurchaseIds: Array.isArray(parsed.deletedPurchaseIds) ? Array.from(new Set([...parsed.deletedPurchaseIds, 'pur-2026-038'])) : ['pur-2026-038'],
+        deletedUserIds: Array.isArray(parsed.deletedUserIds) ? Array.from(new Set([...parsed.deletedUserIds, 'usr-operador-1', 'operador', 'usr-auditor-1', 'auditor', 'usr-operador-2', 'jfuentes', 'usr-presupuesto-1', 'edmonroy', 'usr-compras-2', 'mmvaldez', 'usr-1790026026081-utwru'])) : ['usr-operador-1', 'operador', 'usr-auditor-1', 'auditor', 'usr-operador-2', 'jfuentes', 'usr-presupuesto-1', 'edmonroy', 'usr-compras-2', 'mmvaldez', 'usr-1790026026081-utwru'],
+        isPurchasesInitialized
+      };
+
+      // Filtrar de inmediato compras eliminadas
+      storeMemory.purchases = storeMemory.purchases.filter(p => 
+        !storeMemory!.deletedPurchaseIds.includes(p.id)
+      ).map(p => {
+        if (!p.renglonPresupuestario) {
+          const initMatch = INITIAL_PURCHASES.find(ip => ip.id === p.id);
+          if (initMatch?.renglonPresupuestario) {
+            return {
+              ...p,
+              renglonPresupuestario: initMatch.renglonPresupuestario,
+              nombreRenglon: p.nombreRenglon || initMatch.nombreRenglon
+            };
+          }
+        }
+        return p;
+      });
+
+      // Filtrar de inmediato cualquier usuario que esté en la lista negra de eliminados
+      storeMemory.users = storeMemory.users.filter(u => 
+        !storeMemory!.deletedUserIds.includes(u.id) && 
+        !storeMemory!.deletedUserIds.includes(u.username.toLowerCase())
+      );
+
+      // Garantizar ÚNICAMENTE que las cuentas esenciales del Lic. Kevin Gerardo López de León (admin y kglopezd) existan
+      // NO resucitar usuarios que el usuario haya eliminado deliberadamente (ej: auditor, operador, jfuentes, etc.)
+      const essentialInitial = INITIAL_USERS.filter(iu => 
+        ESSENTIAL_USER_USERNAMES.includes(iu.username.toLowerCase())
+      );
+
+      essentialInitial.forEach(iu => {
+        const existingIdx = storeMemory!.users.findIndex(u => 
+          u.id === iu.id || 
+          u.username.toLowerCase() === iu.username.toLowerCase()
+        );
+        if (existingIdx === -1) {
+          storeMemory!.users.push({ ...iu });
+        } else {
+          // Asegurar credenciales y doble factor intactos
+          storeMemory!.users[existingIdx] = {
+            ...iu,
+            ...storeMemory!.users[existingIdx],
+            password: storeMemory!.users[existingIdx].password || iu.password,
+            totpSecret: storeMemory!.users[existingIdx].totpSecret || iu.totpSecret,
+            activo: true
+          };
+        }
+      });
+
+      // Asegurar que el catálogo de modalidades contenga Fondo Rotativo y los títulos oficiales LCE
+      const modCatIdx = storeMemory.catalogs.findIndex(c => c.codigo === 'MODALIDAD_COMPRA');
+      const initialModCat = INITIAL_CATALOGS.find(c => c.codigo === 'MODALIDAD_COMPRA');
+      if (initialModCat) {
+        if (modCatIdx >= 0) {
+          const currentCat = storeMemory.catalogs[modCatIdx];
+          const mergedItems = [...currentCat.items];
+          initialModCat.items.forEach(initItem => {
+            const exIdx = mergedItems.findIndex(
+              it => it.codigo === initItem.codigo || it.valor.toLowerCase().trim() === initItem.valor.toLowerCase().trim()
+            );
+            if (exIdx >= 0) {
+              mergedItems[exIdx] = {
+                ...mergedItems[exIdx],
+                valor: initItem.valor,
+                descripcion: initItem.descripcion,
+                activo: true
+              };
+            } else {
+              mergedItems.push(initItem);
+            }
+          });
+          storeMemory.catalogs[modCatIdx] = {
+            ...currentCat,
+            items: mergedItems
+          };
+        } else {
+          storeMemory.catalogs.push(initialModCat);
+        }
+      }
+
+      // Asegurar que el catálogo AREA_SOLICITANTE contenga Soporte Remoto
+      const areaCatIdx = storeMemory.catalogs.findIndex(c => c.codigo === 'AREA_SOLICITANTE');
+      if (areaCatIdx >= 0) {
+        const currentAreaCat = storeMemory.catalogs[areaCatIdx];
+        let changed = false;
+        const updatedItems = currentAreaCat.items.map(it => {
+          if (
+            it.codigo === 'SOPORTE_REMOTO' || 
+            it.valor.toLowerCase().trim() === 'soporte tecnico remoto' || 
+            it.valor.toLowerCase().trim() === 'soporte técnico remoto'
+          ) {
+            changed = true;
+            return { ...it, codigo: 'SOPORTE_REMOTO', valor: 'Soporte Remoto' };
+          }
+          return it;
+        });
+        if (!updatedItems.some(it => it.valor.toLowerCase().trim() === 'soporte remoto')) {
+          updatedItems.push({
+            id: 'area-soporte-remoto',
+            codigo: 'SOPORTE_REMOTO',
+            valor: 'Soporte Remoto',
+            descripcion: 'Mesa de ayuda y soporte a distancia',
+            activo: true,
+            color: 'cyan'
+          });
+          changed = true;
+        }
+        if (changed) {
+          storeMemory.catalogs[areaCatIdx] = { ...currentAreaCat, items: updatedItems };
+        }
+      }
+
+      // Área solicitante y estatus se mantienen tal cual están registrados en el sistema
+
+      // Normalizar componentes e instalación en judicaturas almacenadas
+      if (Array.isArray(storeMemory.judicaturas)) {
+        storeMemory.judicaturas = storeMemory.judicaturas.map(j => {
+          let updated = { ...j };
+          if (!updated.estatusEquipoComputo) {
+            updated.estatusEquipoComputo = updated.equipoComputo === 'Si' ? 'Se cuenta con equipo' : 'Pendiente';
+          }
+          if (!updated.equipoComputoInstalado) {
+            updated.equipoComputoInstalado = updated.estatusEquipoComputo === 'Instalado' ? 'Si' : 'No';
+          }
+          if (!updated.estatusEquipoAudio) {
+            updated.estatusEquipoAudio = updated.equipoAudio === 'Si' ? 'Se cuenta con equipo' : 'Pendiente';
+          }
+          if (!updated.equipoAudioInstalado) {
+            updated.equipoAudioInstalado = updated.estatusEquipoAudio === 'Instalado' ? 'Si' : 'No';
+          }
+          if (!updated.estatusCableadoEstructurado) {
+            updated.estatusCableadoEstructurado = updated.cableadoEstructurado === 'Si' ? 'Terminado' : 'Pendiente';
+          }
+          if (!updated.cableadoEstructuradoInstalado) {
+            updated.cableadoEstructuradoInstalado = updated.estatusCableadoEstructurado === 'Terminado' ? 'Si' : 'No';
+          }
+          if (!updated.estatusEnlaceDatos) {
+            updated.estatusEnlaceDatos = updated.enlaceDatos === 'Si' ? 'Instalado' : 'Pendiente';
+          }
+          if (!updated.enlaceDatosInstalado) {
+            updated.enlaceDatosInstalado = (updated.estatusEnlaceDatos === 'Instalado' || updated.estatusEnlaceDatos === 'Equipo Satelital Temporal') ? 'Si' : 'No';
+          }
+          return updated;
+        });
+      }
+
+      persistToDisk();
+      console.log(`[DataStore] Cargado desde disco: ${storeMemory.purchases.length} compras, ${storeMemory.users.length} usuarios.`);
+      return storeMemory;
+    } catch (err) {
+      console.warn('[DataStore] Error leyendo store.json existente, recreando con datos iniciales:', err);
+    }
+  }
+
+  // Inicialización de primer arranque
+  storeMemory = {
+    version: 1,
+    lastUpdated: new Date().toISOString(),
+    purchases: [...INITIAL_PURCHASES],
+    judicaturas: [...INITIAL_JUDICATURAS],
+    servicios: [...INITIAL_SERVICIOS_CONTRATADOS],
+    users: INITIAL_USERS.filter(u => ESSENTIAL_USER_USERNAMES.includes(u.username.toLowerCase())),
+    catalogs: [...INITIAL_CATALOGS],
+    budgetLines: [...INITIAL_BUDGET_LINES],
+    budgetModifications: [...INITIAL_BUDGET_MODIFICATIONS],
+    auditLogs: [...INITIAL_AUDIT_LOGS],
+    userProfiles: [...INITIAL_USER_PROFILES],
+    deletedPurchaseIds: [],
+    deletedUserIds: ['usr-operador-1', 'operador'],
+    isPurchasesInitialized: true
+  };
+
+  persistToDisk();
+  console.log('[DataStore] Inicializado nuevo almacén central institucional.');
+  return storeMemory;
+}
+
+// Obtener estado completo
+export function getStoreState(): DataStoreState {
+  return initDataStore();
+}
+
+// Sobrescribir / reconciliar estado completo con persistencia a disco
+export function setStoreState(newState: DataStoreState): DataStoreState {
+  storeMemory = {
+    ...newState,
+    version: (newState.version || 1) + 1,
+    lastUpdated: new Date().toISOString()
+  };
+  persistToDisk();
+  return storeMemory;
+}
+
+// Obtener versión ligera para sondeo ultra-rápido multi-estación
+export function getStoreVersion(): { version: number; lastUpdated: string; purchasesCount: number; usersCount: number } {
+  const store = initDataStore();
+  return {
+    version: store.version || 1,
+    lastUpdated: store.lastUpdated,
+    purchasesCount: store.purchases.length,
+    usersCount: store.users.length
+  };
+}
+
+// Compras (Purchases)
+export function savePurchase(purchase: PurchaseRecord): PurchaseRecord {
+  const store = initDataStore();
+  // Si está en la lista de eliminados confirmados, no permitir resurrección accidental
+  if (store.deletedPurchaseIds && store.deletedPurchaseIds.includes(purchase.id)) {
+    console.log(`[DataStore] Intento de resurrección bloqueado para compra eliminada: ${purchase.id}`);
+    return purchase;
+  }
+  const index = store.purchases.findIndex(p => p.id === purchase.id);
+  if (index >= 0) {
+    store.purchases[index] = { ...store.purchases[index], ...purchase };
+  } else {
+    store.purchases.unshift(purchase);
+  }
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
+  persistToDisk();
+  return purchase;
+}
+
+export function saveBatchPurchases(newPurchases: PurchaseRecord[], replaceAll = false): PurchaseRecord[] {
+  const store = initDataStore();
+  const existingMap = new Map(store.purchases.map(p => [p.id, p]));
+  
+  // Garantizar que los documentos adjuntos físicos/digitales y movimientos previos no se pierdan
+  const safePurchases = newPurchases.map(p => {
+    const prev = existingMap.get(p.id);
+    if (prev) {
+      return {
+        ...prev,
+        ...p,
+        f56Documento: p.f56Documento || prev.f56Documento,
+        movimientos: (p.movimientos && p.movimientos.length > 0) ? p.movimientos : (prev.movimientos || []),
+        historialEstatus: (p.historialEstatus && p.historialEstatus.length > 0) ? p.historialEstatus : (prev.historialEstatus || []),
+        bitacoraCambios: (p.bitacoraCambios && p.bitacoraCambios.length > 0) ? p.bitacoraCambios : (prev.bitacoraCambios || [])
+      };
+    }
+    return p;
+  });
+
+  if (replaceAll) {
+    store.purchases = [...safePurchases];
+    store.deletedPurchaseIds = []; // Limpiar historial de eliminados al reemplazar todo el conjunto
+  } else {
+    // Si alguno de los registros que se están importando tenía un ID en el historial de eliminados, reactivarlo
+    const newIdSet = new Set(safePurchases.map(p => p.id));
+    if (store.deletedPurchaseIds && store.deletedPurchaseIds.length > 0) {
+      store.deletedPurchaseIds = store.deletedPurchaseIds.filter(id => !newIdSet.has(id));
+    }
+    const remaining = store.purchases.filter(p => !newIdSet.has(p.id));
+    store.purchases = [...safePurchases, ...remaining];
+  }
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
+  persistToDisk();
+  return store.purchases;
+}
+
+export function deletePurchase(id: string): boolean {
+  const store = initDataStore();
+  store.purchases = store.purchases.filter(p => p.id !== id);
+  if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
+  if (!store.deletedPurchaseIds.includes(id)) {
+    store.deletedPurchaseIds.push(id);
+    if (store.deletedPurchaseIds.length > 500) {
+      store.deletedPurchaseIds = store.deletedPurchaseIds.slice(-500);
+    }
+  }
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
+  persistToDisk();
+  console.log(`[DataStore] Compra eliminada permanentemente y registrada en lista negra: ${id}`);
+  return true;
+}
+
+export function batchDeletePurchases(ids: string[]): number {
+  const store = initDataStore();
+  const idSet = new Set(ids);
+  const initialLength = store.purchases.length;
+  store.purchases = store.purchases.filter(p => !idSet.has(p.id));
+  const count = initialLength - store.purchases.length;
+  if (count > 0) {
+    if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
+    ids.forEach(id => {
+      if (!store.deletedPurchaseIds.includes(id)) {
+        store.deletedPurchaseIds.push(id);
+      }
+    });
+    if (store.deletedPurchaseIds.length > 500) {
+      store.deletedPurchaseIds = store.deletedPurchaseIds.slice(-500);
+    }
+    store.version = (store.version || 1) + 1;
+    store.isPurchasesInitialized = true;
+    persistToDisk();
+    console.log(`[DataStore] Eliminación en lote: ${count} compras retiradas.`);
+  }
+  return count;
+}
+
+export function clearAllPurchases(): number {
+  const store = initDataStore();
+  const count = store.purchases.length;
+  if (!store.deletedPurchaseIds) store.deletedPurchaseIds = [];
+  store.purchases.forEach(p => {
+    if (!store.deletedPurchaseIds.includes(p.id)) {
+      store.deletedPurchaseIds.push(p.id);
+    }
+  });
+  store.purchases = [];
+  store.version = (store.version || 1) + 1;
+  store.isPurchasesInitialized = true;
+  persistToDisk();
+  console.log(`[DataStore] Todas las compras (${count}) fueron vaciadas permanentemente.`);
+  return count;
+}
+
+// Usuarios (Users)
+export function findUser(query: string): User | undefined {
+  const store = initDataStore();
+  const clean = query.trim().toLowerCase();
+  const cleanWithoutDomain = clean.replace(/@oj\.gob\.gt$/, '').replace(/@gmail\.com$/, '');
+
+  const matchFromList = (list: User[]): User | undefined => {
+    return list.find(u => 
+      u.id === query || 
+      u.username.toLowerCase() === clean || 
+      u.username.toLowerCase() === cleanWithoutDomain ||
+      (u.email && u.email.toLowerCase().trim() === clean) ||
+      (u.email && u.email.toLowerCase().trim().replace(/@.+$/, '') === cleanWithoutDomain) ||
+      ((clean.includes('kglopez') || clean === 'klopez' || clean === 'klopez@oj.gob.gt') && u.username.toLowerCase() === 'kglopezd')
+    );
+  };
+
+  return matchFromList(store.users) || matchFromList(INITIAL_USERS);
+}
+
+export function saveUser(user: User): User {
+  const store = initDataStore();
+  // Si fue eliminado con anterioridad pero el administrador lo está recreando, remover de la lista negra
+  if (store.deletedUserIds) {
+    store.deletedUserIds = store.deletedUserIds.filter(
+      id => id !== user.id && id !== user.username.toLowerCase()
+    );
+  }
+  const index = store.users.findIndex(u => u.id === user.id || u.username.toLowerCase() === user.username.toLowerCase());
+  if (index >= 0) {
+    store.users[index] = { ...store.users[index], ...user };
+  } else {
+    store.users.push(user);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return user;
+}
+
+export function deleteUser(id: string): boolean {
+  const store = initDataStore();
+  const user = store.users.find(u => u.id === id || u.username.toLowerCase() === id.toLowerCase());
+  if (user && ESSENTIAL_USER_USERNAMES.includes(user.username.toLowerCase())) {
+    return false; // Proteger las cuentas esenciales del Lic. Kevin Gerardo López de León (admin y kglopezd)
+  }
+
+  if (!store.deletedUserIds) {
+    store.deletedUserIds = [];
+  }
+
+  // Registrar permanentemente en la lista negra tanto ID como username
+  if (id && !store.deletedUserIds.includes(id)) {
+    store.deletedUserIds.push(id);
+  }
+  if (user?.username && !store.deletedUserIds.includes(user.username.toLowerCase())) {
+    store.deletedUserIds.push(user.username.toLowerCase());
+  }
+
+  const initialLength = store.users.length;
+  store.users = store.users.filter(u => 
+    u.id !== id && 
+    u.username.toLowerCase() !== id.toLowerCase() && 
+    (user ? u.username.toLowerCase() !== user.username.toLowerCase() : true)
+  );
+
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  console.log(`[DataStore] Usuario eliminado permanentemente y agregado a lista negra: ${id} (${user?.username || ''})`);
+  return true;
+}
+
+// Catálogos
+export function saveCatalog(catalog: Catalog): Catalog {
+  const store = initDataStore();
+  const index = store.catalogs.findIndex(c => c.id === catalog.id || c.codigo === catalog.codigo);
+  if (index >= 0) {
+    store.catalogs[index] = { ...store.catalogs[index], ...catalog };
+  } else {
+    store.catalogs.push(catalog);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return catalog;
+}
+
+export function deleteCatalog(id: string): boolean {
+  const store = initDataStore();
+  const initialLength = store.catalogs.length;
+  store.catalogs = store.catalogs.filter(c => c.id !== id);
+  const deleted = store.catalogs.length < initialLength;
+  if (deleted) {
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+  }
+  return deleted;
+}
+
+// Presupuesto
+export function saveBudgetLine(line: BudgetLineItem): BudgetLineItem {
+  const store = initDataStore();
+  const index = store.budgetLines.findIndex(b => b.id === line.id || b.renglonPresupuestario === line.renglonPresupuestario);
+  if (index >= 0) {
+    store.budgetLines[index] = { ...store.budgetLines[index], ...line };
+  } else {
+    store.budgetLines.push(line);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return line;
+}
+
+export function deleteBudgetLine(id: string): boolean {
+  const store = initDataStore();
+  const initialLength = store.budgetLines.length;
+  store.budgetLines = store.budgetLines.filter(b => b.id !== id && b.renglonPresupuestario !== id);
+  const deleted = store.budgetLines.length < initialLength;
+  if (deleted) {
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+  }
+  return deleted;
+}
+
+export function setBudgetLines(lines: BudgetLineItem[]): BudgetLineItem[] {
+  const store = initDataStore();
+  store.budgetLines = [...lines];
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return store.budgetLines;
+}
+
+export function clearAllBudgetLines(): void {
+  const store = initDataStore();
+  store.budgetLines = [];
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+}
+
+export function addBudgetModification(mod: BudgetModification): BudgetModification {
+  const store = initDataStore();
+  const index = store.budgetModifications.findIndex(m => m.id === mod.id);
+  if (index >= 0) {
+    store.budgetModifications[index] = { ...store.budgetModifications[index], ...mod };
+  } else {
+    store.budgetModifications.unshift(mod);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return mod;
+}
+
+// Auditoría
+export function addAuditLog(entry: AuditLogEntry): AuditLogEntry {
+  const store = initDataStore();
+  store.auditLogs.unshift(entry);
+  if (store.auditLogs.length > 500) {
+    store.auditLogs = store.auditLogs.slice(0, 500);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return entry;
+}
+
+// Judicaturas por Inaugurar
+export function saveBulkJudicaturas(records: JudicaturaRecord[], replaceAll: boolean = false): JudicaturaRecord[] {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  if (replaceAll) {
+    store.judicaturas = [...records];
+  } else {
+    const map = new Map(store.judicaturas.map(j => [j.id, j]));
+    records.forEach(r => map.set(r.id, r));
+    store.judicaturas = Array.from(map.values());
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return store.judicaturas;
+}
+
+export function saveJudicatura(judicatura: JudicaturaRecord): JudicaturaRecord {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  const index = store.judicaturas.findIndex(j => j.id === judicatura.id);
+  if (index >= 0) {
+    store.judicaturas[index] = { ...store.judicaturas[index], ...judicatura };
+  } else {
+    store.judicaturas.unshift(judicatura);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return judicatura;
+}
+
+export function deleteJudicatura(id: string): boolean {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [];
+    return false;
+  }
+  const initialLength = store.judicaturas.length;
+  store.judicaturas = store.judicaturas.filter(j => j.id !== id);
+  const deleted = store.judicaturas.length < initialLength;
+  if (deleted) {
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+  }
+  return deleted;
+}
+
+export function addJudicaturaObservation(judicaturaId: string, obs: JudicaturaObservacion): JudicaturaRecord | null {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  const jud = store.judicaturas.find(j => j.id === judicaturaId);
+  if (!jud) return null;
+
+  if (!Array.isArray(jud.observaciones)) {
+    jud.observaciones = [];
+  }
+  jud.observaciones.unshift(obs);
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return jud;
+}
+
+// ==========================================
+// MÉTODOS PARA SERVICIOS CONTRATADOS
+// ==========================================
+
+export function saveServicio(servicio: ServicioContratado): ServicioContratado {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [...INITIAL_SERVICIOS_CONTRATADOS];
+  }
+  const index = store.servicios.findIndex(s => s.id === servicio.id);
+  if (index >= 0) {
+    store.servicios[index] = { ...store.servicios[index], ...servicio };
+  } else {
+    store.servicios.unshift(servicio);
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return servicio;
+}
+
+export function saveBulkServicios(records: ServicioContratado[], replaceAll = false): ServicioContratado[] {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [...INITIAL_SERVICIOS_CONTRATADOS];
+  }
+  if (replaceAll) {
+    store.servicios = [...records];
+  } else {
+    const map = new Map(store.servicios.map(s => [s.id, s]));
+    records.forEach(r => map.set(r.id, r));
+    store.servicios = Array.from(map.values());
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return store.servicios;
+}
+
+export function deleteServicio(id: string): boolean {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [];
+    return false;
+  }
+  if (!store.deletedServicioIds) store.deletedServicioIds = [];
+  if (!store.deletedServicioIds.includes(id)) {
+    store.deletedServicioIds.push(id);
+  }
+  const initialLength = store.servicios.length;
+  store.servicios = store.servicios.filter(s => s.id !== id);
+  const deleted = store.servicios.length < initialLength;
+  if (deleted) {
+    store.isServiciosInitialized = true;
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+    console.log(`[DataStore] Servicio eliminado: ${id}`);
+  }
+  return deleted;
+}
+
+export function deleteBulkServicios(ids: string[]): number {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) {
+    store.servicios = [];
+    return 0;
+  }
+  if (!store.deletedServicioIds) store.deletedServicioIds = [];
+  const idSet = new Set(ids);
+  ids.forEach(id => {
+    if (!store.deletedServicioIds!.includes(id)) {
+      store.deletedServicioIds!.push(id);
+    }
+  });
+  const initialLength = store.servicios.length;
+  store.servicios = store.servicios.filter(s => !idSet.has(s.id));
+  const count = initialLength - store.servicios.length;
+  if (count > 0) {
+    store.isServiciosInitialized = true;
+    store.version = (store.version || 1) + 1;
+    persistToDisk();
+    console.log(`[DataStore] Eliminación en lote: ${count} servicios retirados.`);
+  }
+  return count;
+}
+
+export function clearAllServicios(): number {
+  const store = initDataStore();
+  if (!Array.isArray(store.servicios)) store.servicios = [];
+  if (!store.deletedServicioIds) store.deletedServicioIds = [];
+  store.servicios.forEach(s => {
+    if (!store.deletedServicioIds!.includes(s.id)) {
+      store.deletedServicioIds!.push(s.id);
+    }
+  });
+  const count = store.servicios.length;
+  store.servicios = [];
+  store.isServiciosInitialized = true;
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  console.log(`[DataStore] Todos los servicios contratados (${count}) fueron vaciados permanentemente.`);
+  return count;
+}
+
+

@@ -1,0 +1,547 @@
+export type UserRole = 'administrador' | 'auditor' | 'usuario_estandar' | string;
+
+export interface UserProfile {
+  id: string;
+  codigo: string; // ej: 'administrador', 'auditor', 'operador_compras', 'gestor_presupuesto', 'consulta_gerencial', etc.
+  nombre: string; // ej: 'Administrador General', 'Auditor de Control Interno'
+  descripcion: string;
+  esSistema: boolean; // Si es un rol predeterminado protegido contra borrado
+  color: string; // color identificador ej: 'blue', 'emerald', 'amber', 'rose', 'purple', 'indigo'
+  modulosPermitidos: ActiveTab[]; // Módulos a los que este perfil tiene acceso
+  activo: boolean;
+  fechaCreacion: string;
+  creadoPor?: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  nombreCompleto: string;
+  email: string;
+  telefono?: string; // Número de teléfono móvil para recepción de códigos 2FA por SMS
+  password?: string;
+  rol: UserRole;
+  perfilId?: string; // ID o código del perfil de usuario asignado
+  cargo: string;
+  departamento: string;
+  area?: string; // Área o departamento técnico para control de visibilidad RBAC
+  activo: boolean;
+  fechaCreacion: string;
+  ultimoAcceso?: string;
+  dobleFactorHabilitado?: boolean; // Segundo factor de autenticación 2FA requerido
+  totpSecret?: string; // Clave secreta Base32 para Google Authenticator
+  metodoPreferido2FA?: 'email' | 'totp' | 'sms' | 'ambos'; // Método preferido para 2FA
+  permisoJudicaturas?: 'total' | 'lectura' | 'denegado' | 'perfil'; // Parametrización específica de acceso y permisos al Módulo de Judicaturas
+}
+
+export type TwoFactorMethod = 'email' | 'totp' | 'sms';
+
+export interface TwoFactorState {
+  userId: string;
+  username: string;
+  nombreCompleto: string;
+  email: string;
+  maskedEmail: string;
+  telefono?: string;
+  maskedTelefono?: string;
+  smsSent?: boolean;
+  code: string;
+  expiresAt: number; // Timestamp en ms (ej. 5 minutos)
+  attemptsLeft: number;
+  sentAt: number;
+  activeMethod: TwoFactorMethod;
+  totpSecret: string;
+  totpUri: string;
+  qrCodeUrl?: string;
+}
+
+export type EvaluacionGIT = 'Sí' | 'No';
+
+export type EstatusEventoDefault = 'Vigente' | 'Evaluación' | 'Adjudicación' | 'Prescindido' | 'Desierto';
+
+export interface AttachedDocument {
+  nombre: string;
+  tamano?: number;
+  tipo?: string;
+  fechaSubida?: string;
+  dataUrl?: string; // Archivo base64 / blob URL para descarga y visualización
+  storageKey?: string; // Llave opcional para subcolecciones o IndexedDB
+}
+
+export type TimelineEventState = 'completado' | 'en_proceso' | 'pendiente' | 'alerta';
+
+export interface StatusTimelineEvent {
+  id: string;
+  titulo: string; // ej: "Llegó para Dictamen Técnico", "Remitido por GIT a Compras", "Disponibilidad Presupuestaria"
+  fase?: string; // ej: "Dictamen Técnico", "Compras", "Presupuesto", "Publicación", "Adjudicación"
+  fecha: string; // YYYY-MM-DD
+  hora?: string; // HH:mm:ss
+  responsable?: string; // ej: "Gerencia de Informática - GIT", "Dirección de Compras", "DAF / Presupuesto"
+  observaciones?: string; // Observaciones, notas de seguimiento, etc.
+  documentoReferencia?: string; // ej: "Oficio No. GIT-2026-115", "Dictamen Técnico No. DT-2026-03"
+  estado: TimelineEventState;
+  registradoPor?: string;
+  fechaRegistro?: string; // Timestamp ISO exacto de grabación en el sistema
+  automatico?: boolean; // Flag de registro automático sellado por el sistema
+}
+
+export interface PurchaseRecord {
+  id: string;
+  descripcion: string; // Max 200
+  f56e: string;        // Forma F56-e (ej. 00001, 00001-2026, 000001-2026)
+  f56?: string;        // Formulario F56 físico (opcional)
+  f56Documento?: AttachedDocument; // Documento físico/digital de la F56 adjunto
+  fechaSolicitud: string;   // YYYY-MM-DD
+  fechaVoBo: string;        // YYYY-MM-DD
+  fechaAutorizado: string;  // YYYY-MM-DD
+  nog: string;              // 8 digits numeric
+  fechaPublicacion: string; // YYYY-MM-DD
+  fechaOfertas: string;     // YYYY-MM-DD
+  cantidadOfertas: number;  // Numeric >= 0
+  monto: number;            // Quetzales (GTQ)
+  evaluadoGIT: EvaluacionGIT; // Sí | No
+  fechaDictamenGIT?: string; // Fecha en que se realizó el dictamen técnico por la GIT (YYYY-MM-DD)
+  fechaElaboracionOficioGIT?: string; // Fecha en que la Gerencia de Informática elaboró el oficio hacia compras (YYYY-MM-DD)
+  estatusEvento: string;    // Evaluación | Adjudicación | Prescindido | Desierto or custom
+  fechaAdjudicacion?: string; // Fecha en que se adjudicó el evento (YYYY-MM-DD)
+  areaSolicitante?: string;
+  categoriaTecnologica?: string;
+  dependenciaSolicitante?: string;
+  modalidadCompra?: string;
+  proveedorAdjudicado?: string;
+  creadoPor: string;
+  fechaCreacion: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+  observaciones?: string;
+  historialEstatus?: StatusTimelineEvent[]; // Línea de tiempo de tracking y cambios de estatus del evento
+  renglonPresupuestario?: string; // Ej: "158", "328", "121"
+  grupoPresupuestario?: string; // Ej: "Grupo 100 - Servicios No Personales"
+  nombreRenglon?: string; // Ej: "Arrendamiento de Equipo de Cómputo"
+  estadoPago?: 'comprometido' | 'pagado'; // "comprometido" = pendiente de pago; "pagado" = rebaja realizada
+  montoPagado?: number; // Monto que ya fue efectivamente pagado / devengado
+  fechaPago?: string; // Fecha en que se marcó como pagado
+  diasAtraso?: number; // Días de atraso en el evento (para semáforos de cumplimiento)
+  bitacoraCambios?: PurchaseChangeLogEntry[]; // Bitácora de cambios y auditoría de la ficha
+  movimientos?: PurchaseMovement[]; // Registro cronológico en árbol de movimientos y observaciones con documentos adjuntos
+  observacionesList?: PurchaseObservacion[]; // Registro cronológico en forma de árbol de observaciones (del más reciente al más antiguo)
+}
+
+export interface PurchaseObservacion {
+  id: string;
+  numeroAccion: number; // Enumeración secuencial (#1, #2, #3...)
+  fecha: string; // YYYY-MM-DD
+  hora?: string; // HH:mm:ss o HH:mm
+  fechaHoraIso: string; // Timestamp ISO completo para ordenación cronológica inversa estricta (más reciente al más antiguo)
+  autor: string; // Nombre del funcionario o usuario que registra
+  rolUsuario?: string; // Rol del usuario en el sistema
+  area?: string; // Área o dependencia responsable
+  titulo?: string; // Ej: "Observación Técnica", "Anotación de Seguimiento", "Aclaración Presupuestaria"
+  texto: string; // Detalle u observación registrada
+  documento?: AttachedDocument; // Documento digital adjunto opcional
+}
+
+export interface PurchaseMovement {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  hora?: string; // HH:mm:ss o HH:mm
+  fechaHoraIso: string; // Timestamp ISO completo para ordenación cronológica inversa estricta (más reciente al más antiguo)
+  titulo: string; // Ej: "Observación Técnica", "Oficio remitido a Compras", "Dictamen Técnico", etc.
+  tipoAccion: string; // 'observacion' | 'avance' | 'oficio' | 'dictamen' | 'adjudicacion' | 'pago' | 'documento' | 'estatus' | 'otro'
+  observaciones: string; // Texto descriptivo u observación registrada
+  responsable?: string; // Área o dependencia responsable
+  usuario: string; // Funcionario o usuario que registró la acción
+  rolUsuario?: string; // Rol del usuario en el sistema
+  estatusAlMomento?: string; // Estatus del evento al momento de este movimiento
+  documento?: AttachedDocument; // Documento digital adjunto opcional
+  automatico?: boolean; // Flag de hito del sistema vs observación manual
+}
+
+export interface PurchaseChangeLogEntry {
+  id: string;
+  fechaHora: string; // Timestamp ISO
+  usuario: string; // Nombre del usuario que realizó la acción
+  rol?: string; // Rol del usuario (Administrador, etc.)
+  accion: string; // 'CREACION' | 'EDICION' | 'CAMBIO_ESTATUS' | 'ASIGNACION_RENGLON' | 'PAGO_DEVENGADO' | 'REVERSION_PAGO' | 'NOTA_SEGUIMIENTO'
+  estatus: string; // Estatus del evento al momento del cambio
+  detalles: string; // Descripción del cambio efectuado
+  cambios?: Array<{
+    campo: string;
+    anterior: any;
+    nuevo: any;
+  }>;
+  ip?: string;
+}
+
+// ==========================================
+// MÓDULO FINANCIERO Y PRESUPUESTARIO (GIT)
+// ==========================================
+
+export type BudgetDisponibilidadStatus = 'Con Disponibilidad' | 'Alerta Disponibilidad Baja' | 'Sin Disponibilidad';
+
+export interface BudgetGroup {
+  id: string;
+  codigo: string; // Ej: "100", "200", "300"
+  nombre: string; // Ej: "Servicios No Personales"
+  descripcion?: string;
+}
+
+export interface BudgetLineItem {
+  id: string;
+  grupoPresupuestario: string;    // 1. Grupo Presupuestario (Ej: "Grupo 100 - Servicios No Personales")
+  renglonPresupuestario: string;  // 2. Renglón Presupuestario (Ej: "158")
+  nombreRenglon: string;          // 3. Nombre del Renglón (Ej: "Arrendamiento de Equipo de Cómputo")
+  presupuestoInicial: number;     // 4. Presupuesto Inicial (GTQ)
+  modificacionesAprobadas: number; // 5. Modificaciones Aprobadas (+ o - netas)
+  modificacionesPositivas?: number; // Suma de Incrementos / Ampliaciones / Aumentos (+)
+  modificacionesNegativas?: number; // Suma de Disminuciones / Reducciones / Bajas (-)
+  presupuestoVigente: number;     // 6. Presupuesto Vigente (Inicial + Modificaciones)
+  pagadoQueRebaja: number;        // 7. Pagado que Rebaja (Total ejecutado/pagado)
+  disponibleReal: number;         // 8. Disponible Real (Vigente - Pagado que Rebaja)
+  comprometidoPendiente: number;  // 9. Comprometido Pendiente (Adquisiciones en trámite/adjudicadas pendientes)
+  disponibleProyectado: number;   // 10. Disponible Proyectado (Disponible Real - Comprometido Pendiente)
+  porcentajeUsadoComprometido: number; // 11. Porcentaje Usado/Comprometido
+  estatusDisponibilidad: BudgetDisponibilidadStatus; // 12. Estatus si hay disponibilidad o No
+  esReferencia?: boolean;         // Indicador de renglón de referencia (ej: 113 Telefonía - Gerencia Administrativa)
+  ejercicioFiscal?: number;       // Ej: 2026
+  observaciones?: string;
+  creadoPor?: string;
+  fechaCreacion?: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
+
+export type BudgetModificationType = 'ampliacion' | 'disminucion' | 'transferencia';
+export type BudgetModificationState = 'aprobada' | 'en_tramite' | 'rechazada';
+
+export interface BudgetModification {
+  id: string;
+  correlativo: string;           // Ej: "MOD-2026-001"
+  tipo: BudgetModificationType;  // "ampliacion" (+), "disminucion" (-), "transferencia" (entre renglones)
+  renglonPresupuestario: string; // Renglón afectado (o renglón destino en transferencias)
+  nombreRenglon: string;
+  grupoPresupuestario: string;
+  renglonOrigenPresupuestario?: string; // En caso de transferencia
+  nombreRenglonOrigen?: string;
+  monto: number;                 // Quetzales (siempre positivo en registro, se suma o resta según el tipo)
+  fecha: string;                 // YYYY-MM-DD
+  noResolucion: string;          // Ej: "Resolución DAF-OJ-2026-015"
+  descripcion: string;           // Justificación técnica/legal
+  estado: BudgetModificationState; // Solo 'aprobada' afecta el presupuesto vigente
+  aprobadoPor?: string;
+  fechaAprobacion?: string;
+  creadoPor: string;
+  fechaCreacion: string;
+}
+
+export interface CatalogItem {
+  id: string;
+  codigo: string;
+  valor: string;
+  descripcion?: string;
+  activo: boolean;
+  color?: string;
+}
+
+export interface Catalog {
+  id: string;
+  codigo: string;
+  nombre: string;
+  descripcion: string;
+  esSistema: boolean;
+  items: CatalogItem[];
+}
+
+export type AuditAction = 
+  | 'LOGIN' 
+  | 'LOGOUT' 
+  | 'CREAR_COMPRA' 
+  | 'EDITAR_COMPRA' 
+  | 'ELIMINAR_COMPRA' 
+  | 'CAMBIO_ESTATUS' 
+  | 'CREAR_CATALOGO' 
+  | 'EDITAR_CATALOGO' 
+  | 'CREAR_USUARIO' 
+  | 'EDITAR_USUARIO' 
+  | 'CREAR_PERFIL_USUARIO'
+  | 'EDITAR_PERFIL_USUARIO'
+  | 'ELIMINAR_PERFIL_USUARIO'
+  | 'EXPORTAR_DATOS'
+  | 'RESTAURAR_DATOS'
+  | 'IMPORTAR_DATOS'
+  | 'CREAR_RENGLON'
+  | 'EDITAR_RENGLON'
+  | 'ELIMINAR_RENGLON'
+  | 'CREAR_MODIFICACION_PRESUPUESTARIA'
+  | 'APROBAR_MODIFICACION_PRESUPUESTARIA'
+  | 'IMPORTAR_PRESUPUESTO'
+  | 'CREAR_JUDICATURA'
+  | 'EDITAR_JUDICATURA'
+  | 'ELIMINAR_JUDICATURA'
+  | 'AGREGAR_OBSERVACION_JUDICATURA'
+  | 'CREAR_SERVICIO'
+  | 'EDITAR_SERVICIO'
+  | 'ELIMINAR_SERVICIO'
+  | 'ENVIAR_ALERTA_CORREO_SERVICIO'
+  | 'IMPORTAR_SERVICIOS';
+
+export interface AuditLogEntry {
+  id: string;
+  fecha: string;
+  usuario: string;
+  rol: UserRole;
+  accion: AuditAction;
+  modulo: 'Autenticación' | 'Compras' | 'Presupuesto' | 'Catálogos' | 'Usuarios' | 'Auditoría' | 'Reportes' | 'Sistema' | 'Perfiles' | 'Judicaturas' | 'Servicios';
+  detalles: string;
+  registroId?: string;
+  ip: string;
+  valoresAnteriores?: Record<string, any>;
+  valoresNuevos?: Record<string, any>;
+}
+
+export type NotificationType = 'urgente' | 'alerta' | 'info' | 'exito';
+
+export interface AppNotification {
+  id: string;
+  tipo: NotificationType;
+  titulo: string;
+  mensaje: string;
+  fecha: string;
+  leida: boolean;
+  enlaceId?: string;
+  categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema' | 'alerta_servicio';
+}
+
+export type ActiveTab = 'dashboard' | 'compras' | 'servicios' | 'judicaturas' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo';
+
+// ==========================================
+// MÓDULO DE SERVICIOS CONTRATADOS (GIT)
+// ==========================================
+
+export type AreaServicio = 
+  | 'Servicios'
+  | 'Infraestructura'
+  | 'Seguridad Informática'
+  | 'Administración y Desarrollo de Sistemas'
+  | 'Estadística'
+  | 'Unidad de Operación de los Servicios'
+  | 'Redes y Telecomunicaciones'
+  | string;
+
+export type ModalidadContratacionServicio = 
+  | 'Compra directa'
+  | 'Baja cuantía'
+  | 'Cotización'
+  | 'Licitación'
+  | 'Licitación UEEP'
+  | 'Renovación'
+  | 'Excepción'
+  | string;
+
+export type EstatusServicioContratado = 
+  | 'Vigente'
+  | 'Por vencer'
+  | 'Vencido'
+  | 'En prórroga'
+  | 'En ejecución'
+  | 'En gestión de nuevo evento'
+  | 'Pendiente de adjudicación'
+  | 'Suspendido'
+  | string;
+
+export type AccionRequeridaServicio = 
+  | 'Iniciar nuevo evento'
+  | 'Solicitar prórroga'
+  | 'Dar seguimiento a adjudicación'
+  | 'Regularizar expediente'
+  | 'Definir técnicamente requerimiento'
+  | 'No aplica'
+  | string;
+
+export type RiesgoContinuidad = 'Alto' | 'Medio' | 'Bajo';
+
+export interface DocumentosAdjuntosServicio {
+  especificacionesTecnicas?: AttachedDocument;
+  f56?: AttachedDocument;
+  ordenCompra?: AttachedDocument;
+  factura?: AttachedDocument;
+}
+
+export interface ServicioContratado {
+  id: string;
+  codigo: string;
+  area: AreaServicio;
+  departamento: string;
+  servicioContratado: string;
+  objetoAlcance: string;
+  modalidad: ModalidadContratacionServicio;
+  nogExpediente: string;
+  proveedorActual: string;
+  inicioVigencia: string; // YYYY-MM-DD
+  finVigencia: string;    // YYYY-MM-DD
+  estatusActual: EstatusServicioContratado;
+  accionRequerida: AccionRequeridaServicio;
+  fechaInicioGestion?: string; // YYYY-MM-DD
+  responsableSeguimiento: string;
+  riesgoContinuidad: RiesgoContinuidad;
+  observaciones?: string;
+  adjuntos?: DocumentosAdjuntosServicio;
+  creadoPor: string;
+  fechaCreacion: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
+
+export type SemaforoVigencia = 'verde' | 'amarillo' | 'naranja' | 'rojo';
+export type NivelAlertaGestion = 'critico' | 'alerta' | 'anticipado' | 'normal';
+
+export interface ServicioCalculos {
+  duracionTotalDias: number;
+  diasTranscurridos: number;
+  diasRestantes: number;
+  porcentajeConsumido: number;
+  semaforoVigencia: SemaforoVigencia;
+  nivelAlertaGestion: NivelAlertaGestion;
+  mensajeAlertaGestion: string;
+  requiereAlertaTemprana: boolean;
+  esVencido: boolean;
+  diasDesfase: number;
+  diasUmbralAlerta: number;
+}
+
+// ==========================================
+// MÓDULO DE JUDICATURAS POR INAUGURAR
+// ==========================================
+
+export type TipoRamoJudicatura = 'Penal' | 'Civil' | 'Amparos';
+export type OpcionSiNo = 'Si' | 'No';
+export type EstadoInauguracionJudicatura = 'Programado' | 'Reprogramado' | 'Inaugurado' | 'Pendiente Fecha' | 'Finalizado' | 'Traslado' | string;
+
+export interface JudicaturaObservacion {
+  id: string;
+  numeroAccion: number; // Enumeración secuencial (#1, #2, #3...)
+  fecha: string; // Timestamp ISO
+  autor: string; // Nombre del funcionario que registra
+  texto: string; // Texto de la observación o acción realizada
+}
+
+export type CategoriaDocumentoJudicatura = 
+  | 'Acta de Entrega'
+  | 'Dictamen Técnico GIT'
+  | 'Plano / Diagrama de Red'
+  | 'Formulario F56'
+  | 'Contrato / Enlace'
+  | 'Oficio Oficial'
+  | 'Evidencia Fotográfica'
+  | 'General';
+
+export interface JudicaturaDocumento extends AttachedDocument {
+  id?: string;
+  categoria?: CategoriaDocumentoJudicatura | string;
+  descripcion?: string;
+  subidoPor?: string;
+}
+
+export const ESTATUS_COMPUTO_OPTIONS = [
+  'Solicitado F56',
+  'Se cuenta con equipo',
+  'Instalado',
+  'Pendiente'
+] as const;
+export type EstatusComputo = typeof ESTATUS_COMPUTO_OPTIONS[number] | string;
+
+export const ESTATUS_AUDIO_OPTIONS = [
+  'Solicitado F56',
+  'Se cuenta con equipo',
+  'Instalado',
+  'Pendiente'
+] as const;
+export type EstatusAudio = typeof ESTATUS_AUDIO_OPTIONS[number] | string;
+
+export const ESTATUS_ENLACE_OPTIONS = [
+  'Solicitado',
+  'Instalado',
+  'Equipo Satelital Temporal',
+  'Pendiente'
+] as const;
+export type EstatusEnlace = typeof ESTATUS_ENLACE_OPTIONS[number] | string;
+
+export const ESTATUS_RED_OPTIONS = [
+  'Solicitud F56',
+  'Instalando',
+  'Terminado',
+  'Pendiente'
+] as const;
+export type EstatusRed = typeof ESTATUS_RED_OPTIONS[number] | string;
+
+export interface JudicaturaRecord {
+  id: string;
+  nombreJudicatura: string;
+  tipoRamo: TipoRamoJudicatura;
+  fechaInicioAdecuaciones: string; // YYYY-MM-DD
+  fechaFinAdecuaciones: string;    // YYYY-MM-DD
+  equipoComputo: OpcionSiNo;       // ¿Se cuenta con el componente/equipo? 'Si' | 'No'
+  equipoAudio: OpcionSiNo;         // ¿Se cuenta con el componente/equipo? 'Si' | 'No'
+  cableadoEstructurado: OpcionSiNo;// ¿Se cuenta con el componente/red? 'Si' | 'No'
+  enlaceDatos: OpcionSiNo;         // ¿Se cuenta con el enlace? 'Si' | 'No'
+
+  // Estatus específico y desglose de instalación por componente:
+  estatusEquipoComputo?: EstatusComputo;             // 'Solicitado F56' | 'Se cuenta con equipo' | 'Instalado'
+  equipoComputoInstalado?: OpcionSiNo;               // ¿Instalado en sede? 'Si' | 'No'
+  estatusEquipoAudio?: EstatusAudio;                 // 'Solicitado F56' | 'Se cuenta con equipo' | 'Instalado'
+  equipoAudioInstalado?: OpcionSiNo;                 // ¿Instalado en sede? 'Si' | 'No'
+  estatusCableadoEstructurado?: EstatusRed;          // 'Solicitud F56' | 'Instalando' | 'Terminado'
+  cableadoEstructuradoInstalado?: OpcionSiNo;        // ¿Instalado en sede? 'Si' | 'No'
+  estatusEnlaceDatos?: EstatusEnlace;                // 'Solicitado' | 'Instalado' | 'Equipo Satelital Temporal'
+  enlaceDatosInstalado?: OpcionSiNo;                 // ¿Instalado en sede? 'Si' | 'No'
+
+  fechaInauguracion?: string;       // YYYY-MM-DD (Opcional)
+  estadoInauguracion?: EstadoInauguracionJudicatura; // Reprogramado, Pendiente Fecha, Inaugurado
+  priorizado?: OpcionSiNo;          // 'Si' | 'No' (Judicatura Priorizada de Alta Prioridad)
+  observaciones: JudicaturaObservacion[];
+  documentos?: JudicaturaDocumento[]; // Documentos y expedientes digitalizados adjuntos
+  creadoPor: string;
+  fechaCreacion: string;
+  modificadoPor?: string;
+  fechaModificacion?: string;
+}
+
+export interface GmailConfig {
+  userEmail: string;
+  senderName: string;
+  appPassword: string;
+  smtpHost: string;
+  smtpPort: number;
+  secure: boolean;
+  recipientEmails: string[];
+  notifyOnNewPurchase: boolean;
+  notifyOnAdjudication: boolean;
+  notifyOnDeadlineWarning: boolean;
+  notifyOnGitOpinion: boolean;
+  notifyOnCriticalAudit: boolean;
+  lastTestDate?: string;
+  lastTestStatus?: 'success' | 'error';
+  lastTestError?: string;
+}
+
+export type SystemThemeId = 'azul_persia_acero' | 'slate_ambar' | 'azul_judicial' | 'grafito_esmeralda';
+
+export interface CustomLogoConfig {
+  type: 'preset' | 'custom_image';
+  presetId?: 'oj_vector' | 'oj_monogram' | 'escudo_nacional';
+  imageUrl?: string;
+  title: string;
+  subtitle: string;
+}
+
+export type ToastType = 'success' | 'info' | 'warning' | 'error';
+
+export interface ToastItem {
+  id: string;
+  type: ToastType;
+  title: string;
+  message?: string;
+  duration?: number;
+}
