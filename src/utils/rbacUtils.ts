@@ -23,13 +23,18 @@ export const TECHNICAL_AREAS_LIST = [
 export function getSystemAreas(catalogs?: any[], purchases?: any[]): string[] {
   const areasSet = new Set<string>();
 
-  // 1. Áreas activas definidas en el Catálogo de Sistema
+  // 1. Áreas activas definidas en el Catálogo de Sistema (AREA_SOLICITANTE)
   if (Array.isArray(catalogs)) {
     const areaCat = catalogs.find((c: any) => c.codigo === 'AREA_SOLICITANTE');
     if (areaCat && Array.isArray(areaCat.items)) {
       areaCat.items.forEach((it: any) => {
         if (it && it.activo !== false && it.valor && typeof it.valor === 'string' && it.valor.trim()) {
-          areasSet.add(it.valor.trim());
+          const val = it.valor.trim();
+          if (val.toLowerCase().includes('soporte') && val.toLowerCase().includes('remoto')) {
+            areasSet.add('Soporte Remoto');
+          } else {
+            areasSet.add(val);
+          }
         }
       });
     }
@@ -42,7 +47,12 @@ export function getSystemAreas(catalogs?: any[], purchases?: any[]): string[] {
   if (Array.isArray(purchases)) {
     purchases.forEach((p: any) => {
       if (p && p.areaSolicitante && typeof p.areaSolicitante === 'string' && p.areaSolicitante.trim()) {
-        areasSet.add(p.areaSolicitante.trim());
+        const val = p.areaSolicitante.trim();
+        if (val.toLowerCase().includes('soporte') && val.toLowerCase().includes('remoto')) {
+          areasSet.add('Soporte Remoto');
+        } else {
+          areasSet.add(val);
+        }
       }
     });
   }
@@ -50,7 +60,11 @@ export function getSystemAreas(catalogs?: any[], purchases?: any[]): string[] {
   // 4. Áreas base institucionales predeterminadas
   TECHNICAL_AREAS_LIST.forEach((item) => {
     if (item !== ALL_AREAS_LABEL) {
-      areasSet.add(item);
+      if (item.toLowerCase().includes('soporte') && item.toLowerCase().includes('remoto')) {
+        areasSet.add('Soporte Remoto');
+      } else {
+        areasSet.add(item);
+      }
     }
   });
 

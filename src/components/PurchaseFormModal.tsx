@@ -14,6 +14,7 @@ import {
   Download, 
   CheckCircle2, 
   AlertCircle, 
+  AlertTriangle,
   Award,
   Eye,
   EyeOff,
@@ -23,7 +24,13 @@ import {
   ListTree
 } from 'lucide-react';
 import { EvaluacionGIT, AttachedDocument, PurchaseRecord } from '../types';
-import { formatQuetzales, getModalidadCompraByMonto, determineModalidadNameByMonto } from '../utils/formatters';
+import { 
+  formatQuetzales, 
+  getModalidadCompraByMonto, 
+  determineModalidadNameByMonto,
+  normalizeForma56,
+  isForma56Match
+} from '../utils/formatters';
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { DocumentPreview } from './DocumentPreview';
 import { processAttachedFile, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
@@ -69,7 +76,8 @@ export const PurchaseFormModal: React.FC = () => {
     catalogs,
     themeConfig,
     budgetAvailability,
-    purchases
+    purchases,
+    showToast
   } = useApp();
 
   // Estados del Formulario (Validaciones de longitud y tipos requeridos)
@@ -197,6 +205,40 @@ export const PurchaseFormModal: React.FC = () => {
     });
     return exists ? 'NOG Registrado o ya Existe' : null;
   }, [nog, purchases, purchaseToEdit]);
+
+  // Verificación reactiva en tiempo real si la Forma 56-e ya existe en otro registro
+  const duplicateF56eMatch = useMemo(() => {
+    if (!normalizeForma56(f56e)) return null;
+    return purchases.find(p => {
+      if (purchaseToEdit && p.id === purchaseToEdit.id) return false;
+      return isForma56Match(f56e, p.f56e) || isForma56Match(f56e, p.f56);
+    }) || null;
+  }, [f56e, purchases, purchaseToEdit]);
+
+  // Verificación reactiva en tiempo real si el Formulario F56 físico ya existe en otro registro
+  const duplicateF56Match = useMemo(() => {
+    if (!normalizeForma56(f56)) return null;
+    return purchases.find(p => {
+      if (purchaseToEdit && p.id === purchaseToEdit.id) return false;
+      return isForma56Match(f56, p.f56) || isForma56Match(f56, p.f56e);
+    }) || null;
+  }, [f56, purchases, purchaseToEdit]);
+
+  // Mensaje detallado del alertivo para la Forma 56
+  const duplicateForma56Error = useMemo(() => {
+    if (duplicateF56eMatch && duplicateF56Match) {
+      return `Tanto la Forma 56-e "${f56e}" como el Formulario F56 "${f56}" ya existen en otras adquisiciones.`;
+    }
+    if (duplicateF56eMatch) {
+      return `La Forma 56-e "${f56e}" ya existe en el sistema (${duplicateF56eMatch.nog ? `NOG: ${duplicateF56eMatch.nog}` : duplicateF56eMatch.id}).`;
+    }
+    if (duplicateF56Match) {
+      return `El Formulario F56 "${f56}" ya existe en el sistema (${duplicateF56Match.nog ? `NOG: ${duplicateF56Match.nog}` : duplicateF56Match.id}).`;
+    }
+    return null;
+  }, [duplicateF56eMatch, duplicateF56Match, f56e, f56]);
+
+  const isDuplicateBlocked = Boolean(duplicateF56eMatch || duplicateF56Match || duplicateNogError);
 
   // Cargar datos cuando se edita
   useEffect(() => {
@@ -478,12 +520,16 @@ export const PurchaseFormModal: React.FC = () => {
       newErrors.f56e = 'El campo F56-e es obligatorio.';
     } else if (cleanF56e.length > 10) {
       newErrors.f56e = 'El campo F56-e no puede exceder 10 posiciones.';
+    } else if (duplicateF56eMatch) {
+      newErrors.f56e = `La Forma 56-e ya existe en el sistema (${duplicateF56eMatch.nog ? `NOG ${duplicateF56eMatch.nog}` : duplicateF56eMatch.id}). No se puede grabar porque ya existe.`;
     }
 
     // 3. F56: campo tipo texto de 6 posiciones
     const cleanF56 = f56.trim();
     if (cleanF56 && cleanF56.length > 6) {
       newErrors.f56 = 'El campo F56 no puede exceder 6 posiciones.';
+    } else if (duplicateF56Match) {
+      newErrors.f56 = `El Formulario F56 ya existe en el sistema (${duplicateF56Match.nog ? `NOG ${duplicateF56Match.nog}` : duplicateF56Match.id}). No se puede grabar porque ya existe.`;
     }
 
     // 4. Fechas
@@ -543,6 +589,28 @@ export const PurchaseFormModal: React.FC = () => {
     e.preventDefault();
     if (isProcessingFile) {
       setFileUploadError('Por favor espere unos momentos a que termine de procesarse y optimizarse el documento adjunto.');
+      return;
+    }
+    // Alertivo y bloqueo estricto si la Forma 56 o F56 ya existe
+    if (duplicateF56eMatch || duplicateF56Match) {
+      showToast({
+        type: 'error',
+        title: '⚠️ Forma 56 ya Existe en el Sistema',
+        message: 'No se puede grabar la adquisición: ' + (duplicateForma56Error || 'La Forma 56-e y/o F56 ya se encuentra registrada en otra adquisición.'),
+        duration: 5000
+      });
+      validate();
+      return;
+    }
+    // Alertivo y bloqueo estricto si el NOG ya existe
+    if (duplicateNogError) {
+      showToast({
+        type: 'error',
+        title: '⚠️ NOG ya Existe en el Sistema',
+        message: 'No se puede grabar la adquisición: NOG Registrado o ya Existe en el sistema.',
+        duration: 5000
+      });
+      validate();
       return;
     }
     if (!validate()) return;
@@ -785,6 +853,60 @@ export const PurchaseFormModal: React.FC = () => {
               </span>
             </div>
 
+            {/* ALERTIVO: Validación si la Forma 56-e y/o F56 ya existe en el sistema */}
+            {Boolean(duplicateF56eMatch || duplicateF56Match) && (
+              <div 
+                id="alert-duplicate-forma56"
+                role="alert"
+                className="p-3.5 bg-rose-50 border-2 border-rose-500 rounded-xl shadow-xs text-rose-950 space-y-2 animate-in fade-in duration-200"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-rose-900">
+                      ⚠️ ¡Alerta! La Forma 56 ya existe registrada en el sistema
+                    </h4>
+                    <p className="text-[11px] text-rose-700 font-semibold">
+                      No se permite grabar esta adquisición porque la Forma 56 ya fue registrada previamente en otra adquisición.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white/90 rounded-lg p-2.5 border border-rose-200 text-xs space-y-1.5 font-medium">
+                  {duplicateF56eMatch && (
+                    <div className="flex items-start gap-1.5 text-rose-900">
+                      <span className="font-bold text-rose-950 shrink-0">• Forma 56-e "{f56e}":</span>
+                      <span>
+                        Ya está registrada en la adquisición{' '}
+                        <span className="font-mono font-bold text-rose-700 bg-rose-100 px-1 py-0.5 rounded">
+                          {duplicateF56eMatch.nog ? `NOG: ${duplicateF56eMatch.nog}` : duplicateF56eMatch.id}
+                        </span>
+                        {duplicateF56eMatch.f56e && ` [F56-e: ${duplicateF56eMatch.f56e}]`}
+                        {' '}— <em>"{duplicateF56eMatch.descripcion.slice(0, 65)}..."</em>
+                        {' '}<span className="text-[10px] text-slate-500 font-semibold">({duplicateF56eMatch.areaSolicitante || 'Sin área'})</span>
+                      </span>
+                    </div>
+                  )}
+                  {duplicateF56Match && (
+                    <div className="flex items-start gap-1.5 text-rose-900">
+                      <span className="font-bold text-rose-950 shrink-0">• Formulario F56 "{f56}":</span>
+                      <span>
+                        Ya está registrado en la adquisición{' '}
+                        <span className="font-mono font-bold text-rose-700 bg-rose-100 px-1 py-0.5 rounded">
+                          {duplicateF56Match.nog ? `NOG: ${duplicateF56Match.nog}` : duplicateF56Match.id}
+                        </span>
+                        {duplicateF56Match.f56 && ` [F56: ${duplicateF56Match.f56}]`}
+                        {' '}— <em>"{duplicateF56Match.descripcion.slice(0, 65)}..."</em>
+                        {' '}<span className="text-[10px] text-slate-500 font-semibold">({duplicateF56Match.areaSolicitante || 'Sin área'})</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Campos: F56-e (10 posiciones) y F56 (6 posiciones) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Formulario F56-e: tipo texto de 10 posiciones */}
@@ -798,14 +920,25 @@ export const PurchaseFormModal: React.FC = () => {
                   type="text"
                   maxLength={10}
                   value={f56e}
-                  onChange={(e) => setF56e(formatF56eInput(e.target.value))}
+                  onChange={(e) => {
+                    setF56e(formatF56eInput(e.target.value));
+                    if (errors.f56e) setErrors(prev => ({ ...prev, f56e: '' }));
+                  }}
                   placeholder="F56-e (máx. 10)"
                   className={`w-full p-2 text-xs font-mono font-bold tracking-wider uppercase border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                    errors.f56e ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
+                    (errors.f56e || duplicateF56eMatch) ? 'border-rose-500 bg-rose-50/30 text-rose-950 ring-2 ring-rose-400' : 'border-slate-300'
                   }`}
                 />
-                {errors.f56e ? (
-                  <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.f56e}</p>
+                {duplicateF56eMatch ? (
+                  <p className="text-[10px] text-rose-700 mt-1 font-bold flex items-center gap-1 bg-rose-50 p-1.5 rounded border border-rose-200">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                    <span>⚠️ Ya existe en {duplicateF56eMatch.nog ? `NOG: ${duplicateF56eMatch.nog}` : duplicateF56eMatch.id}. Grabación bloqueada.</span>
+                  </p>
+                ) : errors.f56e ? (
+                  <p className="text-[10px] text-rose-600 mt-1 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                    <span>{errors.f56e}</span>
+                  </p>
                 ) : (
                   <p className="text-[10px] text-slate-400 mt-0.5">Campo tipo texto de hasta 10 posiciones</p>
                 )}
@@ -822,14 +955,25 @@ export const PurchaseFormModal: React.FC = () => {
                   type="text"
                   maxLength={6}
                   value={f56}
-                  onChange={(e) => setF56(formatF56Input(e.target.value))}
+                  onChange={(e) => {
+                    setF56(formatF56Input(e.target.value));
+                    if (errors.f56) setErrors(prev => ({ ...prev, f56: '' }));
+                  }}
                   placeholder="F56 (máx. 6)"
                   className={`w-full p-2 text-xs font-mono font-bold tracking-wider uppercase border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                    errors.f56 ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
+                    (errors.f56 || duplicateF56Match) ? 'border-rose-500 bg-rose-50/30 text-rose-950 ring-2 ring-rose-400' : 'border-slate-300'
                   }`}
                 />
-                {errors.f56 ? (
-                  <p className="text-[10px] text-rose-600 mt-1 font-semibold">{errors.f56}</p>
+                {duplicateF56Match ? (
+                  <p className="text-[10px] text-rose-700 mt-1 font-bold flex items-center gap-1 bg-rose-50 p-1.5 rounded border border-rose-200">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                    <span>⚠️ Ya existe en {duplicateF56Match.nog ? `NOG: ${duplicateF56Match.nog}` : duplicateF56Match.id}. Grabación bloqueada.</span>
+                  </p>
+                ) : errors.f56 ? (
+                  <p className="text-[10px] text-rose-600 mt-1 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                    <span>{errors.f56}</span>
+                  </p>
                 ) : (
                   <p className="text-[10px] text-slate-400 mt-0.5">Campo tipo texto de hasta 6 posiciones</p>
                 )}
@@ -1556,25 +1700,37 @@ export const PurchaseFormModal: React.FC = () => {
         )}
 
         {/* Footer del Modal */}
-        <div className="p-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => { setIsPurchaseModalOpen(false); setPurchaseToEdit(null); }}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold text-black bg-white border border-slate-300 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer"
-          >
-            Cancelar
-          </button>
+        <div className="p-3 bg-slate-100 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+            <button
+              type="button"
+              onClick={() => { setIsPurchaseModalOpen(false); setPurchaseToEdit(null); }}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold text-black bg-white border border-slate-300 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+
+            {isDuplicateBlocked && (
+              <span className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-300 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>Grabación bloqueada: {duplicateForma56Error ? 'Forma 56 ya existe' : 'NOG ya existe'}</span>
+              </span>
+            )}
+          </div>
 
           <button
             id="btn-save-purchase"
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting || isProcessingFile}
-            className={`px-4 py-2 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-              isProcessingFile
+            disabled={isSubmitting || isProcessingFile || isDuplicateBlocked}
+            className={`w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-center gap-1.5 ${
+              isDuplicateBlocked
+                ? 'bg-rose-100 text-rose-800 border border-rose-300 cursor-not-allowed opacity-90'
+                : isProcessingFile
                 ? 'bg-amber-50 text-amber-900 border border-amber-300'
-                : 'bg-white hover:bg-slate-100 text-black border border-slate-300'
+                : 'bg-white hover:bg-slate-100 text-black border border-slate-300 cursor-pointer'
             }`}
+            title={isDuplicateBlocked ? 'No se permite grabar: La Forma 56 o NOG ya existe en el sistema' : undefined}
           >
             {isSubmitting ? (
               <div className="w-4 h-4 border-2 border-slate-400 border-t-black rounded-full animate-spin" />
@@ -1582,6 +1738,11 @@ export const PurchaseFormModal: React.FC = () => {
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
                 <span>Procesando archivo adjunto...</span>
+              </>
+            ) : isDuplicateBlocked ? (
+              <>
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                <span>Bloqueado: Forma 56 o NOG ya Existe</span>
               </>
             ) : (
               <>

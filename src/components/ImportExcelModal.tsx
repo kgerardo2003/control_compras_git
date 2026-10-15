@@ -24,10 +24,11 @@ import * as XLSX from 'xlsx';
 import { useApp } from '../context/AppContext';
 import { PurchaseRecord, EvaluacionGIT } from '../types';
 import { formatQuetzales } from '../utils/formatters';
+import { getSystemAreas, ALL_AREAS_LABEL } from '../utils/rbacUtils';
 
 interface ParsedRow {
   index: number;
-  data: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>;
+  data: Omit<PurchaseRecord, 'creadoPor' | 'fechaCreacion'> & { id?: string };
   isValid: boolean;
   errors: string[];
   warnings: string[];
@@ -40,7 +41,7 @@ interface SheetInfo {
 }
 
 export const ImportExcelModal: React.FC = () => {
-  const { isImportModalOpen, setIsImportModalOpen, importPurchases, catalogs, showToast, purchases } = useApp();
+  const { isImportModalOpen, setIsImportModalOpen, importPurchases, catalogs, showToast, purchases, budgetLines, budgetAvailability } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -59,8 +60,15 @@ export const ImportExcelModal: React.FC = () => {
 
   if (!isImportModalOpen) return null;
 
-  // Catálogos
-  const estatusOptions = catalogs.find(c => c.codigo === 'ESTATUS_EVENTO')?.items.map(i => i.nombre) || [
+  // Catálogos oficiales
+  const statusCatalog = catalogs.find(c => c.codigo === 'ESTATUS_EVENTO');
+  const estatusOptions = statusCatalog?.items?.map(i => i.valor) || [
+    'Vigente',
+    'Registrada',
+    'En proceso',
+    'Comprometida',
+    'Adjudicada',
+    'Pagada',
     'Evaluación',
     'Adjudicación',
     'Prescindido',
@@ -197,7 +205,7 @@ export const ImportExcelModal: React.FC = () => {
       'nog', 'f56', 'descripcion', 'área', 'area', 'solicitud', 'vobo', 'autorizado',
       'publicacion', 'publicación', 'ofertas', 'oferta', 'monto', 'evaluado', 'dictamen',
       'oficio', 'estatus', 'adjudicacion', 'adjudicación', 'proveedor', 'categoria',
-      'categoría', 'dependencia', 'modalidad'
+      'categoría', 'dependencia', 'modalidad', 'renglon', 'renglón', 'partida', 'id'
     ];
 
     let bestRowIdx = 0;
@@ -265,6 +273,23 @@ export const ImportExcelModal: React.FC = () => {
       return '';
     };
 
+    // 0. ID institucional de compra (si viene de una exportación del sistema)
+    const rawId = String(getVal([
+      'id', 
+      'identificador', 
+      'codigo', 
+      'código', 
+      'codigo compra', 
+      'código compra', 
+      'id compra', 
+      'id_compra'
+    ])).trim();
+
+    let existingPurchase: PurchaseRecord | undefined = undefined;
+    if (rawId && !isValueEmptyOrNA(rawId)) {
+      existingPurchase = (purchases || []).find(p => p.id === rawId);
+    }
+
     // Monto (GTQ) preliminar para inferir modalidad
     const rawMonto = getVal([
       'monto (gtq)', 
@@ -301,11 +326,27 @@ export const ImportExcelModal: React.FC = () => {
 
     const isBajaCuantiaRow = modalidadCompra.toLowerCase().includes('baja cuant');
 
+    // 2. F56-e (Forma F56 electrónica) - procesar primero para matching si aplica
+    const rawF56e = String(getVal([
+      'f56e', 
+      'f56-e', 
+      'forma f56e', 
+      'forma f-56e', 
+      'formulario f56e', 
+      'formulario f-56e', 
+      'f-56e', 
+      'f56 e', 
+      'no. f56-e',
+      'no f56e'
+    ])).trim();
+    let f56e = !isValueEmptyOrNA(rawF56e) ? rawF56e.slice(0, 15) : (existingPurchase?.f56e || `0000${idx + 1}-2026`);
+
+    if (!existingPurchase && !isValueEmptyOrNA(rawF56e)) {
+      const cleanF = rawF56e.toLowerCase().trim();
+      existingPurchase = (purchases || []).find(p => p.f56e && p.f56e.toLowerCase().trim() === cleanF);
+    }
+
     // 1. NOG (Número de Operación Guatecompras)
-    // Reglas:
-    // - Validar que el número de NOG no exista ya; si existe: "NOG Registrado o ya Existe".
-    // - El NOG no es obligatorio para eventos como Baja Cuantía.
-    // - Para Compra Directa, Cotización y Licitación es obligatorio pero permite ingresar valores cero (0).
     const rawNog = String(getVal([
       'nog', 
       'numero nog', 
@@ -333,7 +374,6 @@ export const ImportExcelModal: React.FC = () => {
       if (isBajaCuantiaRow) {
         nog = '0'; // Opcional en Baja Cuantía
       } else {
-        // En Compra Directa, Cotización y Licitación es obligatorio pero permite 0 si no se cuenta con este dato
         nog = '0';
         warnings.push('NOG no especificado; asignado 0 (permitido provisionalmente).');
       }
@@ -342,35 +382,31 @@ export const ImportExcelModal: React.FC = () => {
       warnings.push(`Valor NOG "${rawNog}" no numérico; asignado 0 permitido.`);
     }
 
-    // Validación de Unicidad si es un NOG real (no 0, no vacío)
+    // Búsqueda de compra existente por NOG si no se había hallado por ID o F56-e
+    if (!existingPurchase && cleanDigits && cleanDigits !== '0') {
+      existingPurchase = (purchases || []).find(p => {
+        const pNog = (p.nog || '').trim().replace(/\D/g, '');
+        return pNog && pNog !== '0' && pNog === cleanDigits;
+      });
+    }
+
+    // Validación de Unicidad de NOG: si coincide con la compra existente que se está actualizando, NO es duplicado
     if (nog !== '0' && nog !== '') {
-      const existsInSystem = (purchases || []).some(p => {
+      const isSelfMatch = existingPurchase && (existingPurchase.nog || '').trim().replace(/\D/g, '') === nog;
+
+      const otherInSystem = (purchases || []).some(p => {
+        if (existingPurchase && p.id === existingPurchase.id) return false;
         const pNog = (p.nog || '').trim().replace(/\D/g, '');
         return pNog && pNog !== '0' && pNog === nog;
       });
 
       const duplicateInBatch = allNogs.has(nog);
 
-      if (existsInSystem || duplicateInBatch) {
+      if (otherInSystem || (!isSelfMatch && duplicateInBatch)) {
         errors.push('NOG Registrado o ya Existe');
       }
       allNogs.add(nog);
     }
-
-    // 2. F56-e (Forma F56 electrónica)
-    const rawF56e = String(getVal([
-      'f56e', 
-      'f56-e', 
-      'forma f56e', 
-      'forma f-56e', 
-      'formulario f56e', 
-      'formulario f-56e', 
-      'f-56e', 
-      'f56 e', 
-      'no. f56-e',
-      'no f56e'
-    ])).trim();
-    let f56e = !isValueEmptyOrNA(rawF56e) ? rawF56e.slice(0, 15) : `0000${idx + 1}-2026`;
 
     // 3. F56 (Físico)
     const rawF56 = String(getVal([
@@ -384,7 +420,7 @@ export const ImportExcelModal: React.FC = () => {
       'f 56', 
       'no. f56'
     ])).trim();
-    const f56 = !isValueEmptyOrNA(rawF56) ? rawF56.slice(0, 10) : undefined;
+    const f56 = !isValueEmptyOrNA(rawF56) ? rawF56.slice(0, 10) : (existingPurchase?.f56 || undefined);
 
     // 4. Descripción
     const rawDesc = String(getVal([
@@ -403,14 +439,16 @@ export const ImportExcelModal: React.FC = () => {
 
     let descripcion = rawDesc;
     if (!descripcion || isValueEmptyOrNA(descripcion)) {
-      descripcion = `Adquisición institucional programada #${idx + 1}`;
-      warnings.push('Descripción vacía; se asignó texto descriptivo predeterminado.');
+      descripcion = existingPurchase?.descripcion || `Adquisición institucional programada #${idx + 1}`;
+      if (!existingPurchase?.descripcion) {
+        warnings.push('Descripción vacía; se asignó texto descriptivo predeterminado.');
+      }
     } else if (descripcion.length > 200) {
       descripcion = descripcion.slice(0, 200);
       warnings.push('Descripción recortada a 200 caracteres.');
     }
 
-    // 5. Área Solicitante
+    // 5. Área Solicitante (fidedigna al sistema, sin alteraciones)
     const rawArea = String(getVal([
       'area solicitante', 
       'área solicitante', 
@@ -423,9 +461,16 @@ export const ImportExcelModal: React.FC = () => {
       'unidad',
       'departamento solicitante'
     ])).trim();
-    let areaSolicitante = !isValueEmptyOrNA(rawArea) ? rawArea : 'Soporte técnico';
-    if (areaSolicitante.toLowerCase().trim() === 'soporte técnico remoto' || areaSolicitante.toLowerCase().trim() === 'soporte tecnico remoto') {
-      areaSolicitante = 'Soporte Remoto';
+
+    let areaSolicitante = '';
+    const systemAreas = getSystemAreas(catalogs, purchases);
+    if (!isValueEmptyOrNA(rawArea)) {
+      const matchedArea = systemAreas.find(a => a.toLowerCase().trim() === rawArea.toLowerCase().trim());
+      areaSolicitante = matchedArea || rawArea;
+    } else if (existingPurchase?.areaSolicitante) {
+      areaSolicitante = existingPurchase.areaSolicitante;
+    } else {
+      areaSolicitante = systemAreas.find(a => a !== ALL_AREAS_LABEL) || 'Soporte Técnico';
     }
 
     // 6. Dependencia Solicitante
@@ -438,7 +483,7 @@ export const ImportExcelModal: React.FC = () => {
       'gerencia', 
       'unidad ejecutora'
     ])).trim();
-    const dependenciaSolicitante = !isValueEmptyOrNA(rawDep) ? rawDep : 'Subgerencia de Infraestructura GIT';
+    const dependenciaSolicitante = !isValueEmptyOrNA(rawDep) ? rawDep : (existingPurchase?.dependenciaSolicitante || 'Subgerencia de Infraestructura GIT');
 
     // 7. Categoría Tecnológica
     const rawCat = String(getVal([
@@ -450,32 +495,33 @@ export const ImportExcelModal: React.FC = () => {
       'rubro tecnológico', 
       'tipo tecnologia'
     ])).trim();
-    const categoriaTecnologica = !isValueEmptyOrNA(rawCat) ? rawCat : 'Servidores y Almacenamiento';
+    const categoriaTecnologica = !isValueEmptyOrNA(rawCat) ? rawCat : (existingPurchase?.categoriaTecnologica || 'Servidores y Almacenamiento');
 
     // 8. Fechas de Gestión (Solicitud, Vo.Bo., Autorización)
     const today = new Date().toISOString().slice(0, 10);
     const rawFechaSol = getVal(['fecha solicitud', 'fecha de solicitud', 'solicitud', 'fecha f56e', 'fecha f-56e']);
-    const fechaSolicitud = normalizeExcelDate(rawFechaSol, today) || today;
+    const fechaSolicitud = normalizeExcelDate(rawFechaSol, existingPurchase?.fechaSolicitud || today) || (existingPurchase?.fechaSolicitud || today);
 
     const rawFechaVoBo = getVal(['fecha vobo', 'fecha vo.bo.', 'fecha vo bo', 'vobo', 'vo.bo.', 'vo bo', 'fecha visto bueno']);
-    const fechaVoBo = normalizeExcelDate(rawFechaVoBo, fechaSolicitud) || fechaSolicitud;
+    const fechaVoBo = normalizeExcelDate(rawFechaVoBo, existingPurchase?.fechaVoBo || fechaSolicitud) || (existingPurchase?.fechaVoBo || fechaSolicitud);
 
     const rawFechaAut = getVal(['fecha autorizado', 'fecha autorizacion', 'fecha autorización', 'autorizado', 'autorizacion', 'fecha autorizo']);
-    const fechaAutorizado = normalizeExcelDate(rawFechaAut, fechaVoBo) || fechaVoBo;
+    const fechaAutorizado = normalizeExcelDate(rawFechaAut, existingPurchase?.fechaAutorizado || fechaVoBo) || (existingPurchase?.fechaAutorizado || fechaVoBo);
 
     // 9. Fechas de Concurso (Publicación y Cierre de Ofertas)
     const rawFechaPub = getVal(['fecha publicacion', 'fecha publicación', 'publicacion', 'publicación', 'fecha de publicacion', 'fecha concurso']);
-    const fechaPublicacion = normalizeExcelDate(rawFechaPub, fechaAutorizado) || today;
+    const fechaPublicacion = normalizeExcelDate(rawFechaPub, existingPurchase?.fechaPublicacion || fechaAutorizado) || (existingPurchase?.fechaPublicacion || today);
 
     const rawFechaOfertas = getVal(['fecha cierre ofertas', 'fecha cierre', 'cierre ofertas', 'fecha recepcion ofertas', 'fecha recepción ofertas', 'cierre de ofertas', 'cierre', 'limite ofertas']);
-    const fechaOfertas = normalizeExcelDate(rawFechaOfertas, fechaPublicacion) || today;
+    const fechaOfertas = normalizeExcelDate(rawFechaOfertas, existingPurchase?.fechaOfertas || fechaPublicacion) || (existingPurchase?.fechaOfertas || today);
 
     // 12. Cantidad de Ofertas
     const rawOfertas = getVal(['cantidad de ofertas', 'cantidad ofertas', 'no ofertas', 'no. ofertas', 'ofertas', 'postores', 'ofertas recibidas', 'numero ofertas', 'número ofertas']);
-    const cantidadOfertas = isValueEmptyOrNA(rawOfertas) ? 0 : Math.max(0, parseInt(String(rawOfertas).replace(/\D/g, ''), 10) || 0);
+    const cantidadOfertas = isValueEmptyOrNA(rawOfertas) 
+      ? (typeof existingPurchase?.cantidadOfertas === 'number' ? existingPurchase.cantidadOfertas : 0) 
+      : Math.max(0, parseInt(String(rawOfertas).replace(/\D/g, ''), 10) || 0);
 
     // 13. Evaluado por Área Técnica / GIT
-    // Buscar primero el encabezado específico para evitar capturar "Fecha Dictamen Técnico"
     const rawGitVal = String(getVal([
       'evaluado por el area tecnica correspondiente',
       'evaluado por el área técnica correspondiente',
@@ -490,7 +536,7 @@ export const ImportExcelModal: React.FC = () => {
       'evaluado'
     ])).trim().toLowerCase();
 
-    let evaluadoGIT: EvaluacionGIT = 'No';
+    let evaluadoGIT: EvaluacionGIT = existingPurchase?.evaluadoGIT || 'No';
     if (rawGitVal === 'si' || rawGitVal === 'sí' || rawGitVal === 'true' || rawGitVal === '1' || rawGitVal.includes('si') || rawGitVal.includes('sí')) {
       evaluadoGIT = 'Sí';
     } else if (rawGitVal === 'no' || rawGitVal === 'false' || rawGitVal === '0') {
@@ -499,36 +545,49 @@ export const ImportExcelModal: React.FC = () => {
 
     // 14. Fecha Dictamen Técnico
     const rawDictDate = getVal(['fecha dictamen tecnico', 'fecha dictamen técnico', 'fecha de dictamen tecnico', 'fecha dictamen git', 'fecha dictamen', 'fecha de dictamen']);
-    const fechaDictamenGIT = normalizeExcelDate(rawDictDate);
+    const fechaDictamenGIT = normalizeExcelDate(rawDictDate, existingPurchase?.fechaDictamenGIT);
     if (fechaDictamenGIT && evaluadoGIT === 'No') {
-      // Si tiene fecha de dictamen válida, asumimos que fue evaluado
       evaluadoGIT = 'Sí';
     }
 
     // 15. Fecha Oficio GIT
     const rawOficioDate = getVal(['fecha oficio git', 'fecha de oficio git', 'fecha elaboracion oficio git', 'fecha elaboración oficio git', 'oficio git', 'fecha oficio']);
-    const fechaElaboracionOficioGIT = normalizeExcelDate(rawOficioDate);
+    const fechaElaboracionOficioGIT = normalizeExcelDate(rawOficioDate, existingPurchase?.fechaElaboracionOficioGIT);
 
-    // 16. Estatus del Evento
-    const rawEstatus = String(getVal(['estatus del evento', 'estatus de evento', 'estatus evento', 'estatus', 'estado del evento', 'estado evento', 'estado', 'situacion', 'situación', 'etapa', 'fase'])).trim().toLowerCase();
-    let estatusEvento = 'Evaluación';
-    if (rawEstatus.includes('adjudic')) {
-      estatusEvento = 'Adjudicación';
-    } else if (rawEstatus.includes('prescind')) {
-      estatusEvento = 'Prescindido';
-    } else if (rawEstatus.includes('desiert')) {
-      estatusEvento = 'Desierto';
-    } else if (rawEstatus.includes('vigente')) {
-      estatusEvento = 'Vigente';
-    } else if (rawEstatus.includes('evalua')) {
+    // 16. Estatus del Evento (fidedigno al sistema)
+    const rawEstatus = String(getVal([
+      'estatus del evento', 
+      'estatus de la compra', 
+      'estatus compra', 
+      'estatus evento', 
+      'estatus', 
+      'estado del evento', 
+      'estado de la compra', 
+      'estado evento', 
+      'estado', 
+      'situacion', 
+      'situación', 
+      'etapa', 
+      'fase'
+    ])).trim();
+
+    let estatusEvento = '';
+    if (!isValueEmptyOrNA(rawEstatus)) {
+      const matchedStatus = estatusOptions.find(opt => opt.toLowerCase().trim() === rawEstatus.toLowerCase().trim());
+      if (matchedStatus) {
+        estatusEvento = matchedStatus;
+      } else {
+        estatusEvento = rawEstatus.charAt(0).toUpperCase() + rawEstatus.slice(1);
+      }
+    } else if (existingPurchase?.estatusEvento) {
+      estatusEvento = existingPurchase.estatusEvento;
+    } else {
       estatusEvento = 'Evaluación';
-    } else if (rawEstatus.length > 0 && !isValueEmptyOrNA(rawEstatus)) {
-      estatusEvento = rawEstatus.charAt(0).toUpperCase() + rawEstatus.slice(1);
     }
 
     // 17. Proveedor y Fecha de Adjudicación
-    let fechaAdjudicacion: string | undefined = undefined;
-    let proveedorAdjudicado: string | undefined = undefined;
+    let fechaAdjudicacion: string | undefined = existingPurchase?.fechaAdjudicacion;
+    let proveedorAdjudicado: string | undefined = existingPurchase?.proveedorAdjudicado;
     const rawProv = String(getVal(['proveedor adjudicado', 'proveedor', 'empresa adjudicada', 'empresa', 'adjudicatario', 'contratista', 'ganador'])).trim();
     const rawFechaAdj = getVal(['fecha de adjudicacion', 'fecha de adjudicación', 'fecha adjudicacion', 'fecha adjudicación', 'adjudicacion fecha']);
 
@@ -539,23 +598,18 @@ export const ImportExcelModal: React.FC = () => {
       fechaAdjudicacion = normalizeExcelDate(rawFechaAdj);
     }
 
-    if (estatusEvento === 'Adjudicación') {
-      if (!fechaAdjudicacion) fechaAdjudicacion = fechaOfertas;
-      if (!proveedorAdjudicado) proveedorAdjudicado = 'Proveedor Adjudicado';
-    }
-
     // 18. Observaciones
     const rawObs = String(getVal(['observaciones', 'observacion', 'observación', 'notas', 'comentarios', 'detalle adicional', 'nota'])).trim();
-    const observaciones = !isValueEmptyOrNA(rawObs) ? rawObs : undefined;
+    const observaciones = !isValueEmptyOrNA(rawObs) ? rawObs : existingPurchase?.observaciones;
 
-    // 19. Renglón Presupuestario y Nombre de Renglón
+    // 19. Renglón Presupuestario, Nombre del Renglón y Grupo (preservación y resolución inteligente)
     const rawRenglon = String(getVal([
-      'renglon',
-      'renglón',
       'renglon presupuestario',
       'renglón presupuestario',
-      'partida',
+      'renglon',
+      'renglón',
       'partida presupuestaria',
+      'partida',
       'codigo renglon',
       'código renglón',
       'renglon gasto',
@@ -565,17 +619,18 @@ export const ImportExcelModal: React.FC = () => {
 
     let renglonPresupuestario: string | undefined = undefined;
     let nombreRenglon: string | undefined = undefined;
+    let grupoPresupuestario: string | undefined = undefined;
 
     if (!isValueEmptyOrNA(rawRenglon)) {
       const cleanR = rawRenglon.replace(/\D/g, '');
-      if (cleanR.length > 0) {
-        renglonPresupuestario = cleanR;
-      } else {
-        renglonPresupuestario = rawRenglon;
-      }
+      renglonPresupuestario = cleanR.length > 0 ? cleanR : rawRenglon;
+    } else if (existingPurchase?.renglonPresupuestario) {
+      renglonPresupuestario = existingPurchase.renglonPresupuestario;
     }
 
     const rawNombreRenglon = String(getVal([
+      'nombre del renglon',
+      'nombre del renglón',
       'nombre renglon',
       'nombre renglón',
       'descripcion renglon',
@@ -584,12 +639,44 @@ export const ImportExcelModal: React.FC = () => {
     ])).trim();
     if (!isValueEmptyOrNA(rawNombreRenglon)) {
       nombreRenglon = rawNombreRenglon;
+    } else if (existingPurchase?.nombreRenglon) {
+      nombreRenglon = existingPurchase.nombreRenglon;
     }
 
-    const purchaseData: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'> = {
+    const rawGrupo = String(getVal([
+      'grupo presupuestario',
+      'grupo',
+      'grupo gasto'
+    ])).trim();
+    if (!isValueEmptyOrNA(rawGrupo)) {
+      grupoPresupuestario = rawGrupo;
+    } else if (existingPurchase?.grupoPresupuestario) {
+      grupoPresupuestario = existingPurchase.grupoPresupuestario;
+    }
+
+    // Auto-vincular nombre de renglón y grupo desde la matriz presupuestaria
+    if (renglonPresupuestario) {
+      const allBudgetLines = [...(budgetLines || []), ...((budgetAvailability as any) || [])];
+      const matchedLine = allBudgetLines.find(l => String(l.renglonPresupuestario).trim() === String(renglonPresupuestario).trim());
+      if (matchedLine) {
+        if (!nombreRenglon) nombreRenglon = matchedLine.nombreRenglon;
+        if (!grupoPresupuestario) grupoPresupuestario = matchedLine.grupoPresupuestario;
+      }
+    }
+
+    const purchaseData: Omit<PurchaseRecord, 'creadoPor' | 'fechaCreacion'> & { id?: string } = {
+      id: existingPurchase?.id || (rawId && rawId.startsWith('pur-') ? rawId : undefined),
       nog,
       f56e,
       f56,
+      // CRÍTICO: Preservar expediente F56 digitalizado, bitácora y movimientos de compras existentes
+      f56Documento: existingPurchase?.f56Documento,
+      movimientos: (existingPurchase?.movimientos && existingPurchase.movimientos.length > 0) ? existingPurchase.movimientos : [],
+      historialEstatus: (existingPurchase?.historialEstatus && existingPurchase.historialEstatus.length > 0) ? existingPurchase.historialEstatus : [],
+      bitacoraCambios: (existingPurchase?.bitacoraCambios && existingPurchase.bitacoraCambios.length > 0) ? existingPurchase.bitacoraCambios : [],
+      estadoPago: existingPurchase?.estadoPago || 'comprometido',
+      montoPagado: existingPurchase?.montoPagado,
+      fechaPago: existingPurchase?.fechaPago,
       descripcion,
       areaSolicitante,
       dependenciaSolicitante,
@@ -611,6 +698,7 @@ export const ImportExcelModal: React.FC = () => {
       observaciones,
       renglonPresupuestario,
       nombreRenglon,
+      grupoPresupuestario,
     };
 
     return {
@@ -795,9 +883,13 @@ export const ImportExcelModal: React.FC = () => {
   const handleDownloadTemplate = () => {
     const templateData = [
       {
+        'ID': 'pur-2026-001',
         'NOG': '32043597',
         'F56-e': '0377242026',
         'F56': '005695',
+        'Renglón Presupuestario': '328',
+        'Nombre del Renglón': 'Equipo de Cómputo',
+        'Grupo Presupuestario': 'Grupo 300 - Propiedad, Planta, Equipo e Intangibles',
         'Área Solicitante': 'Departamento de Servicios Informáticos',
         'Descripción': 'LICENCIA DE ENVÍO MASIVO DE CORREOS',
         'Fecha Solicitud': '2026-09-04',
@@ -815,12 +907,17 @@ export const ImportExcelModal: React.FC = () => {
         'Dependencia Solicitante': 'Subgerencia de Infraestructura GIT',
         'Modalidad de Compra': 'Compra Directa',
         'Proveedor Adjudicado': 'N/A',
+        'Documentos Adjuntos': 'F56: Dictamen_Tecnico_Oficial.pdf',
         'Observaciones': 'Adquisición institucional prioritaria para mensajería y notificaciones OJ.'
       },
       {
+        'ID': 'pur-2026-002',
         'NOG': '32034482',
         'F56-e': '0371942026',
         'F56': '005701',
+        'Renglón Presupuestario': '186',
+        'Nombre del Renglón': 'Servicios de Informática y Sistemas Computarizados',
+        'Grupo Presupuestario': 'Grupo 100 - Servicios No Personales',
         'Área Solicitante': 'Desarrollo y Administración de Sistemas',
         'Descripción': 'LICENCIA PARA LA GESTIÓN DE PROYECTOS Y SEGUIMIENTO DE INCIDENCIAS',
         'Fecha Solicitud': '2026-08-31',
@@ -833,17 +930,22 @@ export const ImportExcelModal: React.FC = () => {
         'Cantidad de Ofertas': 0,
         'Monto (GTQ)': 90000.00,
         'Evaluado por el Área Técnica Correspondiente': 'No',
-        'Estatus del Evento': 'Evaluación',
+        'Estatus del Evento': 'Registrada',
         'Categoría Tecnológica': 'Servidores y Almacenamiento',
         'Dependencia Solicitante': 'Subgerencia de Infraestructura GIT',
         'Modalidad de Compra': 'Compra Directa',
         'Proveedor Adjudicado': 'N/A',
+        'Documentos Adjuntos': 'Sin adjuntos',
         'Observaciones': 'Plataforma para gestión de tickets y sprints informáticos.'
       },
       {
+        'ID': 'pur-2026-003',
         'NOG': '31670075',
         'F56-e': '0342422026',
         'F56': '005120',
+        'Renglón Presupuestario': '328',
+        'Nombre del Renglón': 'Equipo de Cómputo',
+        'Grupo Presupuestario': 'Grupo 300 - Propiedad, Planta, Equipo e Intangibles',
         'Área Solicitante': 'Soporte Técnico',
         'Descripción': 'Computadora Portátil (Laptop) para Funcionarios Judiciales',
         'Fecha Solicitud': '2026-08-05',
@@ -856,20 +958,25 @@ export const ImportExcelModal: React.FC = () => {
         'Cantidad de Ofertas': 3,
         'Monto (GTQ)': 35000.00,
         'Evaluado por el Área Técnica Correspondiente': 'Sí',
-        'Estatus del Evento': 'Adjudicación',
+        'Estatus del Evento': 'Adjudicada',
         'Categoría Tecnológica': 'Equipo Informático',
         'Dependencia Solicitante': 'Subgerencia de Infraestructura GIT',
         'Modalidad de Compra': 'Compra Directa',
         'Proveedor Adjudicado': 'Sistemas y Equipos Digitales de Guatemala, S.A.',
+        'Documentos Adjuntos': 'F56: F56_Adjudicacion_Computadoras.pdf',
         'Observaciones': 'Equipos portátiles para juzgados móviles.'
       }
     ];
 
     const worksheet = XLSX.utils.json_to_sheet(templateData);
     const colWidths = [
+      { wch: 14 }, // ID
       { wch: 12 }, // NOG
       { wch: 14 }, // F56-e
       { wch: 10 }, // F56
+      { wch: 22 }, // Renglón Presupuestario
+      { wch: 32 }, // Nombre del Renglón
+      { wch: 28 }, // Grupo Presupuestario
       { wch: 32 }, // Área Solicitante
       { wch: 45 }, // Descripción
       { wch: 15 }, // Fecha Solicitud
@@ -887,6 +994,7 @@ export const ImportExcelModal: React.FC = () => {
       { wch: 32 }, // Dependencia Solicitante
       { wch: 20 }, // Modalidad de Compra
       { wch: 36 }, // Proveedor Adjudicado
+      { wch: 30 }, // Documentos Adjuntos
       { wch: 35 }, // Observaciones
     ];
     worksheet['!cols'] = colWidths;
@@ -1324,14 +1432,14 @@ export const ImportExcelModal: React.FC = () => {
                   )}
 
                   <label className="text-xs text-slate-700 font-semibold flex items-center gap-1.5">
-                    <span>Modo:</span>
+                    <span>Modo de Importación:</span>
                     <select
                       value={importMode}
                       onChange={(e) => setImportMode(e.target.value as 'append' | 'replace')}
-                      className="text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1 font-normal text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                      className="text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1 font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
                     >
-                      <option value="append">Agregar a registros existentes</option>
-                      <option value="replace">Reemplazar todos los registros actuales</option>
+                      <option value="append">Fusión Inteligente (actualizar existentes y agregar nuevos conservando documentos)</option>
+                      <option value="replace">Reemplazar todos los registros (conservando documentos adjuntos)</option>
                     </select>
                   </label>
                 </div>
@@ -1425,6 +1533,11 @@ export const ImportExcelModal: React.FC = () => {
                           <td className="py-2 px-3 max-w-xs" title={row.data.descripcion}>
                             <div className="truncate text-slate-800 font-medium">{row.data.descripcion}</div>
                             <div className="flex flex-wrap gap-1 mt-0.5">
+                              {row.data.renglonPresupuestario && (
+                                <span className="inline-block text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded" title={row.data.nombreRenglon || `Renglón ${row.data.renglonPresupuestario}`}>
+                                  Reng. {row.data.renglonPresupuestario}
+                                </span>
+                              )}
                               {row.data.areaSolicitante && (
                                 <span className="inline-block text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-semibold">
                                   {row.data.areaSolicitante}
@@ -1433,6 +1546,11 @@ export const ImportExcelModal: React.FC = () => {
                               {row.data.categoriaTecnologica && (
                                 <span className="inline-block text-[10px] text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded font-semibold">
                                   {row.data.categoriaTecnologica}
+                                </span>
+                              )}
+                              {row.data.f56Documento && (
+                                <span className="inline-block text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.2 rounded font-semibold" title={`Expediente digital conservado: ${row.data.f56Documento.nombre}`}>
+                                  📎 Doc. F56 Conservado
                                 </span>
                               )}
                             </div>

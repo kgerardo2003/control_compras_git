@@ -4016,14 +4016,14 @@ export const JudicaturasView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 1: FORMULARIO DE FICHA DE JUDICATURA (FORMATO HORIZONTAL)          */}
+      {/* MODAL 1: FORMULARIO DE FICHA DE JUDICATURA (FORMATO PANORÁMICO HORIZONTAL) */}
       {/* ========================================================================= */}
       {isFormModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-[96vw] xl:max-w-[1380px] w-full border border-slate-200 shadow-2xl overflow-hidden my-auto max-h-[94vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-[96vw] xl:max-w-[1400px] w-full border border-slate-200 shadow-2xl overflow-hidden my-auto max-h-[94vh] flex flex-col">
             
-            {/* Cabecera del Formulario Horizontal */}
-            <div className="px-5 py-3.5 bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
+            {/* Cabecera del Formulario Panorámico Horizontal */}
+            <div className="px-5 py-3.5 bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-950 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-xl bg-white/10 border border-white/20">
                   <Scale className="w-5 h-5 text-amber-400" />
@@ -4031,10 +4031,10 @@ export const JudicaturasView: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm sm:text-base font-black tracking-tight">
-                      {editingJudicatura ? `Editar Ficha de Judicatura: ${nombreJudicatura || 'Sede'}` : 'Ingreso de Nueva Judicatura por Inaugurar'}
+                      {editingJudicatura ? `Editar Ficha de Judicatura: ${nombreJudicatura || 'Sede'}` : 'Ficha de Nueva Judicatura por Inaugurar'}
                     </h2>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-300/30">
-                      Formato Horizontal
+                      Vista Horizontal
                     </span>
                   </div>
                   <p className="text-[11px] text-blue-200">
@@ -4043,42 +4043,63 @@ export const JudicaturasView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Selector de Pestañas en Edición y Métricas en Tiempo Real */}
+              {/* Selector de Pestañas Siempre Visible (Ficha vs Observaciones vs Documentos) */}
               <div className="flex items-center gap-3">
-                {editingJudicatura && (
-                  <div className="hidden sm:flex items-center gap-1 bg-black/30 p-1 rounded-xl border border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => setFormModalTab('datos')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        formModalTab === 'datos' ? 'bg-white text-blue-950 shadow-xs' : 'text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      Ficha y Componentes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormModalTab('observaciones')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        formModalTab === 'observaciones' ? 'bg-white text-blue-950 shadow-xs' : 'text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      Bitácora ({(editingJudicatura.observaciones || []).length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormModalTab('documentos')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        formModalTab === 'documentos' ? 'bg-white text-blue-950 shadow-xs' : 'text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      Expediente ({(editingJudicatura.documentos || []).length})
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-1 bg-black/30 p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setFormModalTab('datos')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      formModalTab === 'datos'
+                        ? 'bg-white text-blue-950 shadow-xs'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-blue-800" />
+                    <span>Ficha y Componentes TIC</span>
+                  </button>
 
-                {/* Insignias de Conteo en Tiempo Real */}
-                <div className="hidden md:flex items-center gap-2 text-[10px] bg-white/10 px-3 py-1 rounded-xl border border-white/15">
+                  <button
+                    type="button"
+                    onClick={() => setFormModalTab('observaciones')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      formModalTab === 'observaciones'
+                        ? 'bg-white text-blue-950 shadow-xs'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <GitBranch className="w-3.5 h-3.5 text-amber-400" />
+                    <span>
+                      Bitácora de Observaciones (
+                      {editingJudicatura
+                        ? (editingJudicatura.observaciones || []).length
+                        : observacionesIniciales.trim()
+                        ? 1
+                        : 0}
+                      )
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormModalTab('documentos')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      formModalTab === 'documentos'
+                        ? 'bg-white text-blue-950 shadow-xs'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Paperclip className="w-3.5 h-3.5 text-cyan-300" />
+                    <span>
+                      Expediente y Documentos (
+                      {editingJudicatura ? (editingJudicatura.documentos || []).length : 0}
+                      )
+                    </span>
+                  </button>
+                </div>
+
+                {/* Métricas TIC en Tiempo Real */}
+                <div className="hidden lg:flex items-center gap-2 text-[10px] bg-white/10 px-3 py-1.5 rounded-xl border border-white/15">
                   <span className="text-blue-200">
                     TIC Disponibles: <strong className="text-white font-mono">{formComponentMetrics.disponibles}/4</strong>
                   </span>
@@ -4104,32 +4125,43 @@ export const JudicaturasView: React.FC = () => {
               
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
                 
-                {/* PESTAÑA PRINCIPAL: DISTRIBUCIÓN HORIZONTAL (2 COLUMNAS SIDE-BY-SIDE) */}
+                {/* ========================================================================= */}
+                {/* PESTAÑA 1: FICHA TÉCNICA PRINCIPAL EN DISTRIBUCIÓN HORIZONTAL COMPLETA    */}
+                {/* ========================================================================= */}
                 {formModalTab === 'datos' && (
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                  <div className="space-y-4">
                     
-                    {/* COLUMNA 1 (5 columnas): IDENTIFICACIÓN Y PARÁMETROS OPERATIVOS */}
-                    <div className="lg:col-span-5 bg-slate-50/70 p-4 rounded-2xl border border-slate-200 space-y-4 shadow-2xs">
+                    {/* BANDA HORIZONTAL 1: IDENTIFICACIÓN Y PARÁMETROS OPERATIVOS */}
+                    <div className="bg-slate-50/90 p-4 rounded-2xl border border-slate-200 space-y-3 shadow-2xs">
                       
                       <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
-                        <span className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                          <Building2 className="w-4 h-4 text-blue-800" />
-                          1. Identificación y Sede Judicial
+                        <span className="font-black text-xs uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-blue-900" />
+                          1. Identificación y Parámetros de la Sede Judicial
                         </span>
-                        <span className="text-[10px] text-slate-400 font-mono">Datos Principales</span>
+                        <span className="text-[10.5px] text-slate-500 font-medium">
+                          Datos institucionales distribuidos en formato horizontal
+                        </span>
                       </div>
 
-                      {/* Nombre Judicatura */}
+                      {/* Fila A: Nombre de la Judicatura a todo el ancho */}
                       <div>
-                        <label className="block font-bold text-slate-700 mb-1">
-                          Nombre de la Judicatura <span className="text-rose-600">*</span>
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-bold text-slate-800 text-xs">
+                            Nombre Oficial de la Judicatura <span className="text-rose-600">*</span>
+                          </label>
+                          {nombreJudicatura && (
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {nombreJudicatura.length} caracteres
+                            </span>
+                          )}
+                        </div>
                         <input
                           type="text"
                           value={nombreJudicatura}
                           onChange={(e) => setNombreJudicatura(e.target.value)}
-                          placeholder="ej. Juzgado de Primera Instancia Penal de Delitos de Femicidio de Quetzaltenango"
-                          className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 focus:outline-none bg-white text-xs ${
+                          placeholder="ej. Juzgado Pluripersonal de Primera Instancia Penal, Narcoactividad y Delitos contra el Ambiente de Quetzaltenango"
+                          className={`w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-blue-800 focus:outline-none bg-white text-xs font-semibold text-slate-800 shadow-2xs ${
                             formErrors.nombreJudicatura ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
                           }`}
                         />
@@ -4138,138 +4170,54 @@ export const JudicaturasView: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Tipo de Ramo (Cámara Asignada) */}
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">
-                          Cámara Asignada <span className="text-rose-600">*</span>
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {/* Opción Cámara Penal */}
-                          <label
-                            className={`p-2 rounded-xl border flex flex-col justify-center cursor-pointer transition-all ${
-                              tipoRamo === 'Penal'
-                                ? 'bg-purple-50 border-purple-500 text-purple-950 ring-2 ring-purple-500/20 shadow-2xs'
-                                : 'bg-white border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="tipoRamo"
-                              value="Penal"
-                              checked={tipoRamo === 'Penal'}
-                              onChange={() => setTipoRamo('Penal')}
-                              className="sr-only"
-                            />
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <div className="w-3.5 h-3.5 rounded-full border-2 border-purple-600 flex items-center justify-center shrink-0">
-                                {tipoRamo === 'Penal' && <div className="w-1.5 h-1.5 rounded-full bg-purple-600" />}
-                              </div>
-                              <span className="font-black text-[11px]">Penal</span>
-                            </div>
-                            <span className="text-[9.5px] text-slate-500 truncate">Cámara Penal</span>
+                      {/* Fila B: 5 Columnas Horizontales con todos los parámetros */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 pt-1">
+                        
+                        {/* Col 1: Cámara Asignada (4 de 12 columnas) */}
+                        <div className="lg:col-span-4">
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                            Cámara Asignada <span className="text-rose-600">*</span>
                           </label>
-
-                          {/* Opción Cámara Civil */}
-                          <label
-                            className={`p-2 rounded-xl border flex flex-col justify-center cursor-pointer transition-all ${
-                              tipoRamo === 'Civil'
-                                ? 'bg-blue-50 border-blue-500 text-blue-950 ring-2 ring-blue-500/20 shadow-2xs'
-                                : 'bg-white border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="tipoRamo"
-                              value="Civil"
-                              checked={tipoRamo === 'Civil'}
-                              onChange={() => setTipoRamo('Civil')}
-                              className="sr-only"
-                            />
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <div className="w-3.5 h-3.5 rounded-full border-2 border-blue-600 flex items-center justify-center shrink-0">
-                                {tipoRamo === 'Civil' && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
-                              </div>
-                              <span className="font-black text-[11px]">Civil</span>
-                            </div>
-                            <span className="text-[9.5px] text-slate-500 truncate">Paz, Civil, Trab.</span>
-                          </label>
-
-                          {/* Opción Cámara Amparos */}
-                          <label
-                            className={`p-2 rounded-xl border flex flex-col justify-center cursor-pointer transition-all ${
-                              tipoRamo === 'Amparos'
-                                ? 'bg-emerald-50 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20 shadow-2xs'
-                                : 'bg-white border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="tipoRamo"
-                              value="Amparos"
-                              checked={tipoRamo === 'Amparos'}
-                              onChange={() => setTipoRamo('Amparos')}
-                              className="sr-only"
-                            />
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-600 flex items-center justify-center shrink-0">
-                                {tipoRamo === 'Amparos' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-600" />}
-                              </div>
-                              <span className="font-black text-[11px]">Amparos</span>
-                            </div>
-                            <span className="text-[9.5px] text-slate-500 truncate">Garantías Const.</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Fechas de Adecuaciones */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-bold text-slate-700 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-indigo-700" />
-                            Fechas de Adecuaciones <span className="text-rose-600">*</span>
-                          </label>
-                          {diasAdecuacionCalculados > 0 && (
-                            <span className="text-[10px] font-bold text-indigo-900 bg-indigo-50 px-2 py-0.2 rounded border border-indigo-200">
-                              {diasAdecuacionCalculados} días de ejecución
-                            </span>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <span className="block text-[10px] text-slate-500 mb-0.5 font-semibold">Inicio</span>
-                            <input
-                              type="date"
-                              value={fechaInicioAdecuaciones}
-                              onChange={(e) => setFechaInicioAdecuaciones(e.target.value)}
-                              className={`w-full p-2 border rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs ${
-                                formErrors.fechaInicioAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                          <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-200/60 rounded-xl border border-slate-300">
+                            <button
+                              type="button"
+                              onClick={() => setTipoRamo('Penal')}
+                              className={`py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer text-center ${
+                                tipoRamo === 'Penal'
+                                  ? 'bg-purple-800 text-white shadow-xs'
+                                  : 'text-slate-700 hover:text-purple-950 hover:bg-white/50'
                               }`}
-                            />
-                          </div>
-                          <div>
-                            <span className="block text-[10px] text-slate-500 mb-0.5 font-semibold">Finalización</span>
-                            <input
-                              type="date"
-                              value={fechaFinAdecuaciones}
-                              onChange={(e) => setFechaFinAdecuaciones(e.target.value)}
-                              className={`w-full p-2 border rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs ${
-                                formErrors.fechaFinAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                            >
+                              Penal
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTipoRamo('Civil')}
+                              className={`py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer text-center ${
+                                tipoRamo === 'Civil'
+                                  ? 'bg-blue-800 text-white shadow-xs'
+                                  : 'text-slate-700 hover:text-blue-950 hover:bg-white/50'
                               }`}
-                            />
+                            >
+                              Civil
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTipoRamo('Amparos')}
+                              className={`py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer text-center ${
+                                tipoRamo === 'Amparos'
+                                  ? 'bg-emerald-800 text-white shadow-xs'
+                                  : 'text-slate-700 hover:text-emerald-950 hover:bg-white/50'
+                              }`}
+                            >
+                              Amparos
+                            </button>
                           </div>
                         </div>
-                        {(formErrors.fechaInicioAdecuaciones || formErrors.fechaFinAdecuaciones) && (
-                          <p className="text-[11px] text-rose-600 mt-1 font-semibold">
-                            {formErrors.fechaInicioAdecuaciones || formErrors.fechaFinAdecuaciones}
-                          </p>
-                        )}
-                      </div>
 
-                      {/* Estatus, Priorizado y Fecha Inauguración */}
-                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200">
-                        {/* Estatus */}
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1 text-[11px]">
+                        {/* Col 2: Estatus del Proyecto (2 de 12 columnas) */}
+                        <div className="lg:col-span-2">
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px] flex items-center gap-1">
                             <Flag className="w-3 h-3 text-blue-900" />
                             Estatus <span className="text-rose-600">*</span>
                           </label>
@@ -4287,9 +4235,9 @@ export const JudicaturasView: React.FC = () => {
                           </select>
                         </div>
 
-                        {/* Priorizado */}
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1 text-[11px]">
+                        {/* Col 3: Prioridad Institucional (2 de 12 columnas) */}
+                        <div className="lg:col-span-2">
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px] flex items-center gap-1">
                             <Star className="w-3 h-3 text-amber-500 fill-amber-400" />
                             Prioridad <span className="text-amber-600">*</span>
                           </label>
@@ -4304,10 +4252,50 @@ export const JudicaturasView: React.FC = () => {
                           </select>
                         </div>
 
-                        {/* Fecha Inauguración */}
-                        <div>
+                        {/* Col 4: Fechas de Adecuaciones (Inicio y Fin) (2 de 12 columnas) */}
+                        <div className="lg:col-span-2">
                           <div className="flex items-center justify-between mb-1">
-                            <label className="font-bold text-slate-700 flex items-center gap-1 text-[11px]">
+                            <label className="font-bold text-slate-700 text-[11px] flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-indigo-700" />
+                              Adecuaciones <span className="text-rose-600">*</span>
+                            </label>
+                            {diasAdecuacionCalculados > 0 && (
+                              <span className="text-[9.5px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                {diasAdecuacionCalculados}d
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <input
+                              type="date"
+                              value={fechaInicioAdecuaciones}
+                              onChange={(e) => setFechaInicioAdecuaciones(e.target.value)}
+                              title="Inicio de adecuaciones"
+                              className={`w-full p-1.5 border rounded-lg focus:ring-2 focus:ring-blue-800 bg-white text-[11px] ${
+                                formErrors.fechaInicioAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                              }`}
+                            />
+                            <input
+                              type="date"
+                              value={fechaFinAdecuaciones}
+                              onChange={(e) => setFechaFinAdecuaciones(e.target.value)}
+                              title="Finalización de adecuaciones"
+                              className={`w-full p-1.5 border rounded-lg focus:ring-2 focus:ring-blue-800 bg-white text-[11px] ${
+                                formErrors.fechaFinAdecuaciones ? 'border-rose-500 bg-rose-50' : 'border-slate-300'
+                              }`}
+                            />
+                          </div>
+                          {(formErrors.fechaInicioAdecuaciones || formErrors.fechaFinAdecuaciones) && (
+                            <p className="text-[10px] text-rose-600 mt-0.5 font-semibold">
+                              {formErrors.fechaInicioAdecuaciones || formErrors.fechaFinAdecuaciones}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Col 5: Fecha Inauguración (2 de 12 columnas) */}
+                        <div className="lg:col-span-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-700 text-[11px] flex items-center gap-1">
                               <Calendar className="w-3 h-3 text-emerald-700" />
                               Inauguración
                             </label>
@@ -4325,399 +4313,504 @@ export const JudicaturasView: React.FC = () => {
                             type="date"
                             value={fechaInauguracion}
                             onChange={(e) => setFechaInauguracion(e.target.value)}
-                            className="w-full p-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-800"
+                            className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-800"
                           />
                         </div>
+
                       </div>
-
-                      {/* Observaciones Iniciales o Resumen si se edita */}
-                      {editingJudicatura ? (
-                        <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-[11px]">
-                          <div>
-                            <span className="font-bold text-slate-800 block">
-                              Acciones y Documentos Registrados
-                            </span>
-                            <span className="text-slate-500 text-[10px]">
-                              {(editingJudicatura.observaciones || []).length} acciones • {(editingJudicatura.documentos || []).length} documentos adjuntos
-                            </span>
-                          </div>
-                          <div className="flex gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setFormModalTab('observaciones')}
-                              className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 font-bold text-[10px] hover:bg-indigo-100 transition-colors cursor-pointer"
-                            >
-                              Ver Bitácora
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setFormModalTab('documentos')}
-                              className="px-2 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[10px] hover:bg-amber-100 transition-colors cursor-pointer"
-                            >
-                              Expediente
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
-                            <FileText className="w-3 h-3 text-slate-500" />
-                            Observaciones Iniciales (Acción #1 en Bitácora)
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={observacionesIniciales}
-                            onChange={(e) => setObservacionesIniciales(e.target.value)}
-                            placeholder="Ingrese los antecedentes o detalles iniciales del proyecto de inauguración..."
-                            className="w-full p-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
-                          />
-                        </div>
-                      )}
-
                     </div>
 
-                    {/* COLUMNA 2 (7 columnas): INFRAESTRUCTURA TIC Y CERTIFICACIÓN DE INSTALACIÓN */}
-                    <div className="lg:col-span-7 bg-white p-4 rounded-2xl border border-slate-200 space-y-3.5 shadow-2xs">
+                    {/* BANDA HORIZONTAL 2: MATRIZ HORIZONTAL DE INFRAESTRUCTURA TIC */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-2xs">
                       
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-1.5 border-b border-slate-200">
-                        <div>
-                          <span className="text-xs font-black text-slate-900 uppercase tracking-wider block">
-                            2. Infraestructura y Componentes Tecnológicos TIC
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <Monitor className="w-4 h-4 text-blue-900" />
+                            2. Infraestructura y Equipamiento Tecnológico TIC (Matriz Horizontal)
                           </span>
-                          <span className="text-[10.5px] text-slate-500">
-                            Estatus de inventario y condición de instalación física en sede.
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200 hidden md:inline">
+                            Inventario y Certificación en Sede
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-[10px] shrink-0">
-                          <span className="px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-900 border border-blue-200">
-                            Disponibles: <strong className="font-mono">{formComponentMetrics.disponibles}/4</strong>
+                          <span className="px-2.5 py-0.5 rounded-full font-bold bg-blue-50 text-blue-900 border border-blue-200">
+                            TIC Disponibles: <strong className="font-mono">{formComponentMetrics.disponibles}/4</strong>
                           </span>
-                          <span className="px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-900 border border-emerald-200">
+                          <span className="px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-900 border border-emerald-200">
                             Instalados en Sede: <strong className="font-mono">{formComponentMetrics.instalados}/4</strong>
                           </span>
                         </div>
                       </div>
 
+                      {/* Tabla Matriz Horizontal con los 4 componentes organizados en filas claras */}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-100/90 text-slate-700 text-[10.5px] uppercase font-black border-b border-slate-200 tracking-wider">
+                              <th className="py-2.5 px-3.5 w-[28%]">Componente Tecnológico TIC</th>
+                              <th className="py-2.5 px-3.5 w-[32%]">Estatus Operativo / Adquisición</th>
+                              <th className="py-2.5 px-3.5 w-[22%]">¿Instalado en Sede Judicial?</th>
+                              <th className="py-2.5 px-3.5 w-[18%] text-center">Condición Resultante</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            
+                            {/* 1. Equipo de Cómputo */}
+                            <tr className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3.5">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1.5 rounded-lg bg-blue-50 text-blue-900 border border-blue-200">
+                                    <Monitor className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-slate-900 block text-xs">
+                                      Equipo de Cómputo (PC)
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      Estaciones de trabajo y periféricos
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-estatus-computo"
+                                  value={estatusEquipoComputo}
+                                  onChange={(e) => handleComputoStatusChange(e.target.value as EstatusComputo)}
+                                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                                >
+                                  {COMPONENT_COMPUTO_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-instalado-computo"
+                                  value={equipoComputoInstalado}
+                                  onChange={(e) => handleComputoInstaladoChange(e.target.value as 'Si' | 'No')}
+                                  className={`w-full p-1.5 text-xs border rounded-lg font-bold focus:ring-2 focus:ring-blue-800 ${
+                                    equipoComputoInstalado === 'Si'
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                      : 'bg-white border-slate-300 text-slate-800'
+                                  }`}
+                                >
+                                  <option value="No">No (Sin instalar en Sede)</option>
+                                  <option value="Si">Si (Instalado en Sede)</option>
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5 text-center">
+                                <span className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                  equipoComputoInstalado === 'Si'
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : estatusEquipoComputo === 'Se cuenta con equipo'
+                                    ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300'
+                                }`}>
+                                  {equipoComputoInstalado === 'Si' ? '✓ Instalado' : estatusEquipoComputo === 'Se cuenta con equipo' ? 'En Inventario' : estatusEquipoComputo}
+                                </span>
+                              </td>
+                            </tr>
+
+                            {/* 2. Equipo de Audio */}
+                            <tr className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3.5">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1.5 rounded-lg bg-purple-50 text-purple-900 border border-purple-200">
+                                    <Volume2 className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-slate-900 block text-xs">
+                                      Equipo de Audio y Grabación
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      Consolas, micrófonos y cableado de sala
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-estatus-audio"
+                                  value={estatusEquipoAudio}
+                                  onChange={(e) => handleAudioStatusChange(e.target.value as EstatusAudio)}
+                                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                                >
+                                  {COMPONENT_AUDIO_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-instalado-audio"
+                                  value={equipoAudioInstalado}
+                                  onChange={(e) => handleAudioInstaladoChange(e.target.value as 'Si' | 'No')}
+                                  className={`w-full p-1.5 text-xs border rounded-lg font-bold focus:ring-2 focus:ring-blue-800 ${
+                                    equipoAudioInstalado === 'Si'
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                      : 'bg-white border-slate-300 text-slate-800'
+                                  }`}
+                                >
+                                  <option value="No">No (Sin instalar en Sede)</option>
+                                  <option value="Si">Si (Instalado en Sede)</option>
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5 text-center">
+                                <span className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                  equipoAudioInstalado === 'Si'
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : estatusEquipoAudio === 'Se cuenta con equipo'
+                                    ? 'bg-purple-100 text-purple-800 border-purple-300'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300'
+                                }`}>
+                                  {equipoAudioInstalado === 'Si' ? '✓ Instalado' : estatusEquipoAudio === 'Se cuenta con equipo' ? 'En Inventario' : estatusEquipoAudio}
+                                </span>
+                              </td>
+                            </tr>
+
+                            {/* 3. Cableado Estructurado */}
+                            <tr className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3.5">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1.5 rounded-lg bg-teal-50 text-teal-900 border border-teal-200">
+                                    <Network className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-slate-900 block text-xs">
+                                      Cableado Estructurado (Red)
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      Puntos Cat 6A, rack y switch institucional
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-estatus-red"
+                                  value={estatusCableadoEstructurado}
+                                  onChange={(e) => handleRedStatusChange(e.target.value as EstatusRed)}
+                                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                                >
+                                  {COMPONENT_RED_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-instalado-red"
+                                  value={cableadoEstructuradoInstalado}
+                                  onChange={(e) => handleRedInstaladoChange(e.target.value as 'Si' | 'No')}
+                                  className={`w-full p-1.5 text-xs border rounded-lg font-bold focus:ring-2 focus:ring-blue-800 ${
+                                    cableadoEstructuradoInstalado === 'Si'
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                      : 'bg-white border-slate-300 text-slate-800'
+                                  }`}
+                                >
+                                  <option value="No">No (Pendiente)</option>
+                                  <option value="Si">Si (Terminado en Sede)</option>
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5 text-center">
+                                <span className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                  cableadoEstructuradoInstalado === 'Si'
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300'
+                                }`}>
+                                  {cableadoEstructuradoInstalado === 'Si' ? '✓ Terminado' : estatusCableadoEstructurado}
+                                </span>
+                              </td>
+                            </tr>
+
+                            {/* 4. Enlace de Datos */}
+                            <tr className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3.5">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1.5 rounded-lg bg-cyan-50 text-cyan-900 border border-cyan-200">
+                                    <Wifi className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-slate-900 block text-xs">
+                                      Enlace de Datos
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      Conectividad WAN, fibra óptica o satelital
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-estatus-enlace"
+                                  value={estatusEnlaceDatos}
+                                  onChange={(e) => handleEnlaceStatusChange(e.target.value as EstatusEnlace)}
+                                  className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
+                                >
+                                  {COMPONENT_ENLACE_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5">
+                                <select
+                                  id="select-instalado-enlace"
+                                  value={enlaceDatosInstalado}
+                                  onChange={(e) => handleEnlaceInstaladoChange(e.target.value as 'Si' | 'No')}
+                                  className={`w-full p-1.5 text-xs border rounded-lg font-bold focus:ring-2 focus:ring-blue-800 ${
+                                    enlaceDatosInstalado === 'Si'
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                      : 'bg-white border-slate-300 text-slate-800'
+                                  }`}
+                                >
+                                  <option value="No">No (Sin enlace)</option>
+                                  <option value="Si">Si (Instalado / Operativo)</option>
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3.5 text-center">
+                                <span className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                  enlaceDatosInstalado === 'Si'
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300'
+                                }`}>
+                                  {enlaceDatosInstalado === 'Si' ? '✓ Operativo' : estatusEnlaceDatos}
+                                </span>
+                              </td>
+                            </tr>
+
+                          </tbody>
+                        </table>
+                      </div>
+
                       {/* Nota Aclaratoria Institucional */}
-                      <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 text-[10.5px] text-blue-950 flex items-start gap-2">
-                        <span className="font-black text-blue-800 shrink-0">ⓘ</span>
-                        <p>
-                          <strong>Aclaración Institucional:</strong> Si ya se cuenta con los equipos pero aún no están instalados físicamente en la judicatura, seleccione el estatus correspondiente (ej. <em>"Se cuenta con equipo"</em>) y en <strong>Instalado</strong> seleccione <strong>"No"</strong>.
-                        </p>
-                      </div>
-
-                      {/* Cuadrícula Horizontal 2x2 para los 4 Componentes */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        
-                        {/* 1. Equipo de Cómputo */}
-                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
-                          <div className="flex items-center justify-between">
-                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                              <Monitor className="w-3.5 h-3.5 text-blue-800" />
-                              Equipo de Cómputo (PC)
-                            </label>
-                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
-                              equipoComputoInstalado === 'Si'
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
-                            }`}>
-                              {equipoComputoInstalado === 'Si' ? '✓ Instalado en Sede' : 'Sin instalar'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus</span>
-                              <select
-                                id="select-estatus-computo"
-                                value={estatusEquipoComputo}
-                                onChange={(e) => handleComputoStatusChange(e.target.value as EstatusComputo)}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                {COMPONENT_COMPUTO_OPTIONS.map((opt) => (
-                                  <option key={opt} value={opt}>
-                                    {opt}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado en Sede?</span>
-                              <select
-                                id="select-instalado-computo"
-                                value={equipoComputoInstalado}
-                                onChange={(e) => handleComputoInstaladoChange(e.target.value as 'Si' | 'No')}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                <option value="No">No (Sin instalar)</option>
-                                <option value="Si">Si (Instalado)</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
-                            <span>¿Se cuenta con equipo?: <strong>{equipoComputo}</strong></span>
-                            <span className="font-mono text-slate-400">Estaciones y monitores</span>
-                          </div>
+                      <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-[11px] text-blue-950 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-blue-800">ⓘ</span>
+                          <p>
+                            <strong>Criterio Oficial:</strong> Si se cuenta con el equipo pero aún no está instalado físicamente en la judicatura, seleccione su estatus (ej. <em>"Se cuenta con equipo"</em>) y en <strong>Instalado</strong> marque <strong>"No"</strong>.
+                          </p>
                         </div>
-
-                        {/* 2. Equipo de Audio */}
-                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
-                          <div className="flex items-center justify-between">
-                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                              <Volume2 className="w-3.5 h-3.5 text-purple-800" />
-                              Equipo de Audio y Grabación
-                            </label>
-                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
-                              equipoAudioInstalado === 'Si'
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
-                            }`}>
-                              {equipoAudioInstalado === 'Si' ? '✓ Instalado en Sede' : 'Sin instalar'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus</span>
-                              <select
-                                id="select-estatus-audio"
-                                value={estatusEquipoAudio}
-                                onChange={(e) => handleAudioStatusChange(e.target.value as EstatusAudio)}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                {COMPONENT_AUDIO_OPTIONS.map((opt) => (
-                                  <option key={opt} value={opt}>
-                                    {opt}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado en Sede?</span>
-                              <select
-                                id="select-instalado-audio"
-                                value={equipoAudioInstalado}
-                                onChange={(e) => handleAudioInstaladoChange(e.target.value as 'Si' | 'No')}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                <option value="No">No (Sin instalar)</option>
-                                <option value="Si">Si (Instalado)</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
-                            <span>¿Se cuenta con equipo?: <strong>{equipoAudio}</strong></span>
-                            <span className="font-mono text-slate-400">Consolas y micrófonos</span>
-                          </div>
-                        </div>
-
-                        {/* 3. Cableado Estructurado */}
-                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
-                          <div className="flex items-center justify-between">
-                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                              <Network className="w-3.5 h-3.5 text-teal-800" />
-                              Cableado Estructurado (Red)
-                            </label>
-                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
-                              cableadoEstructuradoInstalado === 'Si'
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
-                            }`}>
-                              {cableadoEstructuradoInstalado === 'Si' ? '✓ Terminado en Sede' : 'Sin terminar'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus de Red</span>
-                              <select
-                                id="select-estatus-red"
-                                value={estatusCableadoEstructurado}
-                                onChange={(e) => handleRedStatusChange(e.target.value as EstatusRed)}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                {COMPONENT_RED_OPTIONS.map((opt) => (
-                                  <option key={opt} value={opt}>
-                                    {opt}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado / Terminado?</span>
-                              <select
-                                id="select-instalado-red"
-                                value={cableadoEstructuradoInstalado}
-                                onChange={(e) => handleRedInstaladoChange(e.target.value as 'Si' | 'No')}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                <option value="No">No (Pendiente)</option>
-                                <option value="Si">Si (Terminado)</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
-                            <span>¿Se cuenta con red?: <strong>{cableadoEstructurado}</strong></span>
-                            <span className="font-mono text-slate-400">Puntos Cat 6A y rack</span>
-                          </div>
-                        </div>
-
-                        {/* 4. Enlace de Datos */}
-                        <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-2xs">
-                          <div className="flex items-center justify-between">
-                            <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                              <Wifi className="w-3.5 h-3.5 text-cyan-800" />
-                              Enlace de Datos
-                            </label>
-                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${
-                              enlaceDatosInstalado === 'Si'
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
-                            }`}>
-                              {enlaceDatosInstalado === 'Si' ? '✓ Instalado / Operativo' : 'Sin enlace'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">Estatus de Enlace</span>
-                              <select
-                                id="select-estatus-enlace"
-                                value={estatusEnlaceDatos}
-                                onChange={(e) => handleEnlaceStatusChange(e.target.value as EstatusEnlace)}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                {COMPONENT_ENLACE_OPTIONS.map((opt) => (
-                                  <option key={opt} value={opt}>
-                                    {opt}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-600 mb-0.5">¿Instalado en Sede?</span>
-                              <select
-                                id="select-instalado-enlace"
-                                value={enlaceDatosInstalado}
-                                onChange={(e) => handleEnlaceInstaladoChange(e.target.value as 'Si' | 'No')}
-                                className="w-full p-1.5 text-xs border border-slate-300 rounded-lg bg-white font-black text-slate-800 focus:ring-2 focus:ring-blue-800"
-                              >
-                                <option value="No">No (Sin instalar)</option>
-                                <option value="Si">Si (Instalado)</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="text-[9.5px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200">
-                            <span>¿Se cuenta con enlace?: <strong>{enlaceDatos}</strong></span>
-                            <span className="font-mono text-slate-400">Fibra óptica o satelital</span>
-                          </div>
-                        </div>
-
-                      </div>
-
-                    </div>
-
-                  </div>
-                )}
-
-                {/* PESTAÑA DE OBSERVACIONES (EN EDICIÓN) */}
-                {formModalTab === 'observaciones' && editingJudicatura && (
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                      <div>
-                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                          <GitBranch className="w-4 h-4 text-blue-900" />
-                          Bitácora de Observaciones Registradas ({(editingJudicatura.observaciones || []).length})
+                        <span className="text-[10px] text-blue-800 font-mono shrink-0 hidden sm:inline">
+                          Norma GIT-OJ
                         </span>
-                        <p className="text-[11px] text-slate-500">
-                          Historial cronológico de intervenciones para {nombreJudicatura}
-                        </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setFormModalTab('datos')}
-                        className="px-2.5 py-1 text-xs font-bold text-blue-900 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 cursor-pointer"
-                      >
-                        ← Volver a Ficha
-                      </button>
                     </div>
 
-                    {/* Listado de observaciones existentes */}
-                    {editingJudicatura.observaciones && editingJudicatura.observaciones.length > 0 ? (
-                      <div className="max-h-60 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-200">
-                        {editingJudicatura.observaciones.map((obs) => (
-                          <div key={obs.id} className="pt-2.5 first:pt-0 text-[11px]">
-                            <div className="flex items-center justify-between font-bold text-slate-700">
-                              <span className="text-blue-900">Acción #{obs.numeroAccion}</span>
-                              <span className="text-slate-400 font-mono text-[10px]">{formatDateTime(obs.fecha)}</span>
-                            </div>
-                            <p className="text-slate-800 mt-0.5">{obs.texto}</p>
-                            <span className="text-[9.5px] text-slate-400 italic">Por: {obs.autor}</span>
-                          </div>
-                        ))}
+                    {/* BANDA HORIZONTAL 3: GESTIÓN SEPARADA DE OBSERVACIONES Y EXPEDIENTE */}
+                    <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-white border border-slate-200 text-blue-900 shadow-2xs">
+                          <Layers className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-800 text-xs block">
+                            Gestión Separada de Bitácora y Expediente Digital
+                          </span>
+                          <span className="text-slate-500 text-[10.5px]">
+                            {editingJudicatura
+                              ? `${(editingJudicatura.observaciones || []).length} acciones registradas • ${(editingJudicatura.documentos || []).length} documentos adjuntos`
+                              : 'Las notas de bitácora y expedientes se administran en pestañas dedicadas para mantener la ficha limpia y visible.'}
+                          </span>
+                        </div>
                       </div>
-                    ) : (
-                      <p className="text-[11px] text-slate-400 italic py-4 text-center">No hay observaciones previas registradas.</p>
-                    )}
 
-                    {/* Agregar nueva observación en modo edición */}
-                    <div className="pt-3 border-t border-slate-200 space-y-1.5">
-                      <label className="block font-bold text-slate-700 text-xs">
-                        Agregar Observación / Acción al Historial
-                      </label>
-                      <div className="flex gap-2">
-                        <textarea
-                          rows={2}
-                          value={nuevaObservacionModal}
-                          onChange={(e) => setNuevaObservacionModal(e.target.value)}
-                          placeholder="Escriba aquí los avances o detalles de la observación para esta judicatura..."
-                          className="w-full p-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
-                        />
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={handleAddObservationInEdit}
-                          disabled={isAddingObsInEdit || !nuevaObservacionModal.trim()}
-                          className="px-3.5 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded-xl self-end shrink-0 disabled:opacity-50 text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                          title="Añadir esta observación ahora al historial"
+                          onClick={() => setFormModalTab('observaciones')}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
                         >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>Añadir</span>
+                          <GitBranch className="w-3.5 h-3.5 text-indigo-700" />
+                          <span>
+                            {editingJudicatura
+                              ? `Ver Bitácora (${(editingJudicatura.observaciones || []).length})`
+                              : 'Observaciones Iniciales'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setFormModalTab('documentos')}
+                          className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                        >
+                          <Paperclip className="w-3.5 h-3.5 text-amber-700" />
+                          <span>
+                            {editingJudicatura
+                              ? `Expediente (${(editingJudicatura.documentos || []).length})`
+                              : 'Expediente Digital'}
+                          </span>
                         </button>
                       </div>
                     </div>
+
                   </div>
                 )}
 
-                {/* PESTAÑA DE EXPEDIENTE DIGITAL (EN EDICIÓN) */}
-                {formModalTab === 'documentos' && editingJudicatura && (
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                {/* ========================================================================= */}
+                {/* PESTAÑA 2: BITÁCORA DE OBSERVACIONES (VISTA DEDICADA SEPARADA)            */}
+                {/* ========================================================================= */}
+                {formModalTab === 'observaciones' && (
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                       <div>
                         <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                          <Paperclip className="w-4 h-4 text-blue-900" />
-                          Expediente Digital y Documentos Adjuntos ({(editingJudicatura.documentos || []).length})
+                          <GitBranch className="w-4 h-4 text-blue-900" />
+                          Bitácora de Observaciones Registradas
                         </span>
                         <p className="text-[11px] text-slate-500">
-                          Actas, certificaciones y dictámenes oficiales de {nombreJudicatura}
+                          {editingJudicatura
+                            ? `Historial cronológico de intervenciones para "${nombreJudicatura || 'Sede'}"`
+                            : 'Registro de antecedentes iniciales para la nueva judicatura'}
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => setFormModalTab('datos')}
-                        className="px-2.5 py-1 text-xs font-bold text-blue-900 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 cursor-pointer"
+                        className="px-3 py-1.5 text-xs font-bold text-blue-900 bg-blue-50 rounded-xl border border-blue-200 hover:bg-blue-100 cursor-pointer transition-colors"
                       >
-                        ← Volver a Ficha
+                        ← Volver a Ficha y Componentes TIC
                       </button>
                     </div>
 
-                    <JudicaturaDocumentsSection
-                      judicatura={editingJudicatura}
-                      canEdit={canEdit}
-                    />
+                    {/* Si está en modo edición */}
+                    {editingJudicatura ? (
+                      <div className="space-y-4">
+                        {editingJudicatura.observaciones && editingJudicatura.observaciones.length > 0 ? (
+                          <div className="max-h-72 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-200">
+                            {editingJudicatura.observaciones.map((obs) => (
+                              <div key={obs.id} className="pt-2.5 first:pt-0 text-[11px]">
+                                <div className="flex items-center justify-between font-bold text-slate-700">
+                                  <span className="text-blue-900">Acción #{obs.numeroAccion}</span>
+                                  <span className="text-slate-400 font-mono text-[10px]">{formatDateTime(obs.fecha)}</span>
+                                </div>
+                                <p className="text-slate-800 mt-0.5">{obs.texto}</p>
+                                <span className="text-[9.5px] text-slate-400 italic">Por: {obs.autor}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-400 italic py-6 text-center">
+                            No hay observaciones previas registradas en esta judicatura.
+                          </p>
+                        )}
+
+                        {/* Agregar nueva observación en edición */}
+                        <div className="pt-3 border-t border-slate-200 space-y-2">
+                          <label className="block font-bold text-slate-700 text-xs">
+                            Agregar Nueva Observación / Acción al Historial
+                          </label>
+                          <div className="flex gap-2">
+                            <textarea
+                              rows={2}
+                              value={nuevaObservacionModal}
+                              onChange={(e) => setNuevaObservacionModal(e.target.value)}
+                              placeholder="Escriba aquí los avances o detalles de la observación para esta judicatura..."
+                              className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddObservationInEdit}
+                              disabled={isAddingObsInEdit || !nuevaObservacionModal.trim()}
+                              className="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded-xl self-end shrink-0 disabled:opacity-50 text-xs flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                              title="Añadir esta observación ahora al historial"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>Añadir</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Si está creando una Nueva Judicatura */
+                      <div className="space-y-4">
+                        <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200 text-xs text-blue-950">
+                          <p className="font-bold mb-1">
+                            Observación Inicial del Proyecto de Creación / Inauguración
+                          </p>
+                          <p className="text-[11px] text-blue-900">
+                            Esta nota se registrará de forma automática como la <strong>Acción #1 en la Bitácora Oficial</strong> de la judicatura con fecha, hora y su usuario responsable.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1.5 text-xs flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-blue-900" />
+                            Detalle de Observaciones Iniciales
+                          </label>
+                          <textarea
+                            rows={5}
+                            value={observacionesIniciales}
+                            onChange={(e) => setObservacionesIniciales(e.target.value)}
+                            placeholder="Ingrese los antecedentes, acuerdos de Corte Suprema de Justicia, requerimientos especiales o justificación de la nueva sede judicial..."
+                            className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-800 bg-white text-xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* PESTAÑA 3: EXPEDIENTE DIGITAL Y DOCUMENTOS (VISTA DEDICADA SEPARADA)      */}
+                {/* ========================================================================= */}
+                {formModalTab === 'documentos' && (
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Paperclip className="w-4 h-4 text-blue-900" />
+                          Expediente Digital y Documentos Adjuntos
+                        </span>
+                        <p className="text-[11px] text-slate-500">
+                          {editingJudicatura
+                            ? `Actas, certificaciones y dictámenes oficiales de "${nombreJudicatura || 'Sede'}"`
+                            : 'Digitalización y resguardo de expedientes para la sede'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormModalTab('datos')}
+                        className="px-3 py-1.5 text-xs font-bold text-blue-900 bg-blue-50 rounded-xl border border-blue-200 hover:bg-blue-100 cursor-pointer transition-colors"
+                      >
+                        ← Volver a Ficha y Componentes TIC
+                      </button>
+                    </div>
+
+                    {editingJudicatura ? (
+                      <JudicaturaDocumentsSection
+                        judicatura={editingJudicatura}
+                        canEdit={canEdit}
+                      />
+                    ) : (
+                      <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-3">
+                        <div className="w-12 h-12 mx-auto rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+                          <Paperclip className="w-6 h-6" />
+                        </div>
+                        <h3 className="font-bold text-slate-800 text-sm">
+                          Expediente Digital de Nueva Judicatura
+                        </h3>
+                        <p className="text-slate-500 text-xs max-w-md mx-auto">
+                          Para adjuntar acuerdos de creación, planos de red o certificaciones técnicas a esta judicatura, guarde primero la ficha técnica. Una vez creada la sede, podrá subir y clasificar todos los documentos en su expediente digital.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setFormModalTab('datos')}
+                          className="px-4 py-2 rounded-xl bg-blue-900 text-white font-bold text-xs hover:bg-blue-800 cursor-pointer shadow-xs"
+                        >
+                          Completar Datos y Guardar
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

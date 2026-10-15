@@ -276,3 +276,63 @@ export function formatFileSize(bytes?: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * Normaliza valores de Forma 56 (F56-e y F56) para validación de unicidad.
+ * Retorna string vacío para valores no representativos (vacíos, N/A, S/N, 0, etc.)
+ */
+export function normalizeForma56(val?: string | null): string {
+  if (!val) return '';
+  const clean = val.trim().toLowerCase();
+  if (
+    clean === '' ||
+    clean === '0' ||
+    clean === '-' ||
+    clean === '--' ||
+    clean === 'n/a' ||
+    clean === 'na' ||
+    clean === 's/n' ||
+    clean === 'sn' ||
+    clean === 'sin f56' ||
+    clean === 'sin f56e' ||
+    clean === 'sin f56-e'
+  ) {
+    return '';
+  }
+  return clean;
+}
+
+/**
+ * Compara dos valores de Forma 56 para detectar si corresponden al mismo documento.
+ * Reconoce coincidencias exactas, variaciones con ceros a la izquierda y formatos con año.
+ */
+export function isForma56Match(valA?: string | null, valB?: string | null): boolean {
+  const normA = normalizeForma56(valA);
+  const normB = normalizeForma56(valB);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+
+  // Si ambos son puramente numéricos: ej. "000123" y "123" o "000001" y "1"
+  const digitsA = normA.replace(/\D/g, '');
+  const digitsB = normB.replace(/\D/g, '');
+  if (/^\d+$/.test(normA) && /^\d+$/.test(normB)) {
+    if (digitsA && digitsB && parseInt(digitsA, 10) > 0 && parseInt(digitsA, 10) === parseInt(digitsB, 10)) {
+      return true;
+    }
+  }
+
+  // Si tienen formato con guión/año ej. "000012-2026" y "12-2026" o "000001-2026" y "1-2026"
+  const partsA = normA.split(/[-/]/);
+  const partsB = normB.split(/[-/]/);
+  if (partsA.length === 2 && partsB.length === 2) {
+    const numA = parseInt(partsA[0].replace(/\D/g, ''), 10);
+    const numB = parseInt(partsB[0].replace(/\D/g, ''), 10);
+    const yearA = partsA[1].trim();
+    const yearB = partsB[1].trim();
+    if (!isNaN(numA) && !isNaN(numB) && numA > 0 && numA === numB && yearA === yearB) {
+      return true;
+    }
+  }
+
+  return false;
+}

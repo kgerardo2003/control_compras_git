@@ -1349,6 +1349,8 @@ export const DashboardView: React.FC = () => {
       NOG: p.nog || '',
       'F56-e': p.f56e || '',
       F56: p.f56 || '',
+      'Renglón Presupuestario': p.renglonPresupuestario || '',
+      'Nombre del Renglón': p.nombreRenglon || '',
       'Descripción': p.descripcion || '',
       'Área Solicitante': p.areaSolicitante || p.dependenciaSolicitante || '',
       'Monto (GTQ)': p.monto || 0,

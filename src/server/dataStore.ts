@@ -221,16 +221,7 @@ export function initDataStore(): DataStoreState {
         }
       }
 
-      // Sincronizar adquisiciones que tengan nombres previos de Soporte Remoto
-      if (Array.isArray(storeMemory.purchases)) {
-        storeMemory.purchases = storeMemory.purchases.map(p => {
-          const a = (p.areaSolicitante || '').toLowerCase().trim();
-          if (a === 'soporte técnico remoto' || a === 'soporte tecnico remoto') {
-            return { ...p, areaSolicitante: 'Soporte Remoto' };
-          }
-          return p;
-        });
-      }
+      // Área solicitante y estatus se mantienen tal cual están registrados en el sistema
 
       // Normalizar componentes e instalación en judicaturas almacenadas
       if (Array.isArray(storeMemory.judicaturas)) {
@@ -344,17 +335,35 @@ export function savePurchase(purchase: PurchaseRecord): PurchaseRecord {
 
 export function saveBatchPurchases(newPurchases: PurchaseRecord[], replaceAll = false): PurchaseRecord[] {
   const store = initDataStore();
+  const existingMap = new Map(store.purchases.map(p => [p.id, p]));
+  
+  // Garantizar que los documentos adjuntos físicos/digitales y movimientos previos no se pierdan
+  const safePurchases = newPurchases.map(p => {
+    const prev = existingMap.get(p.id);
+    if (prev) {
+      return {
+        ...prev,
+        ...p,
+        f56Documento: p.f56Documento || prev.f56Documento,
+        movimientos: (p.movimientos && p.movimientos.length > 0) ? p.movimientos : (prev.movimientos || []),
+        historialEstatus: (p.historialEstatus && p.historialEstatus.length > 0) ? p.historialEstatus : (prev.historialEstatus || []),
+        bitacoraCambios: (p.bitacoraCambios && p.bitacoraCambios.length > 0) ? p.bitacoraCambios : (prev.bitacoraCambios || [])
+      };
+    }
+    return p;
+  });
+
   if (replaceAll) {
-    store.purchases = [...newPurchases];
+    store.purchases = [...safePurchases];
     store.deletedPurchaseIds = []; // Limpiar historial de eliminados al reemplazar todo el conjunto
   } else {
     // Si alguno de los registros que se están importando tenía un ID en el historial de eliminados, reactivarlo
-    const newIdSet = new Set(newPurchases.map(p => p.id));
+    const newIdSet = new Set(safePurchases.map(p => p.id));
     if (store.deletedPurchaseIds && store.deletedPurchaseIds.length > 0) {
       store.deletedPurchaseIds = store.deletedPurchaseIds.filter(id => !newIdSet.has(id));
     }
     const remaining = store.purchases.filter(p => !newIdSet.has(p.id));
-    store.purchases = [...newPurchases, ...remaining];
+    store.purchases = [...safePurchases, ...remaining];
   }
   store.version = (store.version || 1) + 1;
   store.isPurchasesInitialized = true;

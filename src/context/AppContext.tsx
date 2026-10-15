@@ -53,6 +53,7 @@ import {
   INITIAL_BUDGET_MODIFICATIONS 
 } from '../data/initialBudgetData';
 import { calculateBudgetAvailability } from '../utils/budgetCalculations';
+import { normalizeForma56, isForma56Match } from '../utils/formatters';
 import { SYSTEM_THEMES, ThemeConfig } from '../utils/themeConfig';
 import { ensureValidDocument } from '../utils/documentUtils';
 import { buildUserWelcomeEmail } from '../utils/userEmailTemplate';
@@ -187,7 +188,7 @@ interface AppContextType {
 
   // Compras CRUD
   addPurchase: (data: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>) => PurchaseRecord;
-  importPurchases: (records: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>[], replaceAll?: boolean) => Promise<{ count: number }>;
+  importPurchases: (records: (Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string })[], replaceAll?: boolean) => Promise<{ count: number }>;
   updatePurchase: (id: string, data: Partial<PurchaseRecord>) => void;
   recordPurchaseMilestone: (
     purchaseId: string, 
@@ -2764,6 +2765,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    // Validar unicidad de Forma 56-e: no debe existir en otro registro
+    const cleanF56e = normalizeForma56(data.f56e);
+    if (cleanF56e) {
+      const duplicateF56e = purchases.find(p => isForma56Match(data.f56e, p.f56e) || isForma56Match(data.f56e, p.f56));
+      if (duplicateF56e) {
+        showToast({
+          type: 'error',
+          title: '⚠️ Forma 56-e ya Existe',
+          message: `La Forma 56-e "${data.f56e}" ya existe registrada en la adquisición (${duplicateF56e.nog ? `NOG: ${duplicateF56e.nog}` : duplicateF56e.id}). No se permite grabarla porque ya existe.`,
+          duration: 5000
+        });
+        throw new Error(`La Forma 56-e "${data.f56e}" ya existe en el sistema`);
+      }
+    }
+
+    // Validar unicidad de Formulario F56 físico: no debe existir en otro registro
+    const cleanF56 = normalizeForma56(data.f56);
+    if (cleanF56) {
+      const duplicateF56 = purchases.find(p => isForma56Match(data.f56, p.f56) || isForma56Match(data.f56, p.f56e));
+      if (duplicateF56) {
+        showToast({
+          type: 'error',
+          title: '⚠️ Formulario F56 ya Existe',
+          message: `El Formulario F56 "${data.f56}" ya existe registrado en la adquisición (${duplicateF56.nog ? `NOG: ${duplicateF56.nog}` : duplicateF56.id}). No se permite grabarlo porque ya existe.`,
+          duration: 5000
+        });
+        throw new Error(`El Formulario F56 "${data.f56}" ya existe en el sistema`);
+      }
+    }
+
     // Determinar ID único sin colisiones analizando todos los IDs existentes y el historial de eliminados
     let maxNum = 0;
     const allKnown = [...purchases, ...Array.from(deletedPurchaseIdsRef.current).map(id => ({ id }))];
@@ -2933,7 +2964,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const importPurchases = async (
-    records: Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'>[],
+    records: (Omit<PurchaseRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string })[],
     replaceAll: boolean = false
   ): Promise<{ count: number }> => {
     if (!records || records.length === 0) {
@@ -2950,6 +2981,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
     }
 
+    // Mapas de indexación de compras existentes para matching inteligente y preservación de documentos
+    const existingById = new Map<string, PurchaseRecord>();
+    const existingByF56e = new Map<string, PurchaseRecord>();
+    const existingByNog = new Map<string, PurchaseRecord>();
+
+    purchases.forEach(p => {
+      if (p.id) existingById.set(p.id, p);
+      if (p.f56e && p.f56e.trim()) existingByF56e.set(p.f56e.toLowerCase().trim(), p);
+      const cleanNog = (p.nog || '').trim().replace(/\D/g, '');
+      if (cleanNog && cleanNog !== '0') existingByNog.set(cleanNog, p);
+    });
+
     // Determinar secuencia máxima para IDs sin colisiones analizando registros y eliminados
     let maxNum = 0;
     const baseList = replaceAll ? [] : purchases;
@@ -2962,40 +3005,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    const newPurchases: PurchaseRecord[] = [];
-    const usedIds = new Set(baseList.map(p => p.id));
+    const usedIds = new Set(purchases.map(p => p.id));
+    const processedPurchases: PurchaseRecord[] = [];
+    const matchedExistingIds = new Set<string>();
 
     records.forEach((rec, idx) => {
-      let seq = maxNum + idx + 1;
-      let candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
-      while (usedIds.has(candidateId) || deletedPurchaseIdsRef.current.has(candidateId)) {
-        seq++;
-        candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
+      // Buscar coincidencia en compras existentes por ID, F56-e o NOG
+      let existing: PurchaseRecord | undefined = undefined;
+      if (rec.id && existingById.has(rec.id)) {
+        existing = existingById.get(rec.id);
+      } else if (rec.f56e && existingByF56e.has(rec.f56e.toLowerCase().trim())) {
+        existing = existingByF56e.get(rec.f56e.toLowerCase().trim());
+      } else {
+        const cleanRecNog = (rec.nog || '').trim().replace(/\D/g, '');
+        if (cleanRecNog && cleanRecNog !== '0' && existingByNog.has(cleanRecNog)) {
+          existing = existingByNog.get(cleanRecNog);
+        }
       }
-      usedIds.add(candidateId);
 
-      // Desmarcar de eliminados si estuviera presente
-      deletedPurchaseIdsRef.current.delete(candidateId);
+      if (existing) {
+        // FUSIÓN INTELIGENTE: Preservar intactos el expediente F56 digitalizado, movimientos y trazabilidad
+        const merged: PurchaseRecord = {
+          ...existing,
+          ...rec,
+          id: existing.id,
+          creadoPor: existing.creadoPor || creator,
+          fechaCreacion: existing.fechaCreacion || nowIso,
+          modificadoPor: creator,
+          fechaModificacion: nowIso,
+          // CRÍTICO: Preservar expediente digital F56 y documentos adjuntos de la bitácora de movimientos
+          f56Documento: rec.f56Documento || existing.f56Documento,
+          movimientos: (rec.movimientos && rec.movimientos.length > 0) ? rec.movimientos : (existing.movimientos || []),
+          historialEstatus: (rec.historialEstatus && rec.historialEstatus.length > 0) ? rec.historialEstatus : (existing.historialEstatus || []),
+          bitacoraCambios: (existing.bitacoraCambios && existing.bitacoraCambios.length > 0) ? existing.bitacoraCambios : [],
+          // Renglón presupuestario: si vino en la importación se actualiza, si vino vacío se preserva el anterior
+          renglonPresupuestario: rec.renglonPresupuestario || existing.renglonPresupuestario,
+          nombreRenglon: rec.nombreRenglon || existing.nombreRenglon,
+          grupoPresupuestario: rec.grupoPresupuestario || existing.grupoPresupuestario,
+          // Preservar estatus financiero y fecha de pago
+          estadoPago: rec.estadoPago || existing.estadoPago || 'comprometido',
+          montoPagado: rec.montoPagado !== undefined ? rec.montoPagado : existing.montoPagado,
+          fechaPago: rec.fechaPago || existing.fechaPago,
+          // Preservar área y estatus si venían vacíos
+          areaSolicitante: rec.areaSolicitante || existing.areaSolicitante,
+          estatusEvento: rec.estatusEvento || existing.estatusEvento,
+        };
+        processedPurchases.push(merged);
+        matchedExistingIds.add(existing.id);
+        deletedPurchaseIdsRef.current.delete(existing.id);
+      } else {
+        // Nuevo registro
+        let candidateId = (rec.id && !usedIds.has(rec.id)) ? rec.id : '';
+        if (!candidateId) {
+          let seq = maxNum + idx + 1;
+          candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
+          while (usedIds.has(candidateId) || deletedPurchaseIdsRef.current.has(candidateId)) {
+            seq++;
+            candidateId = `pur-2026-${String(seq).padStart(3, '0')}`;
+          }
+        }
+        usedIds.add(candidateId);
+        deletedPurchaseIdsRef.current.delete(candidateId);
 
-      newPurchases.push({
-        ...rec,
-        id: candidateId,
-        creadoPor: creator,
-        fechaCreacion: nowIso,
-      });
+        processedPurchases.push({
+          ...rec,
+          id: candidateId,
+          creadoPor: creator,
+          fechaCreacion: nowIso,
+        });
+      }
     });
 
     try {
       safeSetLocalStorage('OJ_DELETED_PURCHASES_IDS', JSON.stringify(Array.from(deletedPurchaseIdsRef.current)));
     } catch {}
 
-    const updatedList = replaceAll ? newPurchases : [...newPurchases, ...purchases];
+    let updatedList: PurchaseRecord[];
+    if (replaceAll) {
+      updatedList = processedPurchases;
+    } else {
+      const untouchedExisting = purchases.filter(p => !matchedExistingIds.has(p.id));
+      updatedList = [...processedPurchases, ...untouchedExisting];
+    }
+
     setPurchases(updatedList);
     try {
       safeSetLocalStorage(STORAGE_KEYS.PURCHASES, JSON.stringify(updatedList));
     } catch {}
 
-    const newIds = newPurchases.map(p => p.id);
+    const newIds = processedPurchases.map(p => p.id);
     setRecentlyImportedIds(newIds);
     try {
       safeSetLocalStorage('OJ_RECENTLY_IMPORTED_IDS', JSON.stringify(newIds));
@@ -3009,7 +3107,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const resp = await fetch('/api/db/purchases/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purchases: newPurchases, replaceAll })
+        body: JSON.stringify({ purchases: updatedList, replaceAll })
       });
       if (!resp.ok) {
         console.warn("Aviso servidor central al importar compras:", await resp.text());
@@ -3020,7 +3118,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Guardar en Firestore masivamente por lotes atómicos (esperar confirmación)
     try {
-      const res = await saveBatchPurchasesToFirestore(newPurchases);
+      const res = await saveBatchPurchasesToFirestore(updatedList);
       if (res.success) {
         console.log(`Carga masiva de ${res.count} registros completada en Firestore.`);
       } else {
@@ -3033,24 +3131,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit(
       'IMPORTAR_DATOS',
       'Compras',
-      `Importación masiva de ${newPurchases.length} adquisiciones desde archivo Excel/CSV (${replaceAll ? 'Reemplazo total' : 'Adición a existentes'}).`
+      `Importación masiva de ${processedPurchases.length} adquisiciones desde archivo Excel/CSV (${replaceAll ? 'Reemplazo total' : 'Fusión inteligente/Adición'}).`
     );
 
     addNotification({
       tipo: 'exito',
       titulo: 'Importación de Adquisiciones Completada',
-      mensaje: `Se procesaron e integraron ${newPurchases.length} adquisiciones al sistema de forma exitosa.`,
+      mensaje: `Se procesaron e integraron ${processedPurchases.length} adquisiciones al sistema de forma exitosa.`,
       categoria: 'importacion',
     });
 
     showToast({
       type: 'success',
       title: 'Importación Exitosa',
-      message: `Se importaron ${newPurchases.length} adquisiciones desde el archivo correctamente.`,
+      message: `Se importaron ${processedPurchases.length} adquisiciones desde el archivo correctamente.`,
       duration: 5000,
     });
 
-    return { count: newPurchases.length };
+    return { count: processedPurchases.length };
   };
 
   const updatePurchase = (id: string, data: Partial<PurchaseRecord>) => {
@@ -3076,6 +3174,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             duration: 4500
           });
           throw new Error('NOG Registrado o ya Existe');
+        }
+      }
+    }
+
+    // Validar duplicidad de Forma 56-e si se está modificando
+    if (data.f56e !== undefined) {
+      const cleanF56e = normalizeForma56(data.f56e);
+      if (cleanF56e) {
+        const duplicateF56e = purchases.find(p => {
+          if (p.id === id) return false;
+          return isForma56Match(data.f56e, p.f56e) || isForma56Match(data.f56e, p.f56);
+        });
+        if (duplicateF56e) {
+          showToast({
+            type: 'error',
+            title: '⚠️ Forma 56-e ya Existe',
+            message: `La Forma 56-e "${data.f56e}" ya existe registrada en la adquisición (${duplicateF56e.nog ? `NOG: ${duplicateF56e.nog}` : duplicateF56e.id}). No se permite grabarla porque ya existe.`,
+            duration: 5000
+          });
+          throw new Error(`La Forma 56-e "${data.f56e}" ya existe en el sistema`);
+        }
+      }
+    }
+
+    // Validar duplicidad de Formulario F56 si se está modificando
+    if (data.f56 !== undefined) {
+      const cleanF56 = normalizeForma56(data.f56);
+      if (cleanF56) {
+        const duplicateF56 = purchases.find(p => {
+          if (p.id === id) return false;
+          return isForma56Match(data.f56, p.f56) || isForma56Match(data.f56, p.f56e);
+        });
+        if (duplicateF56) {
+          showToast({
+            type: 'error',
+            title: '⚠️ Formulario F56 ya Existe',
+            message: `El Formulario F56 "${data.f56}" ya existe registrado en la adquisición (${duplicateF56.nog ? `NOG: ${duplicateF56.nog}` : duplicateF56.id}). No se permite grabarlo porque ya existe.`,
+            duration: 5000
+          });
+          throw new Error(`El Formulario F56 "${data.f56}" ya existe en el sistema`);
         }
       }
     }
