@@ -720,12 +720,12 @@ export const PurchaseFormModal: React.FC = () => {
                   : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
               }`}
             >
-              <FolderTree className="w-3.5 h-3.5" />
-              <span>Historial de Acciones (Árbol)</span>
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>Árbol de Observaciones</span>
               <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                 modalTab === 'arbol' ? 'bg-slate-900 text-amber-300' : 'bg-slate-700 text-slate-300'
               }`}>
-                {purchaseToEdit?.bitacoraCambios?.length ? `${purchaseToEdit.bitacoraCambios.length + 5} registros` : '6 fases'}
+                {purchaseToEdit?.observacionesList?.length || (purchaseToEdit?.observaciones ? 1 : 0)}
               </span>
             </button>
           </div>
@@ -738,7 +738,7 @@ export const PurchaseFormModal: React.FC = () => {
                 className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer text-xs font-semibold"
               >
                 <GitBranch className="w-3.5 h-3.5" />
-                <span>Ver Árbol de Acciones</span>
+                <span>Ver Árbol de Observaciones</span>
               </button>
             ) : (
               <button
@@ -747,24 +747,24 @@ export const PurchaseFormModal: React.FC = () => {
                 className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer text-xs font-semibold"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Volver a la Ficha</span>
+                <span>Volver al Formulario</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Contenido del Modal: Pestaña Árbol de Acciones vs Formulario */}
+        {/* Contenido del Modal: Pestaña Árbol de Observaciones vs Formulario */}
         {modalTab === 'arbol' ? (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70">
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-300/40 flex items-center justify-center text-amber-600 shrink-0">
-                  <FolderTree className="w-4 h-4" />
+                  <GitBranch className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-900">Historial y Registro de Acciones del Expediente</h3>
+                  <h3 className="text-xs font-bold text-slate-900">Árbol Cronológico de Observaciones del Expediente</h3>
                   <p className="text-[11px] text-slate-500">
-                    Registro estructurado por fases, hitos completados y bitácora auditada en tiempo real.
+                    Registro cronológico ordenado del más reciente al más antiguo con notas técnicas y resoluciones.
                   </p>
                 </div>
               </div>

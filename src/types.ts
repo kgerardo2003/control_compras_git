@@ -126,6 +126,21 @@ export interface PurchaseRecord {
   diasAtraso?: number; // Días de atraso en el evento (para semáforos de cumplimiento)
   bitacoraCambios?: PurchaseChangeLogEntry[]; // Bitácora de cambios y auditoría de la ficha
   movimientos?: PurchaseMovement[]; // Registro cronológico en árbol de movimientos y observaciones con documentos adjuntos
+  observacionesList?: PurchaseObservacion[]; // Registro cronológico en forma de árbol de observaciones (del más reciente al más antiguo)
+}
+
+export interface PurchaseObservacion {
+  id: string;
+  numeroAccion: number; // Enumeración secuencial (#1, #2, #3...)
+  fecha: string; // YYYY-MM-DD
+  hora?: string; // HH:mm:ss o HH:mm
+  fechaHoraIso: string; // Timestamp ISO completo para ordenación cronológica inversa estricta (más reciente al más antiguo)
+  autor: string; // Nombre del funcionario o usuario que registra
+  rolUsuario?: string; // Rol del usuario en el sistema
+  area?: string; // Área o dependencia responsable
+  titulo?: string; // Ej: "Observación Técnica", "Anotación de Seguimiento", "Aclaración Presupuestaria"
+  texto: string; // Detalle u observación registrada
+  documento?: AttachedDocument; // Documento digital adjunto opcional
 }
 
 export interface PurchaseMovement {

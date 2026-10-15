@@ -26,7 +26,8 @@ import {
   JudicaturaObservacion,
   JudicaturaDocumento,
   ServicioContratado,
-  PurchaseMovement
+  PurchaseMovement,
+  PurchaseObservacion
 } from '../types';
 import { 
   getOrCreateTotpSecret, 
@@ -64,7 +65,7 @@ import {
   detectAutomaticEventsOnUpdate, 
   getPurchaseTimeline 
 } from '../utils/timelineUtils';
-import { getPurchaseMovements } from '../utils/movementUtils';
+import { getPurchaseMovements, getPurchaseObservaciones } from '../utils/movementUtils';
 import { 
   db,
   PURCHASES_COLLECTION, 
@@ -213,6 +214,19 @@ interface AppContextType {
     movementId: string, 
     document: AttachedDocument
   ) => void;
+  addPurchaseObservation: (
+    purchaseId: string,
+    data: {
+      texto: string;
+      titulo?: string;
+      autor?: string;
+      fecha?: string;
+      hora?: string;
+      area?: string;
+      documento?: AttachedDocument;
+    }
+  ) => void;
+  deletePurchaseObservation: (purchaseId: string, observationId: string) => void;
   deletePurchase: (id: string) => void;
   deletePurchases: (ids: string[]) => Promise<{ count: number }>;
   clearAllPurchases: () => Promise<{ count: number }>;
@@ -3550,6 +3564,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const addPurchaseObservation = (
+    purchaseId: string,
+    data: {
+      texto: string;
+      titulo?: string;
+      autor?: string;
+      fecha?: string;
+      hora?: string;
+      area?: string;
+      documento?: AttachedDocument;
+    }
+  ) => {
+    const prev = purchases.find(p => p.id === purchaseId);
+    if (!prev) return;
+
+    const existingObs = getPurchaseObservaciones(prev);
+    const nowIso = new Date().toISOString();
+    const nowFecha = nowIso.slice(0, 10);
+    const nowHora = nowIso.slice(11, 16);
+
+    const nextNumero = existingObs.length + 1;
+    const newObs: PurchaseObservacion = {
+      id: `obs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      numeroAccion: nextNumero,
+      fecha: data.fecha || nowFecha,
+      hora: data.hora || nowHora,
+      fechaHoraIso: data.fecha && data.hora ? `${data.fecha}T${data.hora}:00Z` : nowIso,
+      autor: data.autor || (currentUser ? currentUser.nombreCompleto : 'Operador GIT'),
+      rolUsuario: currentUser?.rol || 'Operador',
+      area: data.area || prev.areaSolicitante || 'Gerencia de Informática',
+      titulo: data.titulo?.trim() || 'Observación Técnica',
+      texto: data.texto.trim(),
+      documento: data.documento
+    };
+
+    // Ordenar de más reciente a más antiguo (cronología inversa)
+    const updatedList = [newObs, ...existingObs].sort((a, b) => {
+      const timeA = new Date(a.fechaHoraIso || `${a.fecha}T${a.hora || '00:00'}:00`).getTime();
+      const timeB = new Date(b.fechaHoraIso || `${b.fecha}T${b.hora || '00:00'}:00`).getTime();
+      return timeB - timeA;
+    });
+
+    const patch: Partial<PurchaseRecord> = {
+      observacionesList: updatedList,
+      observaciones: data.texto.trim()
+    };
+
+    updatePurchase(purchaseId, patch);
+
+    showToast({
+      type: 'success',
+      title: 'Observación Registrada en el Árbol',
+      message: `Acción #${nextNumero} incorporada exitosamente al árbol cronológico del expediente.`
+    });
+  };
+
+  const deletePurchaseObservation = (purchaseId: string, observationId: string) => {
+    const prev = purchases.find(p => p.id === purchaseId);
+    if (!prev) return;
+
+    const existingObs = getPurchaseObservaciones(prev);
+    const updatedList = existingObs.filter(o => o.id !== observationId);
+
+    updatePurchase(purchaseId, {
+      observacionesList: updatedList,
+      observaciones: updatedList.length > 0 ? updatedList[0].texto : ''
+    });
+
+    showToast({
+      type: 'info',
+      title: 'Observación Eliminada',
+      message: 'Se retiró la observación del árbol cronológico.'
+    });
+  };
+
   const deletePurchase = (id: string) => {
     const prev = purchases.find(p => p.id === id);
     const nogText = prev ? `NOG ${prev.nog}` : `registro ID ${id}`;
@@ -5838,6 +5927,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPurchaseMovement,
         deletePurchaseMovement,
         attachDocumentToMovement,
+        addPurchaseObservation,
+        deletePurchaseObservation,
         deletePurchase,
         deletePurchases,
         clearAllPurchases,

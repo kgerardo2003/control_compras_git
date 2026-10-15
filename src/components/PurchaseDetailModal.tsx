@@ -25,6 +25,7 @@ import { DocumentPreview } from './DocumentPreview';
 import { downloadDocumentFile } from '../utils/documentUtils';
 import { PurchaseBitacoraView } from './PurchaseBitacoraView';
 import { PurchaseActionTree } from './PurchaseActionTree';
+import { getPurchaseObservaciones } from '../utils/movementUtils';
 import { getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { History } from 'lucide-react';
 import { canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
@@ -129,6 +130,10 @@ export const PurchaseDetailModal: React.FC = () => {
   const badgeClass = STATUS_BADGE_CLASSES[selectedPurchase.estatusEvento] || 'bg-slate-100 text-slate-700';
   const modalidadLCE = getModalidadCompraByMonto(selectedPurchase.monto, selectedPurchase.modalidadCompra);
 
+  const observaciones = React.useMemo(() => {
+    return getPurchaseObservaciones(selectedPurchase);
+  }, [selectedPurchase?.observacionesList, selectedPurchase?.movimientos, selectedPurchase?.observaciones, selectedPurchase]);
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
@@ -204,9 +209,9 @@ export const PurchaseDetailModal: React.FC = () => {
                 }`}
               >
                 <GitBranch className="w-3.5 h-3.5" />
-                <span>Árbol de Movimientos y Acciones</span>
+                <span>Árbol de Observaciones</span>
                 <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-700 text-white">
-                  {selectedPurchase.movimientos?.length || 'Árbol'}
+                  {observaciones.length}
                 </span>
               </button>
 
@@ -303,7 +308,7 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Vista: Árbol Cronológico de Movimientos y Acciones */}
+            {/* Vista: Árbol Cronológico de Observaciones */}
             {activeTab === 'arbol' && (
               <div className="pt-1 space-y-3">
                 <div className="bg-gradient-to-r from-amber-900 via-amber-800 to-slate-900 text-white p-3.5 rounded-xl border border-amber-800 shadow-xs flex items-center justify-between gap-3">
@@ -313,10 +318,10 @@ export const PurchaseDetailModal: React.FC = () => {
                     </div>
                     <div>
                       <h4 className="text-xs sm:text-sm font-bold text-white">
-                        Árbol de Movimientos y Acciones de la Compra
+                        Árbol Cronológico de Observaciones del Expediente
                       </h4>
                       <p className="text-[11px] text-amber-200/80">
-                        NOG: <span className="font-mono font-bold text-white">{selectedPurchase.nog}</span> • F56-e: <span className="font-mono font-bold text-white">{selectedPurchase.f56e}</span>
+                        NOG: <span className="font-mono font-bold text-white">{selectedPurchase.nog}</span> • F56-e: <span className="font-mono font-bold text-white">{selectedPurchase.f56e}</span> • <span className="text-white font-medium">{observaciones.length} {observaciones.length === 1 ? 'observación' : 'observaciones'}</span> (del más reciente al más antiguo)
                       </p>
                     </div>
                   </div>
@@ -698,7 +703,7 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Sección Árbol de Movimientos y Observaciones dentro de Ficha General */}
+            {/* Sección Árbol de Observaciones dentro de Ficha General */}
             <div className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <div className="flex items-center gap-2">
@@ -707,10 +712,10 @@ export const PurchaseDetailModal: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                      Árbol de Movimientos y Acciones Recientes
+                      Árbol de Observaciones Recientes
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      Registro cronológico inverso de acciones y documentos adjuntos
+                      Registro cronológico del más reciente al más antiguo ({observaciones.length} {observaciones.length === 1 ? 'observación' : 'observaciones'})
                     </span>
                   </div>
                 </div>
@@ -719,7 +724,7 @@ export const PurchaseDetailModal: React.FC = () => {
                   onClick={() => setActiveTab('arbol')}
                   className="px-2.5 py-1 rounded-lg text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors inline-flex items-center gap-1 cursor-pointer"
                 >
-                  <span>Ver Árbol Completo</span>
+                  <span>Ver Árbol Completo ({observaciones.length})</span>
                   <ChevronRight className="w-3 h-3" />
                 </button>
               </div>

@@ -1,4 +1,4 @@
-import { PurchaseRecord, PurchaseMovement, AttachedDocument } from '../types';
+import { PurchaseRecord, PurchaseMovement, AttachedDocument, PurchaseObservacion } from '../types';
 import { formatDate } from './formatters';
 
 export interface MovementTypeConfig {
@@ -296,6 +296,71 @@ export function getPurchaseMovements(purchase?: Partial<PurchaseRecord>): Purcha
   }
 
   // ORDENAR ESTRICTAMENTE DE MÁS RECIENTE A MÁS ANTIGUO
+  return list.sort((a, b) => {
+    const timeA = new Date(a.fechaHoraIso || `${a.fecha}T${a.hora || '00:00'}:00`).getTime();
+    const timeB = new Date(b.fechaHoraIso || `${b.fecha}T${b.hora || '00:00'}:00`).getTime();
+    return timeB - timeA;
+  });
+}
+
+/**
+ * Obtiene la lista de observaciones de la adquisición organizadas en forma de árbol,
+ * ordenadas estrictamente del MÁS RECIENTE al MÁS ANTIGUO (cronología inversa).
+ * Reemplaza al árbol anterior de acciones sintéticas con observaciones reales ingresadas.
+ */
+export function getPurchaseObservaciones(purchase?: Partial<PurchaseRecord>): PurchaseObservacion[] {
+  if (!purchase) return [];
+
+  // 1. Si ya tiene observaciones explícitas en observacionesList
+  if (purchase.observacionesList && purchase.observacionesList.length > 0) {
+    return [...purchase.observacionesList].sort((a, b) => {
+      const timeA = new Date(a.fechaHoraIso || (a.fecha ? `${a.fecha}T${a.hora || '00:00'}:00` : 0)).getTime();
+      const timeB = new Date(b.fechaHoraIso || (b.fecha ? `${b.fecha}T${b.hora || '00:00'}:00` : 0)).getTime();
+      return timeB - timeA; // Descendente: más reciente al más antiguo
+    });
+  }
+
+  const list: PurchaseObservacion[] = [];
+
+  // 2. Si tiene movimientos previos manuales de tipo observación
+  if (purchase.movimientos && purchase.movimientos.length > 0) {
+    const manualMovs = purchase.movimientos.filter(m => !m.automatico || m.tipoAccion === 'observacion');
+    manualMovs.forEach((m, idx) => {
+      list.push({
+        id: m.id || `obs-legacy-${idx}`,
+        numeroAccion: idx + 1,
+        fecha: m.fecha,
+        hora: m.hora || '10:00',
+        fechaHoraIso: m.fechaHoraIso || (m.fecha ? `${m.fecha}T${m.hora || '10:00'}:00Z` : new Date().toISOString()),
+        autor: m.usuario || 'Operador GIT',
+        rolUsuario: m.rolUsuario,
+        area: m.responsable || purchase.areaSolicitante,
+        titulo: m.titulo || 'Observación Técnica',
+        texto: m.observaciones,
+        documento: m.documento
+      });
+    });
+  }
+
+  // 3. Si no tiene observaciones previas en lista pero tiene el texto de observaciones iniciales
+  if (list.length === 0 && purchase.observaciones && purchase.observaciones.trim()) {
+    const f = purchase.fechaSolicitud || purchase.fechaCreacion?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+    list.push({
+      id: `obs-init-${purchase.id || 'initial'}`,
+      numeroAccion: 1,
+      fecha: f,
+      hora: '08:00',
+      fechaHoraIso: purchase.fechaCreacion || `${f}T08:00:00Z`,
+      autor: purchase.creadoPor || 'Sistema GIT',
+      rolUsuario: 'Operador',
+      area: purchase.areaSolicitante || 'Área Solicitante',
+      titulo: 'Observación Inicial de Adquisición',
+      texto: purchase.observaciones.trim(),
+      documento: purchase.f56Documento
+    });
+  }
+
+  // Ordenar del más reciente al más antiguo
   return list.sort((a, b) => {
     const timeA = new Date(a.fechaHoraIso || `${a.fecha}T${a.hora || '00:00'}:00`).getTime();
     const timeB = new Date(b.fechaHoraIso || `${b.fecha}T${b.hora || '00:00'}:00`).getTime();
