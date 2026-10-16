@@ -25,12 +25,14 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Building2,
-  Shield
+  Shield,
+  Award
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
 import { exportPurchasesToExcel, exportPurchasesToCSV } from '../utils/purchasesExcelExport';
 import { ExportPdfModal } from './ExportPdfModal';
+import { AdjudicadosEvaluacionReportModal } from './AdjudicadosEvaluacionReportModal';
 import { generatePurchasesPDF } from '../utils/pdfExport';
 import { downloadDocumentFile } from '../utils/documentUtils';
 import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, getSystemAreas, canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
@@ -77,6 +79,7 @@ export const PurchasesView: React.FC = () => {
   const [showOnlyImported, setShowOnlyImported] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<PurchaseRecord | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isAdjudicadosReportModalOpen, setIsAdjudicadosReportModalOpen] = useState(false);
   const [modalInitialArea, setModalInitialArea] = useState<string>('todas');
   const [modalInitialTab, setModalInitialTab] = useState<'porArea' | 'graficas' | 'configuracion'>('porArea');
   const [pdfToast, setPdfToast] = useState<string | null>(null);
@@ -522,6 +525,17 @@ export const PurchasesView: React.FC = () => {
           >
             <Building2 className="w-3.5 h-3.5 text-blue-700" />
             <span>Exportar por Área</span>
+          </button>
+
+          <button
+            id="btn-report-adjudicados-evaluacion"
+            type="button"
+            onClick={() => setIsAdjudicadosReportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 hover:from-blue-900 hover:to-indigo-900 text-amber-300 text-xs font-bold border border-amber-400/50 flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            title="Generar informe oficial de eventos adjudicados y en evaluación con membrete y logo del Organismo Judicial de Guatemala"
+          >
+            <Award className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>Informe Adjudicados / Evaluación (Logo OJ)</span>
           </button>
 
           <button
@@ -1781,6 +1795,14 @@ export const PurchasesView: React.FC = () => {
             duration: 6000,
           });
         }}
+      />
+
+      {/* Modal Oficial de Eventos Adjudicados y en Evaluación con Logo OJ */}
+      <AdjudicadosEvaluacionReportModal
+        isOpen={isAdjudicadosReportModalOpen}
+        onClose={() => setIsAdjudicadosReportModalOpen(false)}
+        purchases={rbacPurchases}
+        currentUser={currentUser}
       />
 
     </div>
