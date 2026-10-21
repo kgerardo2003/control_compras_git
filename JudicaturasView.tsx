@@ -4606,38 +4606,125 @@ export const JudicaturasView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* BANDA HORIZONTAL 3: GESTIÓN SEPARADA DE OBSERVACIONES Y EXPEDIENTE */}
-                    <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    {/* BANDA HORIZONTAL 3: OBSERVACIONES TÉCNICAS DE LA FICHA DE JUDICATURA */}
+                    <div className="bg-slate-50/90 p-4 rounded-2xl border border-slate-200 space-y-3 shadow-2xs">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 border border-amber-200 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                            <GitBranch className="w-4 h-4 text-amber-700" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                              Observaciones y Bitácora de la Ficha
+                            </span>
+                            <p className="text-[10.5px] text-slate-500">
+                              {editingJudicatura
+                                ? `Historial técnico con ${(editingJudicatura.observaciones || []).length} intervención(es) registradas.`
+                                : 'Ingrese notas iniciales, estado del inmueble o requerimientos técnicos de esta judicatura.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {editingJudicatura && (editingJudicatura.observaciones || []).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setFormModalTab('observaciones')}
+                            className="text-[11px] font-bold text-blue-900 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                            title="Ver todo el historial de observaciones"
+                          >
+                            <span>Ver Historial ({(editingJudicatura.observaciones || []).length})</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Si está editando y hay observaciones previas, mostrar la última observación */}
+                      {editingJudicatura && (editingJudicatura.observaciones || []).length > 0 && (
+                        <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs">
+                          <div className="flex items-center justify-between text-[10px] font-bold text-amber-900 mb-1">
+                            <span className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                              Última Observación Registrada:
+                            </span>
+                            <span className="font-mono text-slate-500">
+                              {formatDateTime(editingJudicatura.observaciones[0].fecha)} • {editingJudicatura.observaciones[0].autor}
+                            </span>
+                          </div>
+                          <p className="text-amber-950 font-medium text-[11px] leading-relaxed line-clamp-2">
+                            "{editingJudicatura.observaciones[0].texto}"
+                          </p>
+                        </div>
+                      )}
+
+                      <div>
+                        <label htmlFor="input-judicatura-observacion-ficha" className="block text-xs font-bold text-slate-800 mb-1">
+                          {editingJudicatura ? 'Agregar Observación a la Ficha:' : 'Observaciones de la Ficha:'}
+                        </label>
+                        <textarea
+                          id="input-judicatura-observacion-ficha"
+                          rows={3}
+                          value={editingJudicatura ? nuevaObservacionModal : observacionesIniciales}
+                          onChange={(e) => {
+                            if (editingJudicatura) {
+                              setNuevaObservacionModal(e.target.value);
+                            } else {
+                              setObservacionesIniciales(e.target.value);
+                            }
+                          }}
+                          placeholder={
+                            editingJudicatura
+                              ? "Escriba aquí los avances de instalación, recepción de equipo, observaciones técnicas o incidencias..."
+                              : "Detalles preliminares del inmueble, requerimientos de red, observaciones técnicas iniciales..."
+                          }
+                          className="w-full p-2.5 text-xs border border-slate-300 rounded-xl bg-white text-slate-800 focus:ring-2 focus:ring-blue-800 focus:outline-none leading-relaxed"
+                        />
+                        <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
+                          <span>
+                            {editingJudicatura
+                              ? 'La observación se guardará automáticamente en el historial al presionar "Actualizar Ficha".'
+                              : 'Quedará registrada como la primera observación técnica en la bitácora de la judicatura.'}
+                          </span>
+                          {editingJudicatura && nuevaObservacionModal.trim() && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!nuevaObservacionModal.trim() || !editingJudicatura) return;
+                                await addJudicaturaObservacion(editingJudicatura.id, nuevaObservacionModal.trim());
+                                setNuevaObservacionModal('');
+                                showToast({
+                                  type: 'success',
+                                  title: 'Observación Agregada',
+                                  message: 'Se registró la nueva observación en la ficha.'
+                                });
+                              }}
+                              className="px-2 py-0.5 rounded bg-blue-900 text-white font-bold hover:bg-blue-800 transition-colors cursor-pointer"
+                            >
+                              Guardar Observación Ahora
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BANDA HORIZONTAL 4: ACCESO RÁPIDO A EXPEDIENTE DIGITAL */}
+                    <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5">
                         <div className="p-2 rounded-xl bg-white border border-slate-200 text-blue-900 shadow-2xs">
                           <Layers className="w-4 h-4" />
                         </div>
                         <div>
                           <span className="font-bold text-slate-800 text-xs block">
-                            Gestión Separada de Bitácora y Expediente Digital
+                            Expediente Digital y Documentos Adjuntos
                           </span>
                           <span className="text-slate-500 text-[10.5px]">
                             {editingJudicatura
-                              ? `${(editingJudicatura.observaciones || []).length} acciones registradas • ${(editingJudicatura.documentos || []).length} documentos adjuntos`
-                              : 'Las notas de bitácora y expedientes se administran en pestañas dedicadas para mantener la ficha limpia y visible.'}
+                              ? `${(editingJudicatura.documentos || []).length} documento(s) digitalizado(s) adjuntos a esta sede.`
+                              : 'Adjunte acuerdos de creación, planos de red o certificaciones técnicas.'}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setFormModalTab('observaciones')}
-                          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                        >
-                          <GitBranch className="w-3.5 h-3.5 text-indigo-700" />
-                          <span>
-                            {editingJudicatura
-                              ? `Ver Bitácora (${(editingJudicatura.observaciones || []).length})`
-                              : 'Observaciones Iniciales'}
-                          </span>
-                        </button>
-
                         <button
                           type="button"
                           onClick={() => setFormModalTab('documentos')}
@@ -4646,7 +4733,7 @@ export const JudicaturasView: React.FC = () => {
                           <Paperclip className="w-3.5 h-3.5 text-amber-700" />
                           <span>
                             {editingJudicatura
-                              ? `Expediente (${(editingJudicatura.documentos || []).length})`
+                              ? `Ver Expediente (${(editingJudicatura.documentos || []).length})`
                               : 'Expediente Digital'}
                           </span>
                         </button>

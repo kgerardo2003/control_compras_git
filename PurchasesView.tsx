@@ -25,13 +25,15 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Building2,
-  Shield
+  Shield,
+  Award
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
 import { exportPurchasesToExcel, exportPurchasesToCSV } from '../utils/purchasesExcelExport';
 import { ExportPdfModal } from './ExportPdfModal';
-import { generatePurchasesPDF } from '../utils/pdfExport';
+import { AdjudicadosEvaluacionReportModal } from './AdjudicadosEvaluacionReportModal';
+import { generatePurchasesPDF, generateIndividualPurchasePDF } from '../utils/pdfExport';
 import { downloadDocumentFile } from '../utils/documentUtils';
 import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, getSystemAreas, canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
 
@@ -77,6 +79,7 @@ export const PurchasesView: React.FC = () => {
   const [showOnlyImported, setShowOnlyImported] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<PurchaseRecord | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isAdjudicadosReportModalOpen, setIsAdjudicadosReportModalOpen] = useState(false);
   const [modalInitialArea, setModalInitialArea] = useState<string>('todas');
   const [modalInitialTab, setModalInitialTab] = useState<'porArea' | 'graficas' | 'configuracion'>('porArea');
   const [pdfToast, setPdfToast] = useState<string | null>(null);
@@ -325,6 +328,27 @@ export const PurchasesView: React.FC = () => {
     }
   };
 
+  const handleGenerateFicha = (p: PurchaseRecord) => {
+    try {
+      const filename = generateIndividualPurchasePDF(p, currentUser);
+      logAudit('EXPORTAR_DATOS', 'Compras', `Generación de Ficha Técnica Individual en PDF NOG ${p.nog} (${filename}).`);
+      showToast({
+        type: 'success',
+        title: 'Ficha Técnica Descargada',
+        message: `Se descargó exitosamente la Ficha Técnica Oficial "${filename}".`,
+        duration: 5000,
+      });
+    } catch (err) {
+      console.error('Error generando ficha técnica de adquisición:', err);
+      showToast({
+        type: 'error',
+        title: 'Error al Generar Ficha',
+        message: 'No fue posible generar la ficha técnica en PDF.',
+        duration: 5000,
+      });
+    }
+  };
+
   const confirmDelete = () => {
     if (itemToDelete) {
       deletePurchase(itemToDelete.id);
@@ -522,6 +546,17 @@ export const PurchasesView: React.FC = () => {
           >
             <Building2 className="w-3.5 h-3.5 text-blue-700" />
             <span>Exportar por Área</span>
+          </button>
+
+          <button
+            id="btn-report-adjudicados-evaluacion"
+            type="button"
+            onClick={() => setIsAdjudicadosReportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 hover:from-blue-900 hover:to-indigo-900 text-amber-300 text-xs font-bold border border-amber-400/50 flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            title="Generar informe oficial de eventos adjudicados y en evaluación con membrete y logo del Organismo Judicial de Guatemala"
+          >
+            <Award className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>Informe Adjudicados / Evaluación (Logo OJ)</span>
           </button>
 
           <button
@@ -1104,12 +1139,14 @@ export const PurchasesView: React.FC = () => {
                   return (
                     <tr 
                       key={p.id} 
-                      className={`transition-colors ${
+                      onClick={() => setSelectedPurchase(p)}
+                      title="Haga clic para abrir la Ficha Oficial de esta adquisición"
+                      className={`transition-colors cursor-pointer group ${
                         isSelected 
                           ? 'bg-rose-50/70 hover:bg-rose-100/60' 
                           : isRecentlyImported 
                           ? 'bg-emerald-50/35 hover:bg-emerald-50/70' 
-                          : 'hover:bg-slate-50'
+                          : 'hover:bg-amber-50/50'
                       }`}
                     >
                       {/* Checkbox Selección */}
@@ -1128,7 +1165,18 @@ export const PurchasesView: React.FC = () => {
                       {/* NOG */}
                       <td className="px-4 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span>{p.nog}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPurchase(p);
+                            }}
+                            className="font-mono font-bold text-blue-700 hover:text-amber-600 hover:underline flex items-center gap-1.5 cursor-pointer text-left"
+                            title="Abrir Ficha Oficial de Adquisición"
+                          >
+                            <span>{p.nog}</span>
+                            <Eye className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 transition-colors" />
+                          </button>
                           {isRecentlyImported && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                               Nuevo
@@ -1241,21 +1289,41 @@ export const PurchasesView: React.FC = () => {
 
                       {/* Acciones */}
                       <td className="px-4 py-3 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => setSelectedPurchase(p)}
-                            className="p-1.5 rounded-md text-slate-600 hover:text-amber-600 hover:bg-slate-100 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPurchase(p);
+                            }}
+                            className="px-2 py-1 rounded-md text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs cursor-pointer"
                             title="Ver Ficha Detallada"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5 text-amber-700" />
+                            <span className="hidden sm:inline">Ver Ficha</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleGenerateFicha(p);
+                            }}
+                            className="p-1.5 rounded-md text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="Generar Ficha Técnica Oficial (PDF)"
+                          >
+                            <FileText className="w-4 h-4 text-blue-600" />
                           </button>
 
                           {canUserEditPurchase(currentUser, p) && (
                             <button
                               type="button"
-                              onClick={() => { setPurchaseToEdit(p); setIsPurchaseModalOpen(true); }}
-                              className="p-1.5 rounded-md text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPurchaseToEdit(p);
+                                setIsPurchaseModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-md text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
                               title="Editar"
                             >
                               <Edit className="w-4 h-4" />
@@ -1265,8 +1333,11 @@ export const PurchasesView: React.FC = () => {
                           {canDelete && (
                             <button
                               type="button"
-                              onClick={() => setItemToDelete(p)}
-                              className="p-1.5 rounded-md text-slate-600 hover:text-rose-600 hover:bg-slate-100 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setItemToDelete(p);
+                              }}
+                              className="p-1.5 rounded-md text-slate-600 hover:text-rose-600 hover:bg-slate-100 transition-colors cursor-pointer"
                               title="Eliminar"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1414,6 +1485,15 @@ export const PurchasesView: React.FC = () => {
                   className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-black shadow-2xs cursor-pointer"
                 >
                   Ver Ficha
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateFicha(p)}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold text-blue-700 shadow-2xs flex items-center gap-1 cursor-pointer"
+                  title="Generar Ficha Técnica Oficial en PDF"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Ficha PDF</span>
                 </button>
                 {canUserEditPurchase(currentUser, p) && (
                   <button
@@ -1781,6 +1861,14 @@ export const PurchasesView: React.FC = () => {
             duration: 6000,
           });
         }}
+      />
+
+      {/* Modal Oficial de Eventos Adjudicados y en Evaluación con Logo OJ */}
+      <AdjudicadosEvaluacionReportModal
+        isOpen={isAdjudicadosReportModalOpen}
+        onClose={() => setIsAdjudicadosReportModalOpen(false)}
+        purchases={rbacPurchases}
+        currentUser={currentUser}
       />
 
     </div>

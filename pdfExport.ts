@@ -1,9 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PurchaseRecord } from '../types';
-import { formatQuetzales, formatDate, getModalidadCompraByMonto } from './formatters';
+import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from './formatters';
 import { OJ_LOGO_DATA_URI } from './ojLogoAsset';
 import { generateExecutiveDashboardImage } from './pdfChartRenderer';
+import { getPurchaseTimeline } from './timelineUtils';
+import { getPurchaseObservaciones } from './movementUtils';
 
 export interface ExportPurchasesPDFOptions {
   purchases: PurchaseRecord[];
@@ -426,3 +428,396 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   doc.save(filename);
   return filename;
 }
+
+/**
+ * Genera la Ficha Técnica Detallada Oficial de una Adquisición en formato PDF.
+ * Incluye membrete oficial del Organismo Judicial, datos de NOG, F56-e,
+ * afectación presupuestaria, dictamen técnico de TI, cronograma del evento,
+ * línea de tiempo de tracking, árbol de observaciones y firmas de responsabilidad.
+ */
+export function generateIndividualPurchasePDF(
+  purchase: PurchaseRecord,
+  currentUser?: { nombreCompleto?: string; username?: string; rol?: string } | null
+): string {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'letter',
+  });
+
+  const now = new Date();
+  const dateStr = formatDate(now.toISOString().slice(0, 10));
+  const timeStr = formatDateTime(now.toISOString()).slice(11) || now.toLocaleTimeString('es-GT');
+  const auditRandom = Math.random().toString(36).substring(2, 7).toUpperCase();
+  const auditCode = `FICHA-ADQ-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${auditRandom}`;
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 12;
+  let currentY = 10;
+
+  // Función para dibujar cabecera institucional en la ficha
+  const drawFichaHeader = (pageNum: number, totalNum: number) => {
+    const bannerHeight = 22;
+    doc.setFillColor(10, 10, 105); // #0A0A69 Azul Institucional
+    doc.rect(marginX, 7, pageWidth - marginX * 2, bannerHeight, 'F');
+
+    // Borde inferior sutil
+    doc.setFillColor(30, 41, 130);
+    doc.rect(marginX, 7 + bannerHeight - 0.5, pageWidth - marginX * 2, 0.5, 'F');
+
+    // Logotipo Oficial
+    try {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(marginX + 3, 8.5, 19, 19, 2, 2, 'F');
+      doc.addImage(OJ_LOGO_DATA_URI, 'PNG', marginX + 4, 9.5, 17, 17);
+    } catch (e) {
+      console.warn('Error incrustando logo en ficha individual:', e);
+    }
+
+    // Textos institucionales
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text('ORGANISMO JUDICIAL DE GUATEMALA', marginX + 25, 13.5);
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text('GERENCIA DE INFORMÁTICA  •  DIRECCIÓN DE COMPRAS', marginX + 25, 18.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(224, 231, 255);
+    doc.text('FICHA TÉCNICA Y DICTAMEN OFICIAL DE ADQUISICIÓN TECNOLÓGICA (F56-e)', marginX + 25, 23);
+
+    // Metadatos a la derecha
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Emisión: ${dateStr} ${timeStr}`, pageWidth - marginX - 4, 13.5, { align: 'right' });
+    doc.setFont('courier', 'bold');
+    doc.text(auditCode, pageWidth - marginX - 4, 18.5, { align: 'right' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Página ${pageNum} de ${totalNum}`, pageWidth - marginX - 4, 23, { align: 'right' });
+  };
+
+  const drawFichaFooter = (pageNum: number, totalNum: number) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `Documento oficial generado por el Sistema de Control de Compras GIT • Organismo Judicial • Código: ${auditCode}`,
+      marginX,
+      pageHeight - 8
+    );
+    doc.text(`Página ${pageNum} de ${totalNum}`, pageWidth - marginX, pageHeight - 8, { align: 'right' });
+  };
+
+  currentY = 32;
+
+  // 1. TÍTULO Y IDENTIFICACIÓN PRINCIPAL DEL EVENTO
+  const modalidadLCE = getModalidadCompraByMonto(purchase.monto, purchase.modalidadCompra);
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(marginX, currentY, pageWidth - marginX * 2, 24, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(10, 10, 105);
+  doc.text(`NOG GUATECOMPRAS: ${purchase.nog}`, marginX + 4, currentY + 6);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Formulario F56-e: ${purchase.f56e}  •  F56 Físico: ${purchase.f56 || 'Sin especificar'}`, marginX + 4, currentY + 11.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(15, 23, 42);
+  doc.text('ESTATUS EVENTO:', marginX + 4, currentY + 17);
+
+  const estatus = purchase.estatusEvento || 'En proceso';
+  if (estatus.toLowerCase().includes('adjudic')) {
+    doc.setTextColor(5, 150, 105);
+  } else if (estatus === 'Evaluación') {
+    doc.setTextColor(180, 83, 9);
+  } else if (estatus === 'Prescindido' || estatus === 'Desierto') {
+    doc.setTextColor(225, 29, 72);
+  } else {
+    doc.setTextColor(10, 10, 105);
+  }
+  doc.text(estatus.toUpperCase(), marginX + 32, currentY + 17);
+
+  // Monto a la derecha
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('MONTO ESTIMADO / ADJUDICADO:', pageWidth - marginX - 4, currentY + 6, { align: 'right' });
+
+  doc.setFont('courier', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(10, 10, 105);
+  doc.text(formatQuetzales(purchase.monto), pageWidth - marginX - 4, currentY + 13, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Modalidad: ${modalidadLCE.nombre}`, pageWidth - marginX - 4, currentY + 18, { align: 'right' });
+
+  currentY += 27;
+
+  // 2. TABLA RESUMEN DE PARÁMETROS TÉCNICOS Y ADMINISTRATIVOS
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: marginX, right: marginX },
+    head: [['PARÁMETRO ADMINISTRATIVO', 'VALOR REGISTRADO', 'PARÁMETRO FINANCIERO / LCE', 'VALOR REGISTRADO']],
+    body: [
+      ['Área Solicitante', purchase.areaSolicitante || 'Soporte Técnico', 'Modalidad de Compra', `${modalidadLCE.nombre} (${modalidadLCE.descripcionRango})`],
+      ['Dependencia Solicitante', purchase.dependenciaSolicitante || 'Gerencia de Informática', 'Fundamento Legal LCE', modalidadLCE.fundamentoLegal || 'Ley de Contrataciones del Estado'],
+      ['Categoría Tecnológica', purchase.categoriaTecnologica || 'Equipo Informático', 'Renglón Presupuestario', `${purchase.renglonPresupuestario || '158'}${purchase.nombreRenglon ? ` (${purchase.nombreRenglon})` : ''}`],
+      ['Proveedor Adjudicado', purchase.proveedorAdjudicado || 'Pendiente de Adjudicar', 'Grupo Presupuestario', purchase.grupoPresupuestario || 'Servicios No Personales / Equipo'],
+      ['Fecha de Adjudicación', purchase.fechaAdjudicacion ? formatDate(purchase.fechaAdjudicacion) : 'No adjudicado aún', 'Afectación / Estado Pago', purchase.estadoPago === 'pagado' ? 'Pagado que rebaja presupuesto' : 'Comprometido (Pendiente de pago)'],
+      ['Evaluación Área Técnica (GIT)', purchase.evaluadoGIT === 'Sí' ? 'SÍ (Dictamen Aprobado)' : 'NO (Sin evaluación técnica)', 'Cantidad de Ofertas Recibidas', `${purchase.cantidadOfertas || 0} postores`]
+    ],
+    theme: 'grid',
+    headStyles: {
+      fillColor: [10, 10, 105],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.2,
+      halign: 'left',
+    },
+    styles: {
+      fontSize: 7.0,
+      textColor: [15, 23, 42],
+      cellPadding: 2,
+      overflow: 'linebreak',
+    },
+    columnStyles: {
+      0: { cellWidth: 42, fontStyle: 'bold', fillColor: [248, 250, 252] },
+      1: { cellWidth: 54 },
+      2: { cellWidth: 42, fontStyle: 'bold', fillColor: [248, 250, 252] },
+      3: { cellWidth: 'auto' },
+    },
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 4;
+
+  // 3. DESCRIPCIÓN Y JUSTIFICACIÓN TÉCNICA DEL REQUERIMIENTO
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: marginX, right: marginX },
+    head: [['DESCRIPCIÓN Y JUSTIFICACIÓN TÉCNICA DEL REQUERIMIENTO CONFORME AL EXPEDIENTE']],
+    body: [
+      [purchase.descripcion || 'Sin descripción técnica registrada en el expediente de adquisición.']
+    ],
+    theme: 'grid',
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.2,
+    },
+    styles: {
+      fontSize: 7.0,
+      textColor: [30, 41, 59],
+      cellPadding: 2.5,
+      overflow: 'linebreak',
+    },
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 4;
+
+  // 4. CRONOGRAMA DE FECHAS CLAVE DEL PROCESO
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: marginX, right: marginX },
+    head: [['FECHA SOLICITUD', 'FECHA VO.BO.', 'FECHA AUTORIZADO', 'FECHA PUBLICACIÓN', 'FECHA OFERTAS', 'FECHA DICTAMEN GIT']],
+    body: [
+      [
+        formatDate(purchase.fechaSolicitud),
+        formatDate(purchase.fechaVoBo),
+        formatDate(purchase.fechaAutorizado),
+        formatDate(purchase.fechaPublicacion),
+        formatDate(purchase.fechaOfertas),
+        purchase.fechaDictamenGIT ? formatDate(purchase.fechaDictamenGIT) : (purchase.evaluadoGIT === 'Sí' ? 'Favorable' : 'Pendiente')
+      ]
+    ],
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.0,
+      halign: 'center',
+    },
+    styles: {
+      fontSize: 7.0,
+      textColor: [15, 23, 42],
+      cellPadding: 2,
+      halign: 'center',
+    },
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 4;
+
+  // 5. LÍNEA DE TIEMPO Y TRACKING DE HITOS (de getPurchaseTimeline)
+  const timelineEvents = getPurchaseTimeline(purchase);
+  if (timelineEvents.length > 0) {
+    const timelineBody = timelineEvents.map((evt, idx) => [
+      String(idx + 1),
+      formatDate(evt.fecha) + (evt.hora ? `\n${evt.hora}` : ''),
+      evt.titulo + (evt.observaciones ? `\nNota: ${evt.observaciones}` : ''),
+      evt.fase || 'Gestión',
+      evt.responsable || 'GIT',
+      evt.documentoReferencia || '—',
+      evt.estado === 'completado' ? 'Completado' : evt.estado === 'en_proceso' ? 'En Proceso' : 'Pendiente'
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: marginX, right: marginX },
+      head: [['#', 'FECHA', 'HITO / EVENTO INSTITUCIONAL', 'FASE', 'RESPONSABLE', 'REF. DOC.', 'ESTADO']],
+      body: timelineBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [10, 10, 105],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.0,
+        halign: 'center',
+      },
+      styles: {
+        fontSize: 6.8,
+        textColor: [15, 23, 42],
+        cellPadding: 1.8,
+        overflow: 'linebreak',
+      },
+      columnStyles: {
+        0: { cellWidth: 7, halign: 'center', fontStyle: 'bold' },
+        1: { cellWidth: 22, halign: 'center' },
+        2: { cellWidth: 'auto', fontStyle: 'bold' },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 26 },
+        5: { cellWidth: 22, halign: 'center' },
+        6: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 4;
+  }
+
+  // 6. ÁRBOL CRONOLÓGICO DE OBSERVACIONES (si existen)
+  const observaciones = getPurchaseObservaciones(purchase);
+  if (observaciones && observaciones.length > 0) {
+    if (currentY > pageHeight - 55) {
+      doc.addPage();
+      currentY = 32;
+    }
+
+    const obsBody = observaciones.slice(0, 12).map((obs, idx) => [
+      `#${obs.numeroAccion || idx + 1}`,
+      formatDate(obs.fecha) + (obs.hora ? ` ${obs.hora}` : ''),
+      (obs.autor || 'Usuario GIT') + (obs.rolUsuario ? ` (${obs.rolUsuario})` : ''),
+      obs.titulo || 'Observación Técnica',
+      obs.texto
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: marginX, right: marginX },
+      head: [['ACC.', 'FECHA / HORA', 'AUTOR / ROL', 'TÍTULO / TIPO', 'DETALLE DE LA OBSERVACIÓN']],
+      body: obsBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [180, 83, 9], // Amber 700
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.0,
+        halign: 'center',
+      },
+      styles: {
+        fontSize: 6.8,
+        textColor: [15, 23, 42],
+        cellPadding: 1.8,
+        overflow: 'linebreak',
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' },
+        1: { cellWidth: 26, halign: 'center' },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 32, fontStyle: 'bold' },
+        4: { cellWidth: 'auto' },
+      },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 4;
+  }
+
+  // 7. BLOQUE DE FIRMAS Y RESPONSABILIDAD INSTITUCIONAL
+  const requiredSignHeight = 44;
+  if (currentY + requiredSignHeight > pageHeight - 14 || currentY > pageHeight - 48) {
+    doc.addPage();
+    currentY = 32;
+  }
+
+  const signWidth = (pageWidth - marginX * 2 - 20) / 3;
+  const signY = currentY + 12;
+
+  // Firma 1: Elaboró
+  doc.setDrawColor(148, 163, 184);
+  doc.line(marginX, signY, marginX + signWidth, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(15, 23, 42);
+  doc.text('ELABORADO POR:', marginX + signWidth / 2, signY + 3.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.text(currentUser?.nombreCompleto || purchase.creadoPor || 'Analista de Adquisiciones GIT', marginX + signWidth / 2, signY + 7, { align: 'center' });
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Gerencia de Informática - OJ', marginX + signWidth / 2, signY + 10, { align: 'center' });
+
+  // Firma 2: Visto Bueno
+  const sign2X = marginX + signWidth + 10;
+  doc.line(sign2X, signY, sign2X + signWidth, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(15, 23, 42);
+  doc.text('VISTO BUENO (Vo.Bo.):', sign2X + signWidth / 2, signY + 3.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.text('Subgerencia de Informática', sign2X + signWidth / 2, signY + 7, { align: 'center' });
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Dictamen Técnico Validado', sign2X + signWidth / 2, signY + 10, { align: 'center' });
+
+  // Firma 3: Autorizado
+  const sign3X = sign2X + signWidth + 10;
+  doc.line(sign3X, signY, sign3X + signWidth, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(15, 23, 42);
+  doc.text('AUTORIZADO POR:', sign3X + signWidth / 2, signY + 3.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.text('Gerente de Informática', sign3X + signWidth / 2, signY + 7, { align: 'center' });
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Organismo Judicial de Guatemala', sign3X + signWidth / 2, signY + 10, { align: 'center' });
+
+  // Aplicar cabecera y pie a todas las páginas generadas
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    drawFichaHeader(p, totalPages);
+    drawFichaFooter(p, totalPages);
+  }
+
+  const cleanNog = (purchase.nog || 'S_N').replace(/[^a-zA-Z0-9]/g, '_');
+  const cleanF56e = (purchase.f56e || 'F56e').replace(/[^a-zA-Z0-9]/g, '_');
+  const timeFormattedFicha = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+  const filename = `Ficha_Tecnica_NOG_${cleanNog}_${cleanF56e}_${timeFormattedFicha}.pdf`;
+
+  doc.save(filename);
+  return filename;
+}
+

@@ -43,7 +43,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   onRemove
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [viewMode, setViewMode] = useState<'pdf' | 'sheet'>('pdf');
+  const [viewMode, setViewMode] = useState<'pdf' | 'sheet'>('sheet');
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
 

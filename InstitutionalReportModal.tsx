@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
-import { Printer, X } from 'lucide-react';
+import { Printer, Download, X } from 'lucide-react';
 import { OJLogo } from './OJLogo';
 import { getPurchaseTimeline } from '../utils/timelineUtils';
+import { generateIndividualPurchasePDF } from '../utils/pdfExport';
+import { useApp } from '../context/AppContext';
 
 interface InstitutionalReportModalProps {
   purchase: PurchaseRecord;
@@ -11,11 +13,39 @@ interface InstitutionalReportModalProps {
 }
 
 export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> = ({ purchase, onClose }) => {
+  const { currentUser, showToast } = useApp();
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const modalidadLCE = getModalidadCompraByMonto(purchase.monto, purchase.modalidadCompra);
   const timelineEvents = getPurchaseTimeline(purchase);
 
+  const handleDownloadPdf = () => {
+    try {
+      setIsDownloadingPdf(true);
+      const filename = generateIndividualPurchasePDF(purchase, currentUser);
+      showToast({
+        title: 'Ficha Técnica Descargada',
+        message: `Se descargó exitosamente el documento oficial "${filename}".`,
+        type: 'success',
+      });
+    } catch (err) {
+      console.error('Error al generar ficha técnica en PDF:', err);
+      showToast({
+        title: 'Error al Generar Ficha',
+        message: 'No fue posible exportar la ficha técnica en PDF.',
+        type: 'error',
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   const handlePrint = () => {
-    window.print();
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('window.print no disponible, generando PDF directo:', err);
+      handleDownloadPdf();
+    }
   };
 
   return (
@@ -28,17 +58,27 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
         >
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-white" />
-            <span className="font-bold text-xs sm:text-sm">Boleta Oficial de Control F56-e</span>
+            <span className="font-bold text-xs sm:text-sm">Ficha Detallada y Boleta Oficial de Control F56-e</span>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isDownloadingPdf}
+              className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50 active:scale-95"
+              title="Generar y Descargar Ficha Técnica Oficial de la Adquisición en PDF"
+            >
+              <Download className="w-3.5 h-3.5 text-white" />
+              <span>{isDownloadingPdf ? 'Generando PDF...' : 'Descargar Ficha PDF'}</span>
+            </button>
             <button
               type="button"
               onClick={handlePrint}
               className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5 text-slate-900" />
-              <span>Imprimir Boleta</span>
+              <span>Imprimir</span>
             </button>
             <button
               type="button"

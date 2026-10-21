@@ -1,4 +1,4 @@
-import { User, PurchaseRecord } from '../types';
+import { User, PurchaseRecord, CatalogItem } from '../types';
 
 export const ALL_AREAS_LABEL = 'Todas las Áreas (Acceso Global)';
 
@@ -9,7 +9,6 @@ export const TECHNICAL_AREAS_LIST = [
   'Departamento de Servicios Informáticos',
   'Desarrollo y Administración de Sistemas',
   'Redes y Telecomunicaciones',
-  'Soporte Técnico Remoto',
   'Sección de Videoaudiencias',
   'Seguridad Informática',
   'Infraestructura',
@@ -17,58 +16,106 @@ export const TECHNICAL_AREAS_LIST = [
 ] as const;
 
 /**
- * Obtiene la lista dinámica de áreas técnicas institucionales sincronizada
- * en tiempo real con el Catálogo de Sistema (AREA_SOLICITANTE) y las adquisiciones registradas.
+ * Normaliza una cadena de texto para comparación libre de mayúsculas, tildes y espacios redundantes.
+ */
+export function normalizeTextKey(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Deduplica una lista de elementos de catálogo eliminando cualquier elemento redundante
+ * por clave normalizada (sin tildes, minúsculas y sin espacios extras).
+ */
+export function deduplicateCatalogItems(items: CatalogItem[]): CatalogItem[] {
+  if (!Array.isArray(items)) return [];
+  const seen = new Map<string, CatalogItem>();
+  for (const item of items) {
+    if (!item || !item.valor || typeof item.valor !== 'string') continue;
+    const trimmed = item.valor.trim();
+    if (!trimmed) continue;
+    const key = normalizeTextKey(trimmed);
+    if (!seen.has(key)) {
+      seen.set(key, { ...item, valor: trimmed });
+    } else {
+      const existing = seen.get(key)!;
+      // Si el elemento previo no estaba activo y el nuevo sí, preferir el activo
+      if (!existing.activo && item.activo) {
+        seen.set(key, { ...item, valor: trimmed });
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
+
+/**
+ * Obtiene el nombre canónico oficial de un área según el Catálogo de Sistema (AREA_SOLICITANTE).
+ * Si coincide con alguna variación de mayúsculas/minúsculas o tildes, retorna la versión oficial del catálogo.
+ */
+export function getCanonicalAreaName(areaName?: string, catalogs?: any[]): string {
+  if (!areaName || typeof areaName !== 'string') return '';
+  const trimmed = areaName.trim();
+  if (!trimmed) return '';
+  const key = normalizeTextKey(trimmed);
+
+  if (Array.isArray(catalogs)) {
+    const areaCat = catalogs.find((c: any) => c.codigo === 'AREA_SOLICITANTE');
+    if (areaCat && Array.isArray(areaCat.items)) {
+      const match = areaCat.items.find((it: any) => it && it.activo !== false && normalizeTextKey(it.valor || '') === key);
+      if (match && match.valor) {
+        return match.valor.trim();
+      }
+    }
+  }
+  return trimmed;
+}
+
+/**
+ * Obtiene la lista dinámica de áreas técnicas institucionales vinculada
+ * EXCLUSIVA Y DIRECTAMENTE con el Catálogo de Sistema (AREA_SOLICITANTE),
+ * eliminando de raíz cualquier duplicado o redundancia.
  */
 export function getSystemAreas(catalogs?: any[], purchases?: any[]): string[] {
-  const areasSet = new Set<string>();
+  const canonicalMap = new Map<string, string>();
 
-  // 1. Áreas activas definidas en el Catálogo de Sistema (AREA_SOLICITANTE)
+  // 1. Áreas activas definidas en el Catálogo de Sistema (AREA_SOLICITANTE) - FUENTE ÚNICA AUTORITATIVA
   if (Array.isArray(catalogs)) {
     const areaCat = catalogs.find((c: any) => c.codigo === 'AREA_SOLICITANTE');
     if (areaCat && Array.isArray(areaCat.items)) {
       areaCat.items.forEach((it: any) => {
         if (it && it.activo !== false && it.valor && typeof it.valor === 'string' && it.valor.trim()) {
           const val = it.valor.trim();
-          if (val.toLowerCase().includes('soporte') && val.toLowerCase().includes('remoto')) {
-            areasSet.add('Soporte Remoto');
-          } else {
-            areasSet.add(val);
+          const key = normalizeTextKey(val);
+          if (!canonicalMap.has(key)) {
+            canonicalMap.set(key, val);
           }
         }
       });
     }
   }
 
-  // 2. Garantizar que "Soporte Remoto" esté siempre disponible para filtrado
-  areasSet.add('Soporte Remoto');
-
-  // 3. Áreas presentes en adquisiciones existentes
-  if (Array.isArray(purchases)) {
-    purchases.forEach((p: any) => {
-      if (p && p.areaSolicitante && typeof p.areaSolicitante === 'string' && p.areaSolicitante.trim()) {
-        const val = p.areaSolicitante.trim();
-        if (val.toLowerCase().includes('soporte') && val.toLowerCase().includes('remoto')) {
-          areasSet.add('Soporte Remoto');
-        } else {
-          areasSet.add(val);
-        }
-      }
-    });
+  // 2. Si el catálogo tiene áreas definidas, retornamos la lista oficial deduplicada
+  if (canonicalMap.size > 0) {
+    return Array.from(canonicalMap.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }
 
-  // 4. Áreas base institucionales predeterminadas
+  // 3. Fallback de emergencia solo si el catálogo estuviera completamente vacío
   TECHNICAL_AREAS_LIST.forEach((item) => {
     if (item !== ALL_AREAS_LABEL) {
-      if (item.toLowerCase().includes('soporte') && item.toLowerCase().includes('remoto')) {
-        areasSet.add('Soporte Remoto');
-      } else {
-        areasSet.add(item);
+      const val = item.trim();
+      const key = normalizeTextKey(val);
+      if (!canonicalMap.has(key)) {
+        canonicalMap.set(key, val);
       }
     }
   });
 
-  return Array.from(areasSet).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  return Array.from(canonicalMap.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 }
 
 /**

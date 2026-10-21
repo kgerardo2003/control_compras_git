@@ -32,7 +32,8 @@ import {
   Activity,
   Percent,
   ArrowUpDown,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Award
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -57,6 +58,8 @@ import {
   normalizeAreaName 
 } from '../utils/rbacUtils';
 import { InstitutionalReportModal } from './InstitutionalReportModal';
+import { AdjudicadosEvaluacionReportModal } from './AdjudicadosEvaluacionReportModal';
+import { OJLogo } from './OJLogo';
 import { BudgetExecutionKPI } from './budget/BudgetExecutionKPI';
 import { OFFICIAL_BUDGET_GROUPS, OFFICIAL_RENGLONES, getGrupoFullName } from '../data/budgetStandardCatalog';
 import { PurchaseRecord, BudgetLineItem } from '../types';
@@ -91,7 +94,7 @@ export const ReportsView: React.FC = () => {
 
   // Estado del tipo de informe activo
   const [selectedReportType, setSelectedReportType] = useState<
-    'consolidado' | 'adjudicados' | 'git' | 'presupuesto_analitico' | 'reporte_grupo' | 'metricas_ejecucion' | 'balance' | 'analitico'
+    'consolidado' | 'adjudicados' | 'adjudicados_y_evaluacion' | 'git' | 'presupuesto_analitico' | 'reporte_grupo' | 'metricas_ejecucion' | 'balance' | 'analitico'
   >('consolidado');
 
   // Filtro de área específico (solo disponible para administradores)
@@ -99,6 +102,12 @@ export const ReportsView: React.FC = () => {
 
   // Estado para visualización de boleta oficial de dictamen individual
   const [selectedDictamenPurchase, setSelectedDictamenPurchase] = useState<PurchaseRecord | null>(null);
+
+  // Estado para modal oficial de Eventos Adjudicados y en Evaluación
+  const [isAdjudicadosEvaluacionModalOpen, setIsAdjudicadosEvaluacionModalOpen] = useState(false);
+  const [adjudicadosEvaluacionSubFilter, setAdjudicadosEvaluacionSubFilter] = useState<'todos' | 'adjudicados' | 'evaluacion'>('todos');
+  const [adjudicadosEvaluacionSearch, setAdjudicadosEvaluacionSearch] = useState('');
+  const [showAdjudicadosEvaluacionCharts, setShowAdjudicadosEvaluacionCharts] = useState(true);
 
   // 1. Filtrado RBAC base de adquisiciones según usuario
   const basePurchases = useMemo(() => {
@@ -132,6 +141,20 @@ export const ReportsView: React.FC = () => {
     });
   }, [basePurchases]);
 
+  const enEvaluacion = useMemo(() => {
+    return basePurchases.filter(p => {
+      const st = (p.estatusEvento || '').toLowerCase().trim();
+      return st === 'evaluación' || st === 'evaluacion';
+    });
+  }, [basePurchases]);
+
+  const adjudicadosYEvaluacion = useMemo(() => {
+    return basePurchases.filter(p => {
+      const st = (p.estatusEvento || '').toLowerCase().trim();
+      return st === 'adjudicación' || st === 'adjudicacion' || st === 'adjudicada' || st === 'adjudicado' || st === 'evaluación' || st === 'evaluacion';
+    });
+  }, [basePurchases]);
+
   const evaluadosGIT = useMemo(() => {
     return basePurchases.filter(p => p.evaluadoGIT === 'Sí' || Boolean(p.fechaDictamenGIT));
   }, [basePurchases]);
@@ -144,6 +167,39 @@ export const ReportsView: React.FC = () => {
   const totalMontoAdjudicado = useMemo(() => {
     return adjudicados.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
   }, [adjudicados]);
+
+  const totalMontoEnEvaluacion = useMemo(() => {
+    return enEvaluacion.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
+  }, [enEvaluacion]);
+
+  const totalMontoAdjudicadosYEvaluacion = useMemo(() => {
+    return adjudicadosYEvaluacion.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
+  }, [adjudicadosYEvaluacion]);
+
+  const displayAdjudicadosList = useMemo(() => {
+    if (!adjudicadosEvaluacionSearch.trim()) return adjudicados;
+    const q = adjudicadosEvaluacionSearch.toLowerCase().trim();
+    return adjudicados.filter(p =>
+      (p.nog && p.nog.toLowerCase().includes(q)) ||
+      (p.f56e && p.f56e.toLowerCase().includes(q)) ||
+      (p.areaSolicitante && p.areaSolicitante.toLowerCase().includes(q)) ||
+      (p.descripcion && p.descripcion.toLowerCase().includes(q)) ||
+      (p.proveedorAdjudicado && p.proveedorAdjudicado.toLowerCase().includes(q)) ||
+      (p.renglonPresupuestario && p.renglonPresupuestario.toLowerCase().includes(q))
+    );
+  }, [adjudicados, adjudicadosEvaluacionSearch]);
+
+  const displayEvaluacionList = useMemo(() => {
+    if (!adjudicadosEvaluacionSearch.trim()) return enEvaluacion;
+    const q = adjudicadosEvaluacionSearch.toLowerCase().trim();
+    return enEvaluacion.filter(p =>
+      (p.nog && p.nog.toLowerCase().includes(q)) ||
+      (p.f56e && p.f56e.toLowerCase().includes(q)) ||
+      (p.areaSolicitante && p.areaSolicitante.toLowerCase().includes(q)) ||
+      (p.descripcion && p.descripcion.toLowerCase().includes(q)) ||
+      (p.renglonPresupuestario && p.renglonPresupuestario.toLowerCase().includes(q))
+    );
+  }, [enEvaluacion, adjudicadosEvaluacionSearch]);
 
   const totalMontoDictaminado = useMemo(() => {
     return evaluadosGIT.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
@@ -1083,6 +1139,34 @@ export const ReportsView: React.FC = () => {
         'Renglón': '',
         'Monto Adjudicado (GTQ)': totalMontoAdjudicado,
       });
+    } else if (selectedReportType === 'adjudicados_y_evaluacion') {
+      filename = `Informe_Adjudicados_y_Evaluacion_OJ_${new Date().toISOString().slice(0, 10)}`;
+      rows = adjudicadosYEvaluacion.map((p, idx) => ({
+        '#': idx + 1,
+        'NOG Guatecompras': p.nog,
+        'Formulario F56-e': p.f56e,
+        'Estatus del Evento': p.estatusEvento,
+        'Área Solicitante': p.areaSolicitante || 'N/A',
+        'Descripción': p.descripcion,
+        'Proveedor': p.proveedorAdjudicado || (p.estatusEvento === 'Evaluación' ? 'En Evaluación Técnica' : 'N/A'),
+        'Fecha': p.fechaAdjudicacion || p.fechaSolicitud || 'N/A',
+        'Modalidad de Compra': p.modalidadCompra || getModalidadCompraByMonto(p.monto, p.modalidadCompra).nombre,
+        'Renglón': p.renglonPresupuestario || '158',
+        'Monto (GTQ)': p.monto,
+      }));
+      rows.push({
+        '#': 'TOTAL',
+        'NOG Guatecompras': `TOTAL CONSOLIDADO (${adjudicadosYEvaluacion.length} EVENTOS: ${adjudicados.length} ADJ / ${enEvaluacion.length} EVAL)`,
+        'Formulario F56-e': '',
+        'Estatus del Evento': '',
+        'Área Solicitante': '',
+        'Descripción': '',
+        'Proveedor': '',
+        'Fecha': '',
+        'Modalidad de Compra': '',
+        'Renglón': '',
+        'Monto (GTQ)': totalMontoAdjudicadosYEvaluacion,
+      });
     } else if (selectedReportType === 'git') {
       filename = `Informe_Dictamenes_GIT_OJ_${new Date().toISOString().slice(0, 10)}`;
       rows = evaluadosGIT.map((p, idx) => ({
@@ -1569,6 +1653,9 @@ export const ReportsView: React.FC = () => {
     if (selectedReportType === 'adjudicados') {
       dataset = adjudicados;
       reportTitle = 'INFORME OFICIAL DE EVENTOS ADJUDICADOS';
+    } else if (selectedReportType === 'adjudicados_y_evaluacion') {
+      dataset = adjudicadosYEvaluacion;
+      reportTitle = 'INFORME OFICIAL DE EVENTOS ADJUDICADOS Y EN EVALUACIÓN';
     } else if (selectedReportType === 'git') {
       dataset = evaluadosGIT;
       reportTitle = 'INFORME DE DICTÁMENES Y EVALUACIONES TÉCNICAS (GIT)';
@@ -1587,7 +1674,9 @@ export const ReportsView: React.FC = () => {
         subtitle: `${subtitle} • Organismo Judicial de Guatemala`,
         filterInfo: {
           area: !isAdmin ? userAssignedArea : (adminAreaFilter !== 'todas' ? adminAreaFilter : undefined),
-          status: selectedReportType === 'adjudicados' ? 'Adjudicación' : undefined,
+          status: selectedReportType === 'adjudicados' 
+            ? 'Adjudicación' 
+            : (selectedReportType === 'adjudicados_y_evaluacion' ? 'Adjudicación y Evaluación' : undefined),
         },
         currentUser,
         filenamePrefix: `Informe_${selectedReportType}_${!isAdmin ? 'Area' : 'Admin'}`,
@@ -1633,6 +1722,17 @@ export const ReportsView: React.FC = () => {
 
         {/* Acciones de Exportación e Impresión */}
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            id="btn-open-adjudicados-evaluacion-modal"
+            type="button"
+            onClick={() => setIsAdjudicadosEvaluacionModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 hover:from-blue-900 hover:to-indigo-900 text-amber-300 border border-amber-400/50 text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Generar informe oficial de eventos adjudicados y en evaluación con membrete y logo del Organismo Judicial de Guatemala"
+          >
+            <Award className="w-4 h-4 text-amber-400" />
+            <span>Informe Adjudicados y Evaluación (Logo OJ)</span>
+          </button>
+
           <button
             id="btn-export-report-pdf"
             type="button"
@@ -1730,7 +1830,7 @@ export const ReportsView: React.FC = () => {
       />
 
       {/* 3. Selector de Pestañas de Informe */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 print:hidden">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-2.5 print:hidden">
         
         {/* Pestaña 1: Consolidado General */}
         <button
@@ -1769,6 +1869,26 @@ export const ReportsView: React.FC = () => {
           </div>
           <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'adjudicados' ? 'text-slate-300' : 'text-slate-400'}`}>
             {adjudicados.length} adjudicados • {formatQuetzales(totalMontoAdjudicado)}
+          </p>
+        </button>
+
+        {/* Pestaña: Adjudicados y Evaluación (Logo OJ) */}
+        <button
+          id="tab-report-adjudicados-evaluacion"
+          type="button"
+          onClick={() => setSelectedReportType('adjudicados_y_evaluacion')}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            selectedReportType === 'adjudicados_y_evaluacion'
+              ? 'bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 text-amber-300 border-amber-400/50 shadow-xs ring-2 ring-amber-400/60'
+              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold">Adjudicados y Evaluación</span>
+            <Award className={`w-3.5 h-3.5 ${selectedReportType === 'adjudicados_y_evaluacion' ? 'text-amber-400' : 'text-slate-400'}`} />
+          </div>
+          <p className={`text-[10px] mt-1 truncate ${selectedReportType === 'adjudicados_y_evaluacion' ? 'text-amber-200' : 'text-slate-400'}`}>
+            {adjudicadosYEvaluacion.length} eventos • {formatQuetzales(totalMontoAdjudicadosYEvaluacion)}
           </p>
         </button>
 
@@ -1919,20 +2039,22 @@ export const ReportsView: React.FC = () => {
             <h3 className="text-sm font-bold uppercase tracking-wide text-slate-800">
               {selectedReportType === 'consolidado' && '1. Informe Consolidado General de Adquisiciones y Eventos NOG'}
               {selectedReportType === 'adjudicados' && '2. Informe Oficial de Eventos Resueltos y Adjudicados'}
-              {selectedReportType === 'git' && '3. Registro Institucional de Dictámenes y Evaluaciones Técnicas GIT'}
-              {selectedReportType === 'presupuesto_analitico' && '4. Informe de Presupuesto Analítico de Renglones y Disponibilidades Presupuestarias'}
-              {selectedReportType === 'reporte_grupo' && '5. Informe Consolidado de Ejecución por Grupo Presupuestario (Grupos 100, 200 y 300)'}
-              {selectedReportType === 'metricas_ejecucion' && '6. Dashboard de Métricas de Ejecución Presupuestaria (% Ejecución vs Disponible Consolidado)'}
+              {selectedReportType === 'adjudicados_y_evaluacion' && '3. Informe Oficial de Eventos Adjudicados y en Evaluación (Logo Organismo Judicial)'}
+              {selectedReportType === 'git' && '4. Registro Institucional de Dictámenes y Evaluaciones Técnicas GIT'}
+              {selectedReportType === 'presupuesto_analitico' && '5. Informe de Presupuesto Analítico de Renglones y Disponibilidades Presupuestarias'}
+              {selectedReportType === 'reporte_grupo' && '6. Informe Consolidado de Ejecución por Grupo Presupuestario (Grupos 100, 200 y 300)'}
+              {selectedReportType === 'metricas_ejecucion' && '7. Dashboard de Métricas de Ejecución Presupuestaria (% Ejecución vs Disponible Consolidado)'}
               {selectedReportType === 'analitico' && (
                 isAdmin
-                  ? '7. Desglose Analítico de Compras por Grupo y Renglón Presupuestario (Todas las Áreas)'
-                  : `7. Desglose Analítico de Compras por Grupo y Renglón Presupuestario - Unidad: ${(userAssignedArea || 'ÁREA').toUpperCase()}`
+                  ? '8. Desglose Analítico de Compras por Grupo y Renglón Presupuestario (Todas las Áreas)'
+                  : `8. Desglose Analítico de Compras por Grupo y Renglón Presupuestario - Unidad: ${(userAssignedArea || 'ÁREA').toUpperCase()}`
               )}
-              {selectedReportType === 'balance' && '8. Balance Financiero y Ejecución Presupuestaria'}
+              {selectedReportType === 'balance' && '9. Balance Financiero y Ejecución Presupuestaria'}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               {selectedReportType === 'consolidado' && 'Listado maestro de formularios F56-e, estatus del evento y montos de compra'}
               {selectedReportType === 'adjudicados' && 'Expedientes adjudicados a proveedores con detalle de montos y modalidades'}
+              {selectedReportType === 'adjudicados_y_evaluacion' && 'Control oficial consolidado de expedientes adjudicados y en fase de evaluación técnica conforme a la Ley de Contrataciones del Estado (Logo Institucional OJ)'}
               {selectedReportType === 'git' && 'Control de dictámenes técnicos elaborados conforme al Decreto 57-92 y normativas'}
               {selectedReportType === 'presupuesto_analitico' && 'Matriz analítica de disponibilidad: Presupuesto inicial, modificaciones (+/-), vigente, pagado, comprometido y disponibilidades real y proyectada'}
               {selectedReportType === 'reporte_grupo' && 'Consolidado comparativo por Grupo 100 Servicios, Grupo 200 Materiales y Grupo 300 Activos con desglose de renglones'}
@@ -2764,6 +2886,354 @@ export const ReportsView: React.FC = () => {
               <div className="text-right">
                 <span className="text-[10px] uppercase font-bold text-emerald-700 block">Total Adjudicado en Quetzales</span>
                 <span className="text-lg font-bold font-mono text-emerald-900">{formatQuetzales(totalMontoAdjudicado)}</span>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* VISTA: EVENTOS ADJUDICADOS Y EN EVALUACIÓN (LOGO OJ)      */}
+        {/* ========================================================= */}
+        {selectedReportType === 'adjudicados_y_evaluacion' && (
+          <div className="space-y-6">
+
+            {/* BANNER INSTITUCIONAL OFICIAL CON LOGO DEL ORGANISMO JUDICIAL DE GUATEMALA */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-blue-900 text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white/10 rounded-2xl p-1.5 border border-white/20 flex items-center justify-center shrink-0">
+                  <img
+                    src="/organismo_judicial_logo.svg"
+                    alt="Logo del Organismo Judicial de Guatemala"
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/organismo_judicial_logo.png';
+                    }}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
+                      Organismo Judicial de Guatemala
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                      Gerencia de Informática
+                    </span>
+                  </div>
+                  <h3 className="text-sm sm:text-base font-black uppercase text-white font-serif mt-0.5">
+                    INFORME OFICIAL DE EVENTOS ADJUDICADOS Y EN EVALUACIÓN TÉCNICA
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Total Cartera: {adjudicadosYEvaluacion.length} eventos • Monto Consolidado: {formatQuetzales(totalMontoAdjudicadosYEvaluacion)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsAdjudicadosEvaluacionModalOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  title="Abrir boleta oficial imprimible o guardar PDF con logo institucional del Organismo Judicial"
+                >
+                  <Award className="w-4 h-4 text-slate-950" />
+                  <span>Abrir Boleta / Imprimir con Logo OJ</span>
+                </button>
+              </div>
+            </div>
+
+            {/* CUADRO DE KPIS EJECUTIVOS */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200">
+                <span className="text-[10px] font-bold text-blue-900 uppercase tracking-wider block">
+                  1. Eventos Adjudicados
+                </span>
+                <span className="text-xl font-black text-blue-950 font-mono block mt-0.5">
+                  {adjudicados.length}
+                </span>
+                <span className="text-xs font-bold text-blue-900 font-mono block mt-1">
+                  {formatQuetzales(totalMontoAdjudicado)}
+                </span>
+                <span className="text-[9px] text-blue-700 mt-0.5 block">
+                  Resolución firme de compra
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block">
+                  2. En Evaluación Técnica
+                </span>
+                <span className="text-xl font-black text-amber-950 font-mono block mt-0.5">
+                  {enEvaluacion.length}
+                </span>
+                <span className="text-xs font-bold text-amber-900 font-mono block mt-1">
+                  {formatQuetzales(totalMontoEnEvaluacion)}
+                </span>
+                <span className="text-[9px] text-amber-700 mt-0.5 block">
+                  En calificación y dictamen GIT
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-300">
+                <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">
+                  3. Total Cartera Combinada
+                </span>
+                <span className="text-xl font-black text-slate-900 font-mono block mt-0.5">
+                  {adjudicadosYEvaluacion.length}
+                </span>
+                <span className="text-xs font-bold text-slate-950 font-mono block mt-1">
+                  {formatQuetzales(totalMontoAdjudicadosYEvaluacion)}
+                </span>
+                <span className="text-[9px] text-slate-500 mt-0.5 block">
+                  Monto consolidado activo
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider block">
+                  4. Tasa de Resolución
+                </span>
+                <span className="text-xl font-black text-indigo-950 font-mono block mt-0.5">
+                  {adjudicadosYEvaluacion.length > 0 ? ((adjudicados.length / adjudicadosYEvaluacion.length) * 100).toFixed(1) : 0}%
+                </span>
+                <span className="text-[10px] font-bold text-indigo-900 block mt-1">
+                  {adjudicados.length} adjudicados de {adjudicadosYEvaluacion.length}
+                </span>
+                <span className="text-[9px] text-indigo-700 mt-0.5 block">
+                  Eficacia contractual
+                </span>
+              </div>
+            </div>
+
+            {/* BARRA DE FILTROS Y BÚSQUEDA RÁPIDA DENTRO DEL REPORTE */}
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-700 flex items-center gap-1 mr-1">
+                  <Filter className="w-3.5 h-3.5 text-slate-500" />
+                  Filtrar Vista:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAdjudicadosEvaluacionSubFilter('todos')}
+                  className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                    adjudicadosEvaluacionSubFilter === 'todos'
+                      ? 'bg-blue-950 text-white shadow-2xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
+                  }`}
+                >
+                  Todos ({adjudicadosYEvaluacion.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdjudicadosEvaluacionSubFilter('adjudicados')}
+                  className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                    adjudicadosEvaluacionSubFilter === 'adjudicados'
+                      ? 'bg-blue-800 text-white shadow-2xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
+                  }`}
+                >
+                  Solo Adjudicados ({adjudicados.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdjudicadosEvaluacionSubFilter('evaluacion')}
+                  className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                    adjudicadosEvaluacionSubFilter === 'evaluacion'
+                      ? 'bg-amber-800 text-white shadow-2xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
+                  }`}
+                >
+                  Solo en Evaluación ({enEvaluacion.length})
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={adjudicadosEvaluacionSearch}
+                  onChange={(e) => setAdjudicadosEvaluacionSearch(e.target.value)}
+                  placeholder="Buscar NOG, F56-e, área, proveedor..."
+                  className="w-full pl-8 pr-3 py-1 bg-white border border-slate-300 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-800"
+                />
+                {adjudicadosEvaluacionSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setAdjudicadosEvaluacionSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* SECCIÓN I: EVENTOS RESUELTOS Y ADJUDICADOS */}
+            {(adjudicadosEvaluacionSubFilter === 'todos' || adjudicadosEvaluacionSubFilter === 'adjudicados') && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b-2 border-blue-900 pb-1.5">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-blue-900" />
+                    <h4 className="text-xs sm:text-sm font-black uppercase text-blue-950 tracking-wide font-serif">
+                      SECCIÓN I: EVENTOS OFICIALMENTE RESUELTOS Y ADJUDICADOS ({displayAdjudicadosList.length})
+                    </h4>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-blue-950 bg-blue-100 px-2.5 py-0.5 rounded border border-blue-300">
+                    Subtotal: {formatQuetzales(displayAdjudicadosList.reduce((acc, p) => acc + (Number(p.monto) || 0), 0))}
+                  </span>
+                </div>
+
+                {displayAdjudicadosList.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic p-3 text-center bg-slate-50 rounded border border-dashed border-slate-200">
+                    No hay eventos adjudicados que coincidan con la búsqueda.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-300 rounded-lg">
+                    <table className="w-full text-[11px] text-left border-collapse">
+                      <thead>
+                        <tr className="bg-blue-950 text-white font-bold">
+                          <th className="p-2 text-center w-10">#</th>
+                          <th className="p-2 w-24">NOG</th>
+                          <th className="p-2 w-20">F56-e</th>
+                          <th className="p-2 w-32">Área Solicitante</th>
+                          <th className="p-2">Descripción del Bien o Servicio</th>
+                          <th className="p-2 w-36">Proveedor Adjudicado</th>
+                          <th className="p-2 text-center w-20">Fecha Adj.</th>
+                          <th className="p-2 text-center w-14">Renglón</th>
+                          <th className="p-2 text-right font-mono w-28">Monto (GTQ)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {displayAdjudicadosList.map((p, idx) => (
+                          <tr key={p.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-blue-50/20'}>
+                            <td className="p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
+                            <td className="p-1.5 font-mono font-bold text-slate-900">{p.nog}</td>
+                            <td className="p-1.5 font-mono text-slate-700">{p.f56e}</td>
+                            <td className="p-1.5 font-semibold text-slate-800">{p.areaSolicitante}</td>
+                            <td className="p-1.5 text-slate-900 max-w-xs">{p.descripcion}</td>
+                            <td className="p-1.5 font-semibold text-blue-950">
+                              {p.proveedorAdjudicado || 'Adjudicación Confirmada'}
+                            </td>
+                            <td className="p-1.5 text-center font-mono text-slate-600 whitespace-nowrap">
+                              {formatDate(p.fechaAdjudicacion || p.fechaSolicitud)}
+                            </td>
+                            <td className="p-1.5 text-center font-mono font-bold text-slate-800">
+                              {p.renglonPresupuestario || '158'}
+                            </td>
+                            <td className="p-1.5 text-right font-mono font-bold text-slate-950 whitespace-nowrap">
+                              {formatQuetzales(p.monto)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-blue-100 font-black text-blue-950">
+                          <td colSpan={8} className="p-2 text-right uppercase tracking-wider">
+                            TOTAL SECCIÓN I ({displayAdjudicadosList.length} EVENTOS ADJUDICADOS):
+                          </td>
+                          <td className="p-2 text-right font-mono text-xs text-blue-950 whitespace-nowrap">
+                            {formatQuetzales(displayAdjudicadosList.reduce((acc, p) => acc + (Number(p.monto) || 0), 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SECCIÓN II: EVENTOS EN FASE DE EVALUACIÓN TÉCNICA */}
+            {(adjudicadosEvaluacionSubFilter === 'todos' || adjudicadosEvaluacionSubFilter === 'evaluacion') && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b-2 border-amber-600 pb-1.5">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-700" />
+                    <h4 className="text-xs sm:text-sm font-black uppercase text-amber-950 tracking-wide font-serif">
+                      SECCIÓN II: EVENTOS EN FASE DE EVALUACIÓN TÉCNICA Y CALIFICACIÓN ({displayEvaluacionList.length})
+                    </h4>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-amber-950 bg-amber-100 px-2.5 py-0.5 rounded border border-amber-300">
+                    Subtotal: {formatQuetzales(displayEvaluacionList.reduce((acc, p) => acc + (Number(p.monto) || 0), 0))}
+                  </span>
+                </div>
+
+                {displayEvaluacionList.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic p-3 text-center bg-slate-50 rounded border border-dashed border-slate-200">
+                    No hay eventos en evaluación que coincidan con la búsqueda.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-300 rounded-lg">
+                    <table className="w-full text-[11px] text-left border-collapse">
+                      <thead>
+                        <tr className="bg-amber-900 text-white font-bold">
+                          <th className="p-2 text-center w-10">#</th>
+                          <th className="p-2 w-24">NOG</th>
+                          <th className="p-2 w-20">F56-e</th>
+                          <th className="p-2 w-32">Área Solicitante</th>
+                          <th className="p-2">Descripción del Requerimiento</th>
+                          <th className="p-2 text-center w-16">Ofertas</th>
+                          <th className="p-2 text-center w-20">Fecha Sol.</th>
+                          <th className="p-2 text-center w-14">Renglón</th>
+                          <th className="p-2 text-right font-mono w-28">Monto Estimado (GTQ)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {displayEvaluacionList.map((p, idx) => (
+                          <tr key={p.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}>
+                            <td className="p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
+                            <td className="p-1.5 font-mono font-bold text-slate-900">{p.nog}</td>
+                            <td className="p-1.5 font-mono text-slate-700">{p.f56e}</td>
+                            <td className="p-1.5 font-semibold text-slate-800">{p.areaSolicitante}</td>
+                            <td className="p-1.5 text-slate-900 max-w-xs">{p.descripcion}</td>
+                            <td className="p-1.5 text-center font-mono font-bold text-amber-900">
+                              {p.cantidadOfertas ?? 0}
+                            </td>
+                            <td className="p-1.5 text-center font-mono text-slate-600 whitespace-nowrap">
+                              {formatDate(p.fechaSolicitud)}
+                            </td>
+                            <td className="p-1.5 text-center font-mono font-bold text-slate-800">
+                              {p.renglonPresupuestario || '158'}
+                            </td>
+                            <td className="p-1.5 text-right font-mono font-bold text-slate-950 whitespace-nowrap">
+                              {formatQuetzales(p.monto)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-amber-100 font-black text-amber-950">
+                          <td colSpan={8} className="p-2 text-right uppercase tracking-wider">
+                            TOTAL SECCIÓN II ({displayEvaluacionList.length} EVENTOS EN EVALUACIÓN):
+                          </td>
+                          <td className="p-2 text-right font-mono text-xs text-amber-950 whitespace-nowrap">
+                            {formatQuetzales(displayEvaluacionList.reduce((acc, p) => acc + (Number(p.monto) || 0), 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* GRAN TOTAL CONSOLIDADO */}
+            <div className="p-4 bg-slate-900 border border-slate-800 text-white rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-400 flex items-center justify-center font-bold">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-white text-xs uppercase tracking-wide">
+                    Gran Total Consolidado (Adjudicados + En Evaluación)
+                  </h4>
+                  <p className="text-[11px] text-slate-300">
+                    Totalización oficial para auditoría y control de adquisiciones del Organismo Judicial
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-amber-400 block">Total Cartera Activa</span>
+                <span className="text-xl font-bold font-mono text-amber-300">{formatQuetzales(totalMontoAdjudicadosYEvaluacion)}</span>
               </div>
             </div>
 
@@ -5395,6 +5865,14 @@ export const ReportsView: React.FC = () => {
           onClose={() => setSelectedDictamenPurchase(null)}
         />
       )}
+
+      {/* Modal Oficial de Eventos Adjudicados y en Evaluación con Logo OJ */}
+      <AdjudicadosEvaluacionReportModal
+        isOpen={isAdjudicadosEvaluacionModalOpen}
+        onClose={() => setIsAdjudicadosEvaluacionModalOpen(false)}
+        purchases={basePurchases}
+        currentUser={currentUser}
+      />
 
     </div>
   );

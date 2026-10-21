@@ -110,6 +110,7 @@ import {
 } from '../lib/firebase';
 import { collection, onSnapshot, query, limit, getDocs } from 'firebase/firestore';
 import { saveAttachmentToIndexedDB, getAttachmentFromIndexedDB, getAttachmentWithDataUrl, saveJudicaturaAttachmentToIndexedDB } from '../utils/attachmentStorage';
+import { normalizeTextKey, deduplicateCatalogItems } from '../utils/rbacUtils';
 
 export const DEFAULT_LOGO_CONFIG: CustomLogoConfig = {
   type: 'custom_image',
@@ -595,7 +596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               color: 'cyan'
             });
           }
-          parsed[areaCatIdx] = { ...areaCat, items: updatedItems };
+          parsed[areaCatIdx] = { ...areaCat, items: deduplicateCatalogItems(updatedItems) };
         }
         const hasJudEstatusCat = parsed.some(c => c.codigo === 'ESTATUS_JUDICATURA');
         if (!hasJudEstatusCat) {
@@ -1158,7 +1159,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               color: 'cyan'
             });
           }
-          incomingCatalogs[areaCatIdx] = { ...areaCat, items: updatedItems };
+          incomingCatalogs[areaCatIdx] = { ...areaCat, items: deduplicateCatalogItems(updatedItems) };
         }
         setCatalogs(incomingCatalogs);
         try {
@@ -3840,16 +3841,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addCatalogItem = (catalogId: string, item: Omit<CatalogItem, 'id'>) => {
-    const newItem: CatalogItem = {
-      ...item,
-      id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    };
     let updatedCatalog: Catalog | null = null;
+    const itemValKey = normalizeTextKey(item.valor || '');
+
     setCatalogs(prev => prev.map(cat => {
       if (cat.id === catalogId) {
+        // Verificar si ya existe un elemento idéntico por clave normalizada
+        const existingIdx = cat.items.findIndex(it => normalizeTextKey(it.valor || '') === itemValKey);
+        if (existingIdx >= 0) {
+          const newItems = [...cat.items];
+          newItems[existingIdx] = {
+            ...newItems[existingIdx],
+            valor: item.valor.trim(),
+            activo: true,
+            descripcion: item.descripcion || newItems[existingIdx].descripcion,
+          };
+          updatedCatalog = { ...cat, items: newItems };
+          return updatedCatalog;
+        }
+
+        const newItem: CatalogItem = {
+          ...item,
+          valor: item.valor.trim(),
+          id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        };
         updatedCatalog = {
           ...cat,
-          items: [...cat.items, newItem]
+          items: deduplicateCatalogItems([...cat.items, newItem])
         };
         return updatedCatalog;
       }
@@ -3858,7 +3876,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (updatedCatalog) {
       saveCatalogToFirestore(updatedCatalog);
     }
-    logAudit('EDITAR_CATALOGO', 'Catálogos', `Añadido elemento "${item.valor}" al catálogo ID: ${catalogId}`, catalogId);
+    logAudit('EDITAR_CATALOGO', 'Catálogos', `Añadido/sincronizado elemento "${item.valor}" al catálogo ID: ${catalogId}`, catalogId);
   };
 
   const updateCatalogItem = (catalogId: string, itemId: string, item: Partial<CatalogItem>) => {
@@ -4058,29 +4076,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let updatedPurchasesCount = 0;
     let updatedCatalogsCount = 0;
 
-    // 1. Sincronizar catálogo AREA_SOLICITANTE asegurando Soporte Remoto
+    // 1. Sincronizar catálogo AREA_SOLICITANTE asegurando Soporte Remoto y ELIMINANDO DUPLICADOS
     let currentCatalogs = [...catalogs];
     const areaCatIdx = currentCatalogs.findIndex(c => c.codigo === 'AREA_SOLICITANTE');
 
     if (areaCatIdx >= 0) {
       const areaCat = currentCatalogs[areaCatIdx];
-      let itemsModified = false;
-      let newItems = areaCat.items.map(it => {
-        if (
-          it.codigo === 'SOPORTE_REMOTO' ||
-          it.valor.toLowerCase().trim() === 'soporte tecnico remoto' ||
-          it.valor.toLowerCase().trim() === 'soporte técnico remoto'
-        ) {
-          if (it.valor !== 'Soporte Remoto') {
-            itemsModified = true;
-            return { ...it, codigo: 'SOPORTE_REMOTO', valor: 'Soporte Remoto' };
-          }
+      // Deduplicar estrictamente todos los elementos por clave normalizada
+      let cleanedItems = deduplicateCatalogItems(areaCat.items);
+
+      // Estandarizar nombres comunes
+      cleanedItems = cleanedItems.map(it => {
+        const key = normalizeTextKey(it.valor || '');
+        if (key === 'soporte tecnico') {
+          return { ...it, valor: 'Soporte Técnico' };
+        }
+        if (key.includes('soporte') && key.includes('remoto')) {
+          return { ...it, valor: 'Soporte Remoto' };
         }
         return it;
       });
 
-      if (!newItems.some(it => it.valor.toLowerCase().trim() === 'soporte remoto')) {
-        newItems.push({
+      cleanedItems = deduplicateCatalogItems(cleanedItems);
+
+      if (!cleanedItems.some(it => normalizeTextKey(it.valor) === normalizeTextKey('Soporte Remoto'))) {
+        cleanedItems.push({
           id: 'area-soporte-remoto',
           codigo: 'SOPORTE_REMOTO',
           valor: 'Soporte Remoto',
@@ -4088,40 +4108,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           activo: true,
           color: 'cyan'
         });
-        itemsModified = true;
       }
 
-      // Integrar cualquier área existente en compras que no esté en el catálogo
-      purchases.forEach(p => {
-        if (p.areaSolicitante && p.areaSolicitante.trim()) {
-          const val = p.areaSolicitante.trim();
-          const exists = newItems.some(it => it.valor.toLowerCase().trim() === val.toLowerCase().trim());
-          if (!exists) {
-            newItems.push({
-              id: `area-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-              codigo: val.toUpperCase().replace(/\s+/g, '_').normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
-              valor: val,
-              descripcion: 'Área incorporada desde adquisiciones del sistema',
-              activo: true,
-              color: 'slate'
-            });
-            itemsModified = true;
-          }
-        }
-      });
-
-      if (itemsModified) {
-        currentCatalogs[areaCatIdx] = { ...areaCat, items: newItems };
-        updatedCatalogsCount++;
-      }
+      currentCatalogs[areaCatIdx] = { ...areaCat, items: deduplicateCatalogItems(cleanedItems) };
+      updatedCatalogsCount++;
     }
 
-    // 2. Sincronizar compras: si tenían 'Soporte Técnico Remoto', actualizar a 'Soporte Remoto'
+    // 2. Sincronizar compras vinculándolas al catálogo oficial AREA_SOLICITANTE sin duplicados
+    const activeAreas = currentCatalogs[areaCatIdx]?.items || [];
     let currentPurchasesList = purchases.map(p => {
-      const a = (p.areaSolicitante || '').toLowerCase().trim();
-      if (a === 'soporte técnico remoto' || a === 'soporte tecnico remoto') {
+      const origArea = (p.areaSolicitante || '').trim();
+      if (!origArea) return p;
+      const key = normalizeTextKey(origArea);
+      const matchCat = activeAreas.find(it => normalizeTextKey(it.valor) === key);
+      if (matchCat && matchCat.valor !== origArea) {
         updatedPurchasesCount++;
-        return { ...p, areaSolicitante: 'Soporte Remoto' };
+        return { ...p, areaSolicitante: matchCat.valor };
       }
       return p;
     });
