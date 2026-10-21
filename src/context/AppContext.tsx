@@ -313,6 +313,8 @@ interface AppContextType {
   updateJudicatura: (id: string, data: Partial<JudicaturaRecord>) => Promise<JudicaturaRecord>;
   deleteJudicatura: (id: string) => Promise<boolean>;
   addJudicaturaObservacion: (judicaturaId: string, texto: string) => Promise<JudicaturaRecord | null>;
+  updateJudicaturaObservacion: (judicaturaId: string, observacionId: string, nuevoTexto: string) => Promise<JudicaturaRecord | null>;
+  deleteJudicaturaObservacion: (judicaturaId: string, observacionId: string) => Promise<JudicaturaRecord | null>;
   importJudicaturas: (
     records: Array<Omit<JudicaturaRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string }>,
     replaceAll?: boolean
@@ -5134,6 +5136,108 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return updatedRecord;
   };
 
+  const updateJudicaturaObservacion = async (
+    judicaturaId: string, 
+    observacionId: string, 
+    nuevoTexto: string
+  ): Promise<JudicaturaRecord | null> => {
+    const existing = judicaturas.find(j => j.id === judicaturaId);
+    if (!existing || !nuevoTexto.trim()) return null;
+
+    const currentObs = existing.observaciones || [];
+    const obsIndex = currentObs.findIndex(o => o.id === observacionId);
+    if (obsIndex === -1) return null;
+
+    const nowIso = new Date().toISOString();
+    const updatedObsList = [...currentObs];
+    updatedObsList[obsIndex] = {
+      ...updatedObsList[obsIndex],
+      texto: nuevoTexto.trim()
+    };
+
+    const updatedRecord: JudicaturaRecord = {
+      ...existing,
+      observaciones: updatedObsList,
+      modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaModificacion: nowIso
+    };
+
+    const updated = judicaturas.map(j => j.id === judicaturaId ? updatedRecord : j);
+    setJudicaturas(updated);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updated));
+
+    saveJudicaturaToFirestore(updatedRecord).catch(err => console.warn("Aviso Firestore al actualizar observación:", err));
+
+    fetch(`/api/db/judicaturas/${encodeURIComponent(judicaturaId)}/observaciones/${encodeURIComponent(observacionId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        texto: nuevoTexto.trim(),
+        modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema'
+      })
+    }).catch(err => console.warn("Aviso servidor central al actualizar observación:", err));
+
+    logAudit(
+      'EDITAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Observación editada en judicatura: ${existing.nombreJudicatura}`,
+      judicaturaId
+    );
+
+    showToast({
+      title: 'Observación Modificada',
+      message: 'Se actualizó el contenido de la observación en la bitácora.',
+      type: 'exito'
+    });
+
+    return updatedRecord;
+  };
+
+  const deleteJudicaturaObservacion = async (
+    judicaturaId: string, 
+    observacionId: string
+  ): Promise<JudicaturaRecord | null> => {
+    const existing = judicaturas.find(j => j.id === judicaturaId);
+    if (!existing) return null;
+
+    const currentObs = existing.observaciones || [];
+    const updatedObsList = currentObs.filter(o => o.id !== observacionId);
+    if (updatedObsList.length === currentObs.length) return null;
+
+    const nowIso = new Date().toISOString();
+    const updatedRecord: JudicaturaRecord = {
+      ...existing,
+      observaciones: updatedObsList,
+      modificadoPor: currentUser?.nombreCompleto || 'Usuario del Sistema',
+      fechaModificacion: nowIso
+    };
+
+    const updated = judicaturas.map(j => j.id === judicaturaId ? updatedRecord : j);
+    setJudicaturas(updated);
+    safeSetLocalStorage(STORAGE_KEYS.JUDICATURAS, JSON.stringify(updated));
+
+    saveJudicaturaToFirestore(updatedRecord).catch(err => console.warn("Aviso Firestore al eliminar observación:", err));
+
+    fetch(`/api/db/judicaturas/${encodeURIComponent(judicaturaId)}/observaciones/${encodeURIComponent(observacionId)}`, {
+      method: 'DELETE'
+    }).catch(err => console.warn("Aviso servidor central al eliminar observación:", err));
+
+    logAudit(
+      'ELIMINAR_COMPRA' as any,
+      'Judicaturas' as any,
+      `Observación eliminada de la bitácora en judicatura: ${existing.nombreJudicatura}`,
+      judicaturaId
+    );
+
+    showToast({
+      title: 'Observación Eliminada',
+      message: 'Se removió la observación de la bitácora de la judicatura.',
+      type: 'info'
+    });
+
+    return updatedRecord;
+  };
+
   const importJudicaturas = async (
     records: Array<Omit<JudicaturaRecord, 'id' | 'creadoPor' | 'fechaCreacion'> & { id?: string }>,
     replaceAll: boolean = false
@@ -5995,6 +6099,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateJudicatura,
         deleteJudicatura,
         addJudicaturaObservacion,
+        updateJudicaturaObservacion,
+        deleteJudicaturaObservacion,
         importJudicaturas,
         addJudicaturaDocumento,
         deleteJudicaturaDocumento,

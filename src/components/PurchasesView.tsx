@@ -33,6 +33,7 @@ import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } f
 import { exportPurchasesToExcel, exportPurchasesToCSV } from '../utils/purchasesExcelExport';
 import { ExportPdfModal } from './ExportPdfModal';
 import { AdjudicadosEvaluacionReportModal } from './AdjudicadosEvaluacionReportModal';
+import { InstitutionalReportModal } from './InstitutionalReportModal';
 import { generatePurchasesPDF, generateIndividualPurchasePDF } from '../utils/pdfExport';
 import { downloadDocumentFile } from '../utils/documentUtils';
 import { isPurchaseVisibleToUser, isUserGlobalAdmin, getUserAssignedArea, TECHNICAL_AREAS_LIST, getSystemAreas, canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
@@ -96,6 +97,9 @@ export const PurchasesView: React.FC = () => {
     setModalInitialTab(filterArea !== 'todos' ? 'porArea' : 'graficas');
     setIsPdfModalOpen(true);
   };
+
+  // Modal de Ficha Oficial de Adquisición / Boleta
+  const [selectedReportPurchase, setSelectedReportPurchase] = useState<PurchaseRecord | null>(null);
 
   // Estados de selección múltiple y eliminación masiva
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1307,12 +1311,13 @@ export const PurchasesView: React.FC = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleGenerateFicha(p);
+                              setSelectedReportPurchase(p);
                             }}
-                            className="p-1.5 rounded-md text-slate-600 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                            title="Generar Ficha Técnica Oficial (PDF)"
+                            className="px-2 py-1 rounded-md text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs cursor-pointer"
+                            title="Ver y Descargar Ficha Técnica Oficial en PDF"
                           >
-                            <FileText className="w-4 h-4 text-blue-600" />
+                            <FileText className="w-3.5 h-3.5 text-blue-700" />
+                            <span>Ficha PDF</span>
                           </button>
 
                           {canUserEditPurchase(currentUser, p) && (
@@ -1488,9 +1493,9 @@ export const PurchasesView: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleGenerateFicha(p)}
+                  onClick={() => setSelectedReportPurchase(p)}
                   className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold text-blue-700 shadow-2xs flex items-center gap-1 cursor-pointer"
-                  title="Generar Ficha Técnica Oficial en PDF"
+                  title="Ver y Descargar Ficha Técnica Oficial en PDF"
                 >
                   <FileText className="w-3.5 h-3.5" />
                   <span>Ficha PDF</span>
@@ -1870,6 +1875,14 @@ export const PurchasesView: React.FC = () => {
         purchases={rbacPurchases}
         currentUser={currentUser}
       />
+
+      {/* Modal de Ficha Oficial de Adquisición / Dictamen Tecnológico (F56-e) */}
+      {selectedReportPurchase && (
+        <InstitutionalReportModal
+          purchase={selectedReportPurchase}
+          onClose={() => setSelectedReportPurchase(null)}
+        />
+      )}
 
     </div>
   );

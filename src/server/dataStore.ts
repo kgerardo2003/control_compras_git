@@ -659,6 +659,56 @@ export function addJudicaturaObservation(judicaturaId: string, obs: JudicaturaOb
   return jud;
 }
 
+export function updateJudicaturaObservation(
+  judicaturaId: string, 
+  obsId: string, 
+  nuevoTexto: string,
+  modificadoPor?: string
+): JudicaturaRecord | null {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  const jud = store.judicaturas.find(j => j.id === judicaturaId);
+  if (!jud || !Array.isArray(jud.observaciones)) return null;
+
+  const obsIndex = jud.observaciones.findIndex(o => o.id === obsId);
+  if (obsIndex === -1) return null;
+
+  jud.observaciones[obsIndex] = {
+    ...jud.observaciones[obsIndex],
+    texto: nuevoTexto.trim()
+  };
+  jud.fechaModificacion = new Date().toISOString();
+  if (modificadoPor) {
+    jud.modificadoPor = modificadoPor;
+  }
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return jud;
+}
+
+export function deleteJudicaturaObservation(
+  judicaturaId: string, 
+  obsId: string
+): JudicaturaRecord | null {
+  const store = initDataStore();
+  if (!Array.isArray(store.judicaturas)) {
+    store.judicaturas = [...INITIAL_JUDICATURAS];
+  }
+  const jud = store.judicaturas.find(j => j.id === judicaturaId);
+  if (!jud || !Array.isArray(jud.observaciones)) return null;
+
+  const initialLen = jud.observaciones.length;
+  jud.observaciones = jud.observaciones.filter(o => o.id !== obsId);
+  if (jud.observaciones.length === initialLen) return null;
+
+  jud.fechaModificacion = new Date().toISOString();
+  store.version = (store.version || 1) + 1;
+  persistToDisk();
+  return jud;
+}
+
 // ==========================================
 // MÉTODOS PARA SERVICIOS CONTRATADOS
 // ==========================================

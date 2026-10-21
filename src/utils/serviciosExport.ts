@@ -9,6 +9,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ServicioContratado } from '../types';
 import { calcularMetricasServicio } from './serviciosCalculations';
+import { OJ_LOGO_DATA_URI } from './ojLogoAsset';
 
 /**
  * Normaliza y enriquece los registros de servicios con sus cálculos para exportación
@@ -301,25 +302,42 @@ export function generateServiciosPDFReport(records: ServicioContratado[], curren
   doc.setFillColor(245, 158, 11); // amber-500
   doc.rect(0, 28, pageWidth, 2, 'F');
 
-  // Title
+  // Logotipo Oficial del Organismo Judicial
+  try {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(12, 3.5, 21, 21, 2, 2, 'F');
+    doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 13.5, 5, 18, 18);
+  } catch (e) {
+    console.warn('Error incrustando logotipo en reporte de servicios:', e);
+  }
+
+  // Title & Headers (shifted to X = 38 to give ample space for logo)
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 14, 12);
+  doc.setFontSize(12.5);
+  doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 38, 11);
 
-  doc.setFontSize(10);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(245, 158, 11); // amber-400
+  doc.text('GERENCIA DE INFORMÁTICA • CONTROL DE SERVICIOS Y CONTRATOS (GIT)', 38, 17);
+
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
-  doc.text('GERENCIA DE INFORMÁTICA • SISTEMA DE CONTROL DE VIGENCIA Y ALERTAS TEMPRANAS', 14, 18);
+  doc.setTextColor(203, 213, 225);
+  doc.text('Sistema Integrado de Monitoreo de Vigencias de Pólizas, Renovaciones y Alertas Tempranas', 38, 23);
 
-  // Subtitle / Date
+  // Subtitle / Date (top right)
   const today = new Date().toLocaleDateString('es-GT', {
     day: '2-digit',
     month: 'long',
     year: 'numeric'
   });
-  doc.setFontSize(9);
-  doc.setTextColor(203, 213, 225);
-  doc.text(`Fecha de Emisión: ${today} | Registros: ${records.length}`, pageWidth - 14, 18, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setTextColor(226, 232, 240);
+  doc.text(`Fecha de Emisión: ${today}`, pageWidth - 14, 13, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Total Registros: ${records.length}`, pageWidth - 14, 19, { align: 'right' });
 
   // Summary Metrics Banner
   let vigentes = 0;
@@ -337,25 +355,25 @@ export function generateServiciosPDFReport(records: ServicioContratado[], curren
   });
 
   doc.setFillColor(248, 250, 252);
-  doc.rect(14, 34, pageWidth - 28, 14, 'F');
+  doc.rect(14, 34, pageWidth - 28, 13, 'F');
   doc.setDrawColor(226, 232, 240);
-  doc.rect(14, 34, pageWidth - 28, 14, 'S');
+  doc.rect(14, 34, pageWidth - 28, 13, 'S');
 
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`MÉTRICAS EJECUTIVAS:`, 18, 43);
+  doc.text(`MÉTRICAS EJECUTIVAS:`, 18, 42.5);
 
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Servicios: ${records.length}`, 65, 43);
+  doc.text(`Total Servicios: ${records.length}`, 65, 42.5);
   doc.setTextColor(16, 185, 129); // green
-  doc.text(`Vigentes (+60d): ${vigentes}`, 105, 43);
+  doc.text(`Vigentes (+60d): ${vigentes}`, 105, 42.5);
   doc.setTextColor(245, 158, 11); // amber
-  doc.text(`Por Vencer (1-60d): ${porVencer}`, 150, 43);
+  doc.text(`Por Vencer (1-60d): ${porVencer}`, 150, 42.5);
   doc.setTextColor(225, 29, 72); // rose
-  doc.text(`Vencidos (0d): ${vencidos}`, 200, 43);
+  doc.text(`Vencidos (0d): ${vencidos}`, 200, 42.5);
   doc.setTextColor(185, 28, 28);
-  doc.text(`Alertas Críticas: ${alertasCriticas}`, 245, 43);
+  doc.text(`Alertas Críticas: ${alertasCriticas}`, 245, 42.5);
 
   // Table
   const tableData = records.map((s, idx) => {
@@ -377,8 +395,11 @@ export function generateServiciosPDFReport(records: ServicioContratado[], curren
     ];
   });
 
+  // Table width calculation:
+  // Total printable width (Letter landscape 279.4mm - 28mm margins) = 251.4mm
+  // Column widths sum exactly to 251mm to avoid any automatic compression or word wrapping on "Vencimiento"
   autoTable(doc, {
-    startY: 52,
+    startY: 51,
     head: [[
       'No.',
       'Código',
@@ -396,31 +417,34 @@ export function generateServiciosPDFReport(records: ServicioContratado[], curren
     body: tableData,
     theme: 'grid',
     styles: {
-      fontSize: 7.5,
-      cellPadding: 2,
+      fontSize: 7.2,
+      cellPadding: 1.8,
       textColor: [30, 41, 59],
       lineColor: [226, 232, 240],
-      lineWidth: 0.1
+      lineWidth: 0.1,
+      overflow: 'linebreak'
     },
     headStyles: {
       fillColor: [15, 23, 42],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5
+      fontSize: 7.2,
+      halign: 'center',
+      valign: 'middle'
     },
     columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 18, fontStyle: 'bold' },
-      2: { cellWidth: 26 },
-      3: { cellWidth: 50 },
-      4: { cellWidth: 20 },
-      5: { cellWidth: 18, halign: 'center' },
-      6: { cellWidth: 32 },
-      7: { cellWidth: 18, halign: 'center' },
-      8: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
-      9: { cellWidth: 14, halign: 'center' },
-      10: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
-      11: { cellWidth: 26 }
+      0: { cellWidth: 7, halign: 'center' },
+      1: { cellWidth: 16, fontStyle: 'bold' },
+      2: { cellWidth: 24 },
+      3: { cellWidth: 46 },
+      4: { cellWidth: 18 },
+      5: { cellWidth: 16, halign: 'center' },
+      6: { cellWidth: 28 },
+      7: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+      8: { cellWidth: 21, halign: 'center', fontStyle: 'bold' },
+      9: { cellWidth: 12, halign: 'center' },
+      10: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      11: { cellWidth: 21 }
     },
     didDrawCell: (data) => {
       // Color coding for Días Restantes and Alerta Gestión
@@ -438,21 +462,42 @@ export function generateServiciosPDFReport(records: ServicioContratado[], curren
     margin: { left: 14, right: 14, bottom: 20 }
   });
 
-  // Footer on each page
+  // Footer on each page (two clean non-overlapping rows with top divider line)
   const pageCount = (doc as any).internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
+
+    // Separator line
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 12, pageWidth - 14, pageHeight - 12);
+
+    // Row 1: Institutional text (left) & Page number (right)
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
     doc.text(
-      `Página ${i} de ${pageCount} • Gerencia de Informática - Organismo Judicial de Guatemala • Control de Servicios y Vigencias`,
-      pageWidth / 2,
-      pageHeight - 8,
-      { align: 'center' }
+      'Organismo Judicial de Guatemala • Gerencia de Informática • Reporte Oficial de Servicios Contratados GIT',
+      14,
+      pageHeight - 7.5
     );
-    if (currentUser?.nombreCompleto) {
-      doc.text(`Generado por: ${currentUser.nombreCompleto}`, 14, pageHeight - 8);
-    }
+    doc.setFont('helvetica', 'bold');
+    doc.text(
+      `Página ${i} de ${pageCount}`,
+      pageWidth - 14,
+      pageHeight - 7.5,
+      { align: 'right' }
+    );
+
+    // Row 2: Generated by (left) & Confidential notice (right)
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    const userLabel = currentUser?.nombreCompleto
+      ? `Generado por: ${currentUser.nombreCompleto} (${currentUser.correo || currentUser.rol || 'Usuario Autorizado'})`
+      : 'Generado por: Sistema de Adquisiciones y Servicios GIT';
+    doc.text(userLabel, 14, pageHeight - 3.5);
+    doc.text('Confidencial - Para Uso Oficial Interno Institucional', pageWidth - 14, pageHeight - 3.5, { align: 'right' });
   }
 
   const exportDate = new Date().toISOString().slice(0, 10);

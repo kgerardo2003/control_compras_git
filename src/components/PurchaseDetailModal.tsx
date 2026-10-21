@@ -30,6 +30,8 @@ import { getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { History } from 'lucide-react';
 import { canUserEditPurchase, canUserDeletePurchase, getCanonicalAreaName } from '../utils/rbacUtils';
 import { generateIndividualPurchasePDF } from '../utils/pdfExport';
+import { OJLogo } from './OJLogo';
+import { getPurchaseTimeline } from '../utils/timelineUtils';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -61,7 +63,7 @@ export const PurchaseDetailModal: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [showDocumentPreview, setShowDocumentPreview] = useState(true);
-  const [activeTab, setActiveTab] = useState<'general' | 'arbol' | 'bitacora' | 'documento'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'ficha' | 'arbol' | 'bitacora' | 'documento'>('general');
   const [isEditingFechaAdj, setIsEditingFechaAdj] = useState(false);
   const [inlineFechaAdj, setInlineFechaAdj] = useState('');
 
@@ -244,6 +246,20 @@ export const PurchaseDetailModal: React.FC = () => {
 
               <button
                 type="button"
+                onClick={() => setActiveTab('ficha')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                  activeTab === 'ficha'
+                    ? 'bg-blue-900 text-white shadow-xs'
+                    : 'text-blue-900 bg-blue-50/70 hover:bg-blue-100/70 border border-blue-200'
+                }`}
+                title="Ver Hoja Oficial de Ficha y Dictamen F56-e"
+              >
+                <FileText className="w-3.5 h-3.5 text-blue-700" />
+                <span>Hoja Ficha Oficial F56-e</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab('arbol')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                   activeTab === 'arbol'
@@ -380,6 +396,193 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             )}
 
+            {/* Vista 0: Hoja Ficha Oficial F56-e (Visualización Completa y Descarga PDF) */}
+            {activeTab === 'ficha' && (
+              <div className="space-y-4 pt-1">
+                {/* Barra de Controles de la Ficha */}
+                <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-3 sm:p-4 rounded-xl text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md border border-blue-900">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold text-white">
+                        Ficha Técnica y Dictamen Oficial de Adquisición Tecnológica
+                      </h4>
+                      <p className="text-[11px] text-blue-200/80">
+                        NOG: <span className="font-mono font-bold text-white">{selectedPurchase.nog}</span> • Formulario F56-e: <span className="font-mono font-bold text-white">{selectedPurchase.f56e}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadFichaPdf}
+                      className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer active:scale-95"
+                      title="Generar y Descargar Ficha Técnica en PDF"
+                    >
+                      <Download className="w-3.5 h-3.5 text-white" />
+                      <span>Descargar Ficha PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsReportModalOpen(true)}
+                      className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                      title="Abrir vista imprimible a pantalla completa"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-slate-900" />
+                      <span>Imprimir / Boleta</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Hoja de Ficha Oficial Estilizada */}
+                <div className="bg-white rounded-xl border border-slate-300 shadow-sm p-5 sm:p-8 space-y-5 text-slate-900">
+                  {/* Membrete Oficial */}
+                  <div className="border-b border-slate-300 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <OJLogo size="md" variant="full" lightMode={true} />
+                    </div>
+                    <div className="text-left sm:text-right border-l-2 border-indigo-900 pl-3">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Formulario Control</span>
+                      <span className="text-sm font-mono font-bold text-slate-900 block">{selectedPurchase.f56e}</span>
+                      <span className="text-[10px] font-mono text-slate-500 block">F56: {selectedPurchase.f56 || 'Sin asignar'}</span>
+                    </div>
+                  </div>
+
+                  {/* Título de la Ficha */}
+                  <div className="text-center py-2 bg-slate-50 border-y border-slate-200">
+                    <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-900">
+                      DICTAMEN Y HOJA DE CONTROL DE ADQUISICIÓN TECNOLÓGICA
+                    </h3>
+                    <p className="text-[10px] text-slate-500 italic mt-0.5">
+                      Gerencia de Informática • Organismo Judicial de Guatemala
+                    </p>
+                  </div>
+
+                  {/* Tabla de Parámetros Principales */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse border border-slate-300 text-xs">
+                      <tbody>
+                        <tr className="bg-slate-50">
+                          <td className="border border-slate-300 p-2 font-bold w-1/4 text-slate-700">NOG Guatecompras:</td>
+                          <td className="border border-slate-300 p-2 font-mono font-bold text-blue-900 w-1/4">{selectedPurchase.nog}</td>
+                          <td className="border border-slate-300 p-2 font-bold w-1/4 text-slate-700">Estatus del Evento:</td>
+                          <td className="border border-slate-300 p-2 font-bold w-1/4 uppercase">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${badgeClass}`}>
+                              {selectedPurchase.estatusEvento}
+                            </span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Formulario F56-e:</td>
+                          <td className="border border-slate-300 p-2 font-mono">{selectedPurchase.f56e}</td>
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Formulario F56 Físico:</td>
+                          <td className="border border-slate-300 p-2 font-mono">{selectedPurchase.f56 || 'No especificado'}</td>
+                        </tr>
+                        <tr className="bg-slate-50">
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Monto Estimado / Adjudicado:</td>
+                          <td className="border border-slate-300 p-2 font-bold text-emerald-800 font-mono text-sm">{formatQuetzales(selectedPurchase.monto)}</td>
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Evaluado Área Técnica (GIT):</td>
+                          <td className="border border-slate-300 p-2 font-bold">
+                            {selectedPurchase.evaluadoGIT === 'Sí' ? (
+                              <span className="text-emerald-700">SÍ (Evaluado y Dictaminado)</span>
+                            ) : (
+                              <span className="text-slate-500">NO</span>
+                            )}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Modalidad de Compra (LCE):</td>
+                          <td className="border border-slate-300 p-2" colSpan={3}>
+                            <span className="font-bold text-slate-900 mr-2">{modalidadLCE.nombre}</span>
+                            <span className="text-slate-600 text-[11px]">({modalidadLCE.descripcionRango} — {modalidadLCE.fundamentoLegal})</span>
+                          </td>
+                        </tr>
+                        <tr className="bg-slate-50">
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Área Solicitante:</td>
+                          <td className="border border-slate-300 p-2 font-bold text-amber-800" colSpan={3}>
+                            {getCanonicalAreaName(selectedPurchase.areaSolicitante, catalogs) || 'Soporte Técnico'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Dependencia Solicitante:</td>
+                          <td className="border border-slate-300 p-2" colSpan={3}>{selectedPurchase.dependenciaSolicitante || 'Gerencia de Informática'}</td>
+                        </tr>
+                        <tr className="bg-slate-50">
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Categoría Tecnológica:</td>
+                          <td className="border border-slate-300 p-2" colSpan={3}>{selectedPurchase.categoriaTecnologica || 'Equipo Informático'}</td>
+                        </tr>
+                        {selectedPurchase.proveedorAdjudicado && (
+                          <tr>
+                            <td className="border border-slate-300 p-2 font-bold text-slate-700">Proveedor Adjudicado:</td>
+                            <td className="border border-slate-300 p-2 font-bold text-slate-900" colSpan={3}>
+                              {selectedPurchase.proveedorAdjudicado}
+                              {selectedPurchase.fechaAdjudicacion && (
+                                <span className="ml-2 text-slate-500 font-normal">
+                                  (Adjudicado el {formatDate(selectedPurchase.fechaAdjudicacion)})
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                        <tr>
+                          <td className="border border-slate-300 p-2 font-bold text-slate-700">Imputación Presupuestaria:</td>
+                          <td className="border border-slate-300 p-2" colSpan={3}>
+                            Renglón: <strong>{selectedPurchase.renglonPresupuestario || '158'}</strong> {selectedPurchase.nombreRenglon && `(${selectedPurchase.nombreRenglon})`} • Estado: <strong>{selectedPurchase.estadoPago === 'pagado' ? 'Pagado que Rebaja' : 'Comprometido (Pendiente de Pago)'}</strong>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Descripción del Requerimiento */}
+                  <div>
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 mb-1.5">
+                      Descripción y Justificación Técnica del Requerimiento:
+                    </h4>
+                    <div className="p-3.5 border border-slate-200 rounded-xl bg-slate-50/70 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
+                      {selectedPurchase.descripcion}
+                    </div>
+                  </div>
+
+                  {/* Observaciones Técnicas si existen */}
+                  {selectedPurchase.observaciones && (
+                    <div>
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 mb-1.5">
+                        Observaciones Registradas en el Expediente:
+                      </h4>
+                      <div className="p-3 border border-amber-200 rounded-xl bg-amber-50/50 text-xs text-amber-950 leading-relaxed">
+                        {selectedPurchase.observaciones}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Firmas Institucionales */}
+                  <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center text-xs">
+                    <div className="space-y-1">
+                      <div className="border-b border-slate-400 pb-1 mb-2"></div>
+                      <p className="font-bold text-slate-800 text-[11px]">ELABORÓ</p>
+                      <p className="text-slate-600 text-[10.5px]">{selectedPurchase.creadoPor || 'Analista de Compras GIT'}</p>
+                      <p className="text-[9.5px] text-slate-400">Gerencia de Informática</p>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="border-b border-slate-400 pb-1 mb-2"></div>
+                      <p className="font-bold text-slate-800 text-[11px]">VO. BO. TÉCNICO</p>
+                      <p className="text-slate-600 text-[10.5px]">Subgerencia de Informática</p>
+                      <p className="text-[9.5px] text-slate-400">Dictamen Técnico Validado</p>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="border-b border-slate-400 pb-1 mb-2"></div>
+                      <p className="font-bold text-slate-800 text-[11px]">AUTORIZADO</p>
+                      <p className="text-slate-600 text-[10.5px]">Gerente de Informática</p>
+                      <p className="text-[9.5px] text-slate-400">Organismo Judicial de Guatemala</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Vista 1: Bitácora de Cambios de la Ficha */}
             {activeTab === 'bitacora' && (
               <div className="pt-1">
@@ -500,20 +703,50 @@ export const PurchaseDetailModal: React.FC = () => {
                     )}
                   </div>
                 ) : (
-                  <div className="p-3 bg-white rounded-lg border border-dashed border-slate-300 text-center flex flex-col sm:flex-row items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-slate-500 text-xs">
-                      <FileText className="w-4 h-4 text-slate-400" />
-                      <span>No se ha adjuntado aún el archivo digitalizado de la F56 física.</span>
+                  <div className="p-3.5 bg-gradient-to-r from-blue-50/80 via-slate-50 to-amber-50/50 rounded-xl border border-blue-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-800 shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">
+                          Ficha Técnica Oficial del Expediente F56-e Generada
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          Puede visualizar la ficha oficial en pantalla o descargarla directamente en PDF.
+                        </p>
+                      </div>
                     </div>
-                    {canEdit && (
+                    <div className="flex items-center gap-2 shrink-0">
                       <button
-                        onClick={handleEditFromDetail}
-                        className="text-xs font-bold text-amber-700 hover:text-amber-800 hover:underline inline-flex items-center gap-1"
+                        type="button"
+                        onClick={() => setActiveTab('ficha')}
+                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-blue-900 border border-blue-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                        title="Ver Ficha Oficial en pantalla"
                       >
-                        <Paperclip className="w-3 h-3" />
-                        Adjuntar ahora en Edición
+                        <Eye className="w-3.5 h-3.5 text-blue-700" />
+                        <span>Ver Ficha</span>
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={handleDownloadFichaPdf}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+                        title="Descargar Ficha Técnica Oficial en PDF"
+                      >
+                        <Download className="w-3.5 h-3.5 text-white" />
+                        <span>Descargar PDF</span>
+                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={handleEditFromDetail}
+                          className="text-xs font-bold text-amber-700 hover:text-amber-800 hover:underline inline-flex items-center gap-1 ml-1 cursor-pointer"
+                        >
+                          <Paperclip className="w-3 h-3" />
+                          Adjuntar F56
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
