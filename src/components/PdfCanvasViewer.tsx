@@ -17,24 +17,33 @@ import {
 } from 'lucide-react';
 import { AttachedDocument, PurchaseRecord } from '../types';
 import { getDocumentBlob, downloadDocumentFile } from '../utils/documentUtils';
+import { downloadPdfBlob } from '../utils/pdfExport';
 
 // Configuración del worker de PDF.js para Vite
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-interface PdfCanvasViewerProps {
-  document: AttachedDocument;
+export interface PdfCanvasViewerProps {
+  document?: AttachedDocument | null;
+  pdfBlob?: Blob | null;
+  pdfDataUrl?: string | null;
+  filename?: string;
   purchase?: Partial<PurchaseRecord>;
   isFullscreen?: boolean;
   onExpand?: () => void;
   onClose?: () => void;
+  title?: string;
 }
 
 export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
   document: doc,
+  pdfBlob,
+  pdfDataUrl,
+  filename,
   purchase,
   isFullscreen = false,
   onExpand,
-  onClose
+  onClose,
+  title
 }) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);

@@ -425,20 +425,77 @@ export function generatePurchasesPDF(options: ExportPurchasesPDFOptions): string
   const timeFormatted = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
   const filename = `${filenamePrefix}_${timeFormatted}.pdf`;
 
-  doc.save(filename);
+  try {
+    const blob = doc.output('blob');
+    downloadPdfBlob(blob, filename);
+  } catch (e) {
+    console.warn('downloadPdfBlob falló en reporte consolidado, utilizando doc.save:', e);
+    doc.save(filename);
+  }
   return filename;
 }
 
 /**
- * Genera la Ficha Técnica Detallada Oficial de una Adquisición en formato PDF.
- * Incluye membrete oficial del Organismo Judicial, datos de NOG, F56-e,
- * afectación presupuestaria, dictamen técnico de TI, cronograma del evento,
- * línea de tiempo de tracking, árbol de observaciones y firmas de responsabilidad.
+ * Descarga de manera segura un archivo PDF como Blob en navegadores e iframes.
+ * Evita bloqueos por restricciones de sandboxing creando enlaces temporales seguros
+ * o fallback por data URI.
  */
-export function generateIndividualPurchasePDF(
+export function downloadPdfBlob(blob: Blob, filename: string): boolean {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.target = '_self';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        // Ignorar limpieza de elemento
+      }
+    }, 2000);
+    return true;
+  } catch (err) {
+    console.warn('downloadPdfBlob: error creando object URL, intentando fallback FileReader:', err);
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const fallbackA = document.createElement('a');
+        fallbackA.href = dataUrl;
+        fallbackA.download = filename;
+        fallbackA.rel = 'noopener noreferrer';
+        fallbackA.style.display = 'none';
+        document.body.appendChild(fallbackA);
+        fallbackA.click();
+        setTimeout(() => {
+          try {
+            document.body.removeChild(fallbackA);
+          } catch (e) {}
+        }, 1500);
+      };
+      reader.readAsDataURL(blob);
+      return true;
+    } catch (e2) {
+      console.error('Error final en descarga de PDF:', e2);
+      return false;
+    }
+  }
+}
+
+/**
+ * Construye y formatea el documento jsPDF oficial de la Ficha Técnica de Adquisición F56-e.
+ * Retorna la instancia jsPDF, el nombre de archivo sugerido y el código único de auditoría.
+ */
+export function createIndividualPurchasePDFDoc(
   purchase: PurchaseRecord,
   currentUser?: { nombreCompleto?: string; username?: string; rol?: string } | null
-): string {
+): { doc: jsPDF; filename: string; auditCode: string } {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -570,7 +627,7 @@ export function generateIndividualPurchasePDF(
   // 2. TABLA RESUMEN DE PARÁMETROS TÉCNICOS Y ADMINISTRATIVOS
   autoTable(doc, {
     startY: currentY,
-    margin: { left: marginX, right: marginX },
+    margin: { top: 32, bottom: 16, left: marginX, right: marginX },
     head: [['PARÁMETRO ADMINISTRATIVO', 'VALOR REGISTRADO', 'PARÁMETRO FINANCIERO / LCE', 'VALOR REGISTRADO']],
     body: [
       ['Área Solicitante', purchase.areaSolicitante || 'Soporte Técnico', 'Modalidad de Compra', `${modalidadLCE.nombre} (${modalidadLCE.descripcionRango})`],
@@ -607,7 +664,7 @@ export function generateIndividualPurchasePDF(
   // 3. DESCRIPCIÓN Y JUSTIFICACIÓN TÉCNICA DEL REQUERIMIENTO
   autoTable(doc, {
     startY: currentY,
-    margin: { left: marginX, right: marginX },
+    margin: { top: 32, bottom: 16, left: marginX, right: marginX },
     head: [['DESCRIPCIÓN Y JUSTIFICACIÓN TÉCNICA DEL REQUERIMIENTO CONFORME AL EXPEDIENTE']],
     body: [
       [purchase.descripcion || 'Sin descripción técnica registrada en el expediente de adquisición.']
@@ -632,7 +689,7 @@ export function generateIndividualPurchasePDF(
   // 4. CRONOGRAMA DE FECHAS CLAVE DEL PROCESO
   autoTable(doc, {
     startY: currentY,
-    margin: { left: marginX, right: marginX },
+    margin: { top: 32, bottom: 16, left: marginX, right: marginX },
     head: [['FECHA SOLICITUD', 'FECHA VO.BO.', 'FECHA AUTORIZADO', 'FECHA PUBLICACIÓN', 'FECHA OFERTAS', 'FECHA DICTAMEN GIT']],
     body: [
       [
@@ -677,7 +734,7 @@ export function generateIndividualPurchasePDF(
 
     autoTable(doc, {
       startY: currentY,
-      margin: { left: marginX, right: marginX },
+      margin: { top: 32, bottom: 16, left: marginX, right: marginX },
       head: [['#', 'FECHA', 'HITO / EVENTO INSTITUCIONAL', 'FASE', 'RESPONSABLE', 'REF. DOC.', 'ESTADO']],
       body: timelineBody,
       theme: 'grid',
@@ -726,7 +783,7 @@ export function generateIndividualPurchasePDF(
 
     autoTable(doc, {
       startY: currentY,
-      margin: { left: marginX, right: marginX },
+      margin: { top: 32, bottom: 16, left: marginX, right: marginX },
       head: [['ACC.', 'FECHA / HORA', 'AUTOR / ROL', 'TÍTULO / TIPO', 'DETALLE DE LA OBSERVACIÓN']],
       body: obsBody,
       theme: 'grid',
@@ -817,7 +874,42 @@ export function generateIndividualPurchasePDF(
   const timeFormattedFicha = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
   const filename = `Ficha_Tecnica_NOG_${cleanNog}_${cleanF56e}_${timeFormattedFicha}.pdf`;
 
-  doc.save(filename);
+  return { doc, filename, auditCode };
+}
+
+/**
+ * Genera el Blob y la URL de previsualización para mostrar la Ficha en el navegador
+ */
+export function getIndividualPurchasePDFBlob(
+  purchase: PurchaseRecord,
+  currentUser?: { nombreCompleto?: string; username?: string; rol?: string } | null
+): { blob: Blob; blobUrl: string; dataUri: string; filename: string; doc: jsPDF } {
+  const { doc, filename } = createIndividualPurchasePDFDoc(purchase, currentUser);
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const dataUri = doc.output('datauristring');
+  return { blob, blobUrl, dataUri, filename, doc };
+}
+
+/**
+ * Genera y descarga de forma segura la Ficha Técnica de la Adquisición en formato PDF.
+ */
+export function generateIndividualPurchasePDF(
+  purchase: PurchaseRecord,
+  currentUser?: { nombreCompleto?: string; username?: string; rol?: string } | null
+): string {
+  const { doc, filename } = createIndividualPurchasePDFDoc(purchase, currentUser);
+  try {
+    const blob = doc.output('blob');
+    downloadPdfBlob(blob, filename);
+  } catch (err) {
+    console.warn('downloadPdfBlob falló en ficha individual, intentando doc.save:', err);
+    try {
+      doc.save(filename);
+    } catch (err2) {
+      console.error('Error al guardar documento PDF:', err2);
+    }
+  }
   return filename;
 }
 

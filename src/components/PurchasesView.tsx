@@ -26,7 +26,8 @@ import {
   ChevronsRight,
   Building2,
   Shield,
-  Award
+  Award,
+  FileCheck
 } from 'lucide-react';
 import { PurchaseRecord } from '../types';
 import { formatQuetzales, formatDate, exportToCSV, getModalidadCompraByMonto } from '../utils/formatters';
@@ -100,6 +101,27 @@ export const PurchasesView: React.FC = () => {
 
   // Modal de Ficha Oficial de Adquisición / Boleta
   const [selectedReportPurchase, setSelectedReportPurchase] = useState<PurchaseRecord | null>(null);
+
+  const handleOpenFichaAdquisicionHeader = () => {
+    if (selectedIds.length > 0) {
+      const selected = currentPurchases.find(p => selectedIds.includes(p.id));
+      if (selected) {
+        setSelectedReportPurchase(selected);
+        return;
+      }
+    }
+    if (filteredPurchases.length > 0) {
+      setSelectedReportPurchase(filteredPurchases[0]);
+    } else if (currentPurchases.length > 0) {
+      setSelectedReportPurchase(currentPurchases[0]);
+    } else {
+      showToast({
+        type: 'warning',
+        title: 'Sin Adquisiciones',
+        message: 'No hay adquisiciones registradas para generar la Ficha Técnica.',
+      });
+    }
+  };
 
   // Estados de selección múltiple y eliminación masiva
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -561,6 +583,17 @@ export const PurchasesView: React.FC = () => {
           >
             <Award className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span>Informe Adjudicados / Evaluación (Logo OJ)</span>
+          </button>
+
+          <button
+            id="btn-generar-ficha-adquisicion-header"
+            type="button"
+            onClick={handleOpenFichaAdquisicionHeader}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-950 to-blue-900 hover:from-blue-800 hover:to-indigo-900 text-white text-xs font-bold border border-blue-400/50 flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+            title="Generar y visualizar la Ficha Técnica y Dictamen Oficial F56-e en PDF con membrete del Organismo Judicial"
+          >
+            <FileCheck className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+            <span>Ficha Oficial de Adquisición (F56-e / PDF)</span>
           </button>
 
           <button
@@ -1298,26 +1331,26 @@ export const PurchasesView: React.FC = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedPurchase(p);
+                              setSelectedReportPurchase(p);
                             }}
-                            className="px-2 py-1 rounded-md text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs cursor-pointer"
-                            title="Ver Ficha Detallada"
+                            className="px-2.5 py-1 rounded-md text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-300 transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs cursor-pointer"
+                            title="Ver Ficha Oficial de Adquisición (F56-e) y Descargar PDF"
                           >
-                            <Eye className="w-3.5 h-3.5 text-amber-700" />
-                            <span className="hidden sm:inline">Ver Ficha</span>
+                            <FileText className="w-3.5 h-3.5 text-blue-700" />
+                            <span>Ver Ficha (F56-e)</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedReportPurchase(p);
+                              setSelectedPurchase(p);
                             }}
-                            className="px-2 py-1 rounded-md text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs cursor-pointer"
-                            title="Ver y Descargar Ficha Técnica Oficial en PDF"
+                            className="px-2 py-1 rounded-md text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors flex items-center gap-1 text-xs font-semibold shadow-2xs cursor-pointer"
+                            title="Ver Expediente Completo y Bitácora"
                           >
-                            <FileText className="w-3.5 h-3.5 text-blue-700" />
-                            <span>Ficha PDF</span>
+                            <Eye className="w-3.5 h-3.5 text-slate-600" />
+                            <span className="hidden sm:inline">Expediente</span>
                           </button>
 
                           {canUserEditPurchase(currentUser, p) && (
@@ -1486,19 +1519,20 @@ export const PurchasesView: React.FC = () => {
               <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedPurchase(p)}
-                  className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-black shadow-2xs cursor-pointer"
+                  onClick={() => setSelectedReportPurchase(p)}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold text-white shadow-2xs flex items-center gap-1 cursor-pointer"
+                  title="Ver Ficha Oficial de Adquisición (F56-e) y Descargar PDF"
                 >
-                  Ver Ficha
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Ver Ficha (F56-e)</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedReportPurchase(p)}
-                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold text-blue-700 shadow-2xs flex items-center gap-1 cursor-pointer"
-                  title="Ver y Descargar Ficha Técnica Oficial en PDF"
+                  onClick={() => setSelectedPurchase(p)}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 shadow-2xs cursor-pointer"
+                  title="Ver Expediente Completo y Bitácora"
                 >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Ficha PDF</span>
+                  Expediente
                 </button>
                 {canUserEditPurchase(currentUser, p) && (
                   <button
@@ -1881,6 +1915,8 @@ export const PurchasesView: React.FC = () => {
         <InstitutionalReportModal
           purchase={selectedReportPurchase}
           onClose={() => setSelectedReportPurchase(null)}
+          allPurchases={currentPurchases}
+          onSelectPurchase={(p) => setSelectedReportPurchase(p)}
         />
       )}
 

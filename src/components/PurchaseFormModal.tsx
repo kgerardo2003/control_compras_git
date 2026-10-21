@@ -33,9 +33,14 @@ import {
 } from '../utils/formatters';
 import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { DocumentPreview } from './DocumentPreview';
-import { processAttachedFile, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { PurchaseActionTree } from './PurchaseActionTree';
+import { processAttachedFile, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { getSystemAreas, getCanonicalAreaName } from '../utils/rbacUtils';
+import { 
+  getCategoriesForArea, 
+  getSuggestedCategoryForArea, 
+  isCategoryCoherentWithArea 
+} from '../utils/areaCategoryMapping';
 
 // Función para campo F56e tipo texto de 10 posiciones
 const formatF56eInput = (raw: string): string => {
@@ -130,15 +135,22 @@ export const PurchaseFormModal: React.FC = () => {
     return getSystemAreas(catalogs, purchases);
   }, [catalogs, purchases]);
 
-  const categoryCatalog = catalogs.find(c => c.codigo === 'CATEGORIA_TECNOLOGICA');
-  const categoryOptions = categoryCatalog?.items.filter(it => it.activo).map(it => it.valor) || [
-    'Servidores y Almacenamiento',
-    'Redes y Telecomunicaciones',
-    'Ciberseguridad y Perímetro',
-    'Estaciones de Trabajo y Periféricos',
-    'Licenciamiento y Software Judicial',
-    'Audio/Video para Salas de Audiencias'
-  ];
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
+
+  const { recomendadas: areaRecommendedCategories, otras: otherCategories, todas: allCategoryOptions } = useMemo(() => {
+    return getCategoriesForArea(areaSolicitante, catalogs);
+  }, [areaSolicitante, catalogs]);
+
+  const handleAreaChange = (newArea: string) => {
+    setAreaSolicitante(newArea);
+    // Si no hay categoría o la actual no es coherente con la nueva área, sugerir la categoría adecuada
+    if (!categoriaTecnologica || !isCategoryCoherentWithArea(newArea, categoriaTecnologica)) {
+      const suggested = getSuggestedCategoryForArea(newArea);
+      setCategoriaTecnologica(suggested);
+      setIsCustomCategory(false);
+    }
+  };
 
   const dependencyCatalog = catalogs.find(c => c.codigo === 'DEPENDENCIA_SOLICITANTE');
   const dependencyOptions = dependencyCatalog?.items.filter(it => it.activo).map(it => it.valor) || [
@@ -272,8 +284,14 @@ export const PurchaseFormModal: React.FC = () => {
       setEstatusEvento(purchaseToEdit.estatusEvento || 'Evaluación');
       setFechaAdjudicacion(purchaseToEdit.fechaAdjudicacion || '');
       const canonicalArea = getCanonicalAreaName(purchaseToEdit.areaSolicitante, catalogs);
-      setAreaSolicitante(canonicalArea || areaOptions[0] || 'Soporte Técnico');
-      setCategoriaTecnologica(purchaseToEdit.categoriaTecnologica || categoryOptions[0] || '');
+      const activeArea = canonicalArea || areaOptions[0] || 'Soporte Técnico';
+      setAreaSolicitante(activeArea);
+      const activeCat = purchaseToEdit.categoriaTecnologica || getSuggestedCategoryForArea(activeArea);
+      setCategoriaTecnologica(activeCat);
+      const isCustom = Boolean(activeCat && !allCategoryOptions.includes(activeCat));
+      setIsCustomCategory(isCustom);
+      setCustomCategoryInput(isCustom ? activeCat : '');
+      setDependenciaSolicitante(purchaseToEdit.dependenciaSolicitante || dependencyOptions[0] || 'Subgerencia de Infraestructura GIT');
       const initialMod = purchaseToEdit.modalidadCompra || getAutoModalityByMonto(purchaseToEdit.monto);
       const matchedMod = modalityOptions.find(opt => opt.toLowerCase().trim() === initialMod.toLowerCase().trim()) || initialMod;
       setModalidadCompra(matchedMod);
@@ -302,8 +320,12 @@ export const PurchaseFormModal: React.FC = () => {
       setShowDocumentPreview(true);
       setEstatusEvento('Evaluación');
       setFechaAdjudicacion('');
-      setAreaSolicitante(areaOptions[0] || 'Soporte Técnico');
-      setCategoriaTecnologica(categoryOptions[0] || 'Servidores y Almacenamiento');
+      const defaultArea = areaOptions[0] || 'Soporte Técnico';
+      setAreaSolicitante(defaultArea);
+      const defaultCat = getSuggestedCategoryForArea(defaultArea);
+      setCategoriaTecnologica(defaultCat);
+      setIsCustomCategory(false);
+      setCustomCategoryInput('');
       setDependenciaSolicitante(dependencyOptions[0] || 'Subgerencia de Infraestructura GIT');
       setModalidadCompra('Baja Cuantía');
       setIsManualModality(false);
@@ -819,26 +841,159 @@ export const PurchaseFormModal: React.FC = () => {
               )}
             </div>
 
-            {/* Campo: Área Solicitante */}
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                Área Solicitante <span className="text-rose-600">*</span>
-              </label>
-              <select
-                id="select-purchase-area-solicitante"
-                value={areaSolicitante}
-                onChange={(e) => setAreaSolicitante(e.target.value)}
-                className="w-full p-2 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 cursor-pointer"
-              >
-                {areaOptions.map((area) => (
-                  <option key={area} value={area}>
-                    {area}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[10px] text-slate-400 mt-0.5">
-                Área técnica o sección GIT requirente del bien o servicio.
-              </p>
+            {/* SECCIÓN: CLASIFICACIÓN INSTITUCIONAL - ÁREA SOLICITANTE Y CATEGORÍA TECNOLÓGICA */}
+            <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-200 space-y-3">
+              <div className="flex items-center justify-between border-b border-blue-200 pb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-950 flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-blue-700" />
+                  <span>Área Solicitante y Categoría Tecnológica Coherente</span>
+                </span>
+                <span className="text-[10px] font-semibold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
+                  Matriz de Coherencia GIT
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* 1. Área Solicitante */}
+                <div>
+                  <label htmlFor="select-purchase-area-solicitante" className="block text-xs font-bold text-slate-800 mb-1">
+                    Área Solicitante <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    id="select-purchase-area-solicitante"
+                    value={areaSolicitante}
+                    onChange={(e) => handleAreaChange(e.target.value)}
+                    className="w-full p-2 text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 cursor-pointer shadow-2xs"
+                  >
+                    {areaOptions.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Unidad requirente. Al cambiarla, se actualizan las categorías recomendadas coherentes.
+                  </p>
+                </div>
+
+                {/* 2. Categoría Tecnológica Coherente */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label htmlFor="select-purchase-categoria-tecnologica" className="block text-xs font-bold text-slate-800">
+                      Categoría Tecnológica <span className="text-rose-600">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomCategory(!isCustomCategory)}
+                      className="text-[10px] text-blue-700 hover:text-blue-900 font-semibold underline cursor-pointer"
+                    >
+                      {isCustomCategory ? 'Seleccionar del catálogo' : '+ Otra personalizada'}
+                    </button>
+                  </div>
+
+                  {isCustomCategory ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        id="input-purchase-categoria-custom"
+                        type="text"
+                        value={customCategoryInput}
+                        onChange={(e) => {
+                          setCustomCategoryInput(e.target.value);
+                          setCategoriaTecnologica(e.target.value);
+                        }}
+                        placeholder="Escriba categoría personalizada..."
+                        className="w-full p-2 text-xs font-semibold border border-blue-400 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-900"
+                      />
+                    </div>
+                  ) : (
+                    <select
+                      id="select-purchase-categoria-tecnologica"
+                      value={categoriaTecnologica}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__CUSTOM__') {
+                          setIsCustomCategory(true);
+                          setCustomCategoryInput('');
+                        } else {
+                          setCategoriaTecnologica(val);
+                        }
+                      }}
+                      className="w-full p-2 text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 cursor-pointer shadow-2xs"
+                    >
+                      {areaRecommendedCategories.length > 0 && (
+                        <optgroup label={`⭐ Categorías Coherentes con ${areaSolicitante}`}>
+                          {areaRecommendedCategories.map((cat) => (
+                            <option key={`rec-${cat}`} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {otherCategories.length > 0 && (
+                        <optgroup label="📁 Otras Categorías Institucionales">
+                          {otherCategories.map((cat) => (
+                            <option key={`oth-${cat}`} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <option value="__CUSTOM__">✍️ + Escribir otra categoría personalizada...</option>
+                    </select>
+                  )}
+
+                  {/* Insignia de Coherencia */}
+                  <div className="mt-1 flex items-center justify-between gap-1 flex-wrap">
+                    {isCategoryCoherentWithArea(areaSolicitante, categoriaTecnologica) ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Coherente con {areaSolicitante}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200" title="Esta categoría suele gestionarse en otra unidad técnica, pero está permitida según requerimiento">
+                        <AlertCircle className="w-3 h-3 text-amber-600" />
+                        Categoría asociada comúnmente a otra área
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-400">
+                      Asociación automática
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dependencia Solicitante */}
+              <div className="pt-2 border-t border-blue-100">
+                <label htmlFor="input-purchase-dependencia" className="block text-xs font-bold text-slate-800 mb-1">
+                  Dependencia o Unidad Solicitante Específica
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    id="select-purchase-dependencia"
+                    value={dependencyOptions.includes(dependenciaSolicitante) ? dependenciaSolicitante : '__OTRA__'}
+                    onChange={(e) => {
+                      if (e.target.value !== '__OTRA__') {
+                        setDependenciaSolicitante(e.target.value);
+                      }
+                    }}
+                    className="p-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white text-slate-800"
+                  >
+                    {dependencyOptions.map((dep) => (
+                      <option key={dep} value={dep}>
+                        {dep}
+                      </option>
+                    ))}
+                    <option value="__OTRA__">Otra dependencia judicial...</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={dependenciaSolicitante}
+                    onChange={(e) => setDependenciaSolicitante(e.target.value)}
+                    placeholder="ej. Centro de Cómputo Principal Torre de Tribunales"
+                    className="p-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
