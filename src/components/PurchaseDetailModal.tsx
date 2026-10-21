@@ -28,7 +28,8 @@ import { PurchaseActionTree } from './PurchaseActionTree';
 import { getPurchaseObservaciones } from '../utils/movementUtils';
 import { getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { History } from 'lucide-react';
-import { canUserEditPurchase, canUserDeletePurchase } from '../utils/rbacUtils';
+import { canUserEditPurchase, canUserDeletePurchase, getCanonicalAreaName } from '../utils/rbacUtils';
+import { generateIndividualPurchasePDF } from '../utils/pdfExport';
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   'Adjudicación': 'bg-blue-100 text-blue-700',
@@ -53,7 +54,8 @@ export const PurchaseDetailModal: React.FC = () => {
     deletePurchase,
     updatePurchase,
     showToast,
-    currentUser 
+    currentUser,
+    catalogs 
   } = useApp();
 
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -72,6 +74,16 @@ export const PurchaseDetailModal: React.FC = () => {
     setIsEditingFechaAdj(false);
   }, [selectedPurchase?.id, selectedPurchase?.fechaAdjudicacion]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedPurchase(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setSelectedPurchase]);
+
   const handleSaveFechaAdjudicacion = () => {
     if (!selectedPurchase || !inlineFechaAdj) return;
     updatePurchase(selectedPurchase.id, {
@@ -87,6 +99,27 @@ export const PurchaseDetailModal: React.FC = () => {
       title: 'Fecha de Adjudicación Guardada',
       message: `Se grabó la fecha ${formatDate(inlineFechaAdj)} en la adquisición NOG ${selectedPurchase.nog}.`
     });
+  };
+
+  const handleDownloadFichaPdf = () => {
+    if (!selectedPurchase) return;
+    try {
+      const filename = generateIndividualPurchasePDF(selectedPurchase, currentUser);
+      showToast({
+        type: 'success',
+        title: 'Ficha Técnica Descargada',
+        message: `Se descargó exitosamente la Ficha Técnica Oficial "${filename}".`,
+        duration: 5000,
+      });
+    } catch (err) {
+      console.error('Error generando ficha técnica en PDF:', err);
+      showToast({
+        type: 'error',
+        title: 'Error al Generar Ficha',
+        message: 'No fue posible generar la ficha técnica en PDF.',
+        duration: 5000,
+      });
+    }
   };
 
   useEffect(() => {
@@ -161,6 +194,16 @@ export const PurchaseDetailModal: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadFichaPdf}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Generar y Descargar Ficha Técnica Oficial de la Adquisición en PDF"
+              >
+                <Download className="w-3.5 h-3.5 text-white" />
+                <span>Generar Ficha PDF</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsReportModalOpen(true)}
@@ -514,7 +557,7 @@ export const PurchaseDetailModal: React.FC = () => {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Área Solicitante:
                 </span>
-                <span className="font-bold text-amber-700">{selectedPurchase.areaSolicitante || 'Soporte técnico'}</span>
+                <span className="font-bold text-amber-700">{getCanonicalAreaName(selectedPurchase.areaSolicitante, catalogs) || 'Soporte Técnico'}</span>
               </div>
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -764,6 +807,16 @@ export const PurchaseDetailModal: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadFichaPdf}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                title="Descargar Ficha Técnica Oficial en PDF"
+              >
+                <Download className="w-3.5 h-3.5 text-white" />
+                <span>Descargar Ficha PDF</span>
+              </button>
+
               {canDelete && (
                 <button
                   type="button"

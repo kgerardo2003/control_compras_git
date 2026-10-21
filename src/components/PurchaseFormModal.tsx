@@ -35,7 +35,7 @@ import { doesStatusAffectBudget } from '../data/budgetStandardCatalog';
 import { DocumentPreview } from './DocumentPreview';
 import { processAttachedFile, getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { PurchaseActionTree } from './PurchaseActionTree';
-import { getSystemAreas } from '../utils/rbacUtils';
+import { getSystemAreas, getCanonicalAreaName } from '../utils/rbacUtils';
 
 // Función para campo F56e tipo texto de 10 posiciones
 const formatF56eInput = (raw: string): string => {
@@ -108,7 +108,7 @@ export const PurchaseFormModal: React.FC = () => {
   const [showDocumentPreview, setShowDocumentPreview] = useState<boolean>(true);
   const [estatusEvento, setEstatusEvento] = useState<string>('Evaluación');
   const [fechaAdjudicacion, setFechaAdjudicacion] = useState<string>('');
-  const [areaSolicitante, setAreaSolicitante] = useState('Soporte técnico');
+  const [areaSolicitante, setAreaSolicitante] = useState('Soporte Técnico');
   const [categoriaTecnologica, setCategoriaTecnologica] = useState('');
   const [dependenciaSolicitante, setDependenciaSolicitante] = useState('');
   const [modalidadCompra, setModalidadCompra] = useState('Baja Cuantía');
@@ -271,7 +271,8 @@ export const PurchaseFormModal: React.FC = () => {
       setShowDocumentPreview(true);
       setEstatusEvento(purchaseToEdit.estatusEvento || 'Evaluación');
       setFechaAdjudicacion(purchaseToEdit.fechaAdjudicacion || '');
-      setAreaSolicitante(purchaseToEdit.areaSolicitante || areaOptions[0] || 'Soporte técnico');
+      const canonicalArea = getCanonicalAreaName(purchaseToEdit.areaSolicitante, catalogs);
+      setAreaSolicitante(canonicalArea || areaOptions[0] || 'Soporte Técnico');
       setCategoriaTecnologica(purchaseToEdit.categoriaTecnologica || categoryOptions[0] || '');
       const initialMod = purchaseToEdit.modalidadCompra || getAutoModalityByMonto(purchaseToEdit.monto);
       const matchedMod = modalityOptions.find(opt => opt.toLowerCase().trim() === initialMod.toLowerCase().trim()) || initialMod;
@@ -301,7 +302,7 @@ export const PurchaseFormModal: React.FC = () => {
       setShowDocumentPreview(true);
       setEstatusEvento('Evaluación');
       setFechaAdjudicacion('');
-      setAreaSolicitante(areaOptions[0] || 'Soporte técnico');
+      setAreaSolicitante(areaOptions[0] || 'Soporte Técnico');
       setCategoriaTecnologica(categoryOptions[0] || 'Servidores y Almacenamiento');
       setDependenciaSolicitante(dependencyOptions[0] || 'Subgerencia de Infraestructura GIT');
       setModalidadCompra('Baja Cuantía');
