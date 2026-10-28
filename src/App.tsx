@@ -22,6 +22,7 @@ import { ReportsView } from './components/ReportsView';
 import { BudgetView } from './components/budget/BudgetView';
 import { CustomizationView } from './components/CustomizationView';
 import { EmailConfigView } from './components/EmailConfigView';
+import { RentManagementDashboard } from './components/rents/RentManagementDashboard';
 import { LoginModal } from './components/LoginModal';
 import { LoginView } from './components/LoginView';
 import { AdminAccessGate } from './components/AdminAccessGate';
@@ -125,6 +126,16 @@ const AppContent: React.FC = () => {
                 <AdminAccessGate 
                   moduleTitle="Reportes Oficiales & Dictámenes" 
                   moduleDescription="Generación de dictámenes oficiales en PDF y reportes analíticos" 
+                />
+              )
+            )}
+
+            {/* Módulo de Rentas & Scorecard Ejecutivo */}
+            {activeTab === 'rentas' && (
+              hasModuleAccess('rentas') ? <RentManagementDashboard /> : (
+                <AdminAccessGate 
+                  moduleTitle="Gestión de Rentas & Scorecard Ejecutivo" 
+                  moduleDescription="Cálculo de rentas, arrastre de deuda, simulador mensual y 10 KPIs directivos (CA, OKC, GT)" 
                 />
               )
             )}
