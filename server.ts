@@ -33,6 +33,8 @@ import {
   saveBulkJudicaturas,
   deleteJudicatura,
   addJudicaturaObservation,
+  updateJudicaturaObservation,
+  deleteJudicaturaObservation,
   saveServicio,
   saveBulkServicios,
   deleteServicio,
@@ -40,6 +42,12 @@ import {
   clearAllServicios
 } from './src/server/dataStore';
 import { syncFirestoreData, forcePushToFirestore } from './src/server/firestoreSync';
+import { 
+  verifyGoogleCredential, 
+  generateSessionJwt, 
+  GOOGLE_CLIENT_ID 
+} from './src/server/googleAuthVerifier';
+import { verifyGoogleTokenAndAuthorize } from './src/utils/googleAuth';
 
 dotenv.config();
 
@@ -316,6 +324,173 @@ app.post('/api/db/force-push-firestore', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error forzando sincronización hacia Firestore' });
+  }
+});
+
+// ==========================================
+// AUTENTICACIÓN FEDERADA: GOOGLE IDENTITY SERVICES
+// Control Criptográfico, Whitelist y RBAC Institucional
+// ==========================================
+
+// Configuración pública de Google OAuth
+app.get('/api/auth/google/config', (req, res) => {
+  res.json({
+    success: true,
+    clientId: GOOGLE_CLIENT_ID,
+    provider: 'Google Identity Services (GIS)',
+    enforceWhitelist: true,
+    mfaPolicy: process.env.POLICY_REQUIRE_GOOGLE_2FA_STEP_UP === 'true' ? 'STEP_UP_REQUIRED' : 'GOOGLE_MFA_TRUSTED'
+  });
+});
+
+// Endpoint seguro de autenticación federada con Google
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential, requireStepUp2FA } = req.body || {};
+
+    if (!credential) {
+      return res.status(400).json({
+        success: false,
+        code: 'MISSING_CREDENTIAL',
+        message: 'No se recibió la credencial criptográfica de Google.'
+      });
+    }
+
+    // 1. Verificación Criptográfica del Token de Google y Whitelist en Firebase
+    const verification = await verifyGoogleTokenAndAuthorize(credential, GOOGLE_CLIENT_ID);
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '10.150.2.45';
+
+    if (!verification.success || !verification.user) {
+      const email = verification.googlePayload?.email || '';
+      const name = verification.googlePayload?.name || '';
+
+      if (verification.code === 'ACCOUNT_NOT_REGISTERED' && email) {
+        // Registrar evento de seguridad de intento no autorizado en bitácora
+        const unauthorizedLog = {
+          id: `aud-sec-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          fecha: new Date().toISOString(),
+          usuario: `Google SSO: ${email}`,
+          rol: 'usuario_estandar',
+          accion: 'INTENTO_LOGIN_NO_AUTORIZADO' as any,
+          modulo: 'Autenticación' as const,
+          detalles: `Acceso revocado por Whitelist: La cuenta Google federada "${email}" (${name}) intentó ingresar al sistema pero no está registrada en Firebase ni en la nómina de usuarios autorizados.`,
+          ip: clientIp,
+          valoresNuevos: { email, googleName: name }
+        };
+
+        try {
+          addAuditLog(unauthorizedLog);
+          notifyChange('audit_log_saved', { id: unauthorizedLog.id });
+        } catch (_) {}
+      }
+
+      return res.status(verification.code === 'ACCOUNT_NOT_REGISTERED' || verification.code === 'ACCOUNT_INACTIVE' ? 403 : 401).json({
+        success: false,
+        code: verification.code || 'INVALID_TOKEN',
+        message: verification.message,
+        email,
+        googleName: name
+      });
+    }
+
+    const { email, name, picture, sub } = verification.googlePayload!;
+    // Obtener el registro completo de usuario (de Firebase o del store local sincronizado)
+    const existingUser = findUser(email) || verification.user;
+
+    // 3. Verificación de Estado Activo
+    if (!existingUser.activo) {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_INACTIVE',
+        message: `Cuenta institucional inactiva: El usuario "${existingUser.username}" (${email}) se encuentra suspendido. Contacte al Administrador.`,
+        email
+      });
+    }
+
+    // 4. Política de Doble Factor (2FA):
+    // Evaluar si se exige step-up obligatorio de Google Authenticator TOTP
+    const enforceStepUp = 
+      Boolean(requireStepUp2FA) || 
+      process.env.POLICY_REQUIRE_GOOGLE_2FA_STEP_UP === 'true';
+
+    if (enforceStepUp && existingUser.dobleFactorHabilitado !== false) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      return res.json({
+        success: true,
+        requires2FA: true,
+        code: '2FA_REQUIRED',
+        message: 'Paso 1 completado con Google SSO. Ingrese el código temporal de 6 dígitos de Google Authenticator para confirmar su identidad.',
+        user: {
+          id: existingUser.id,
+          username: existingUser.username,
+          nombreCompleto: existingUser.nombreCompleto,
+          email: existingUser.email,
+          rol: existingUser.rol,
+          cargo: existingUser.cargo,
+          departamento: existingUser.departamento
+        },
+        pending2FA: {
+          userId: existingUser.id,
+          username: existingUser.username,
+          nombreCompleto: existingUser.nombreCompleto,
+          email: existingUser.email,
+          code,
+          activeMethod: 'totp',
+          totpSecret: existingUser.totpSecret || '',
+          expiresAt: Date.now() + 5 * 60 * 1000
+        }
+      });
+    }
+
+    // 5. Emitir Sesión Final Autenticada
+    // Actualizar metadatos de federación en el usuario
+    const enrichedUser = {
+      ...existingUser,
+      authMethod: 'GOOGLE_SSO' as const,
+      googlePictureUrl: picture || existingUser.googlePictureUrl,
+      googleSub: sub || existingUser.googleSub,
+      ultimoAcceso: new Date().toISOString()
+    };
+
+    saveUser(enrichedUser);
+
+    // Generar Token JWT de Sesión Institucional firmado
+    const sessionToken = generateSessionJwt(enrichedUser, 'GOOGLE_SSO');
+
+    // Registrar inicio de sesión exitoso en la Bitácora de Auditoría
+    const loginLog = {
+      id: `aud-login-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      fecha: new Date().toISOString(),
+      usuario: `${enrichedUser.username} (${enrichedUser.nombreCompleto})`,
+      rol: enrichedUser.rol,
+      accion: 'LOGIN_GOOGLE' as any,
+      modulo: 'Autenticación' as const,
+      detalles: `Inicio de sesión exitoso mediante Google Identity Services (SSO) para ${enrichedUser.username} (${enrichedUser.rol.toUpperCase()}) desde cuenta verificada ${email}.`,
+      ip: clientIp,
+      valoresNuevos: { authMethod: 'GOOGLE_SSO', email, googleSub: sub }
+    };
+
+    try {
+      addAuditLog(loginLog);
+      notifyChange('audit_log_saved', { id: loginLog.id });
+    } catch (_) {}
+
+    return res.json({
+      success: true,
+      requires2FA: false,
+      message: `Autenticación exitosa con Google. Bienvenido(a), ${enrichedUser.nombreCompleto}.`,
+      user: enrichedUser,
+      token: sessionToken,
+      authMethod: 'GOOGLE_SSO'
+    });
+
+  } catch (err: any) {
+    console.error('[Auth-Google] Error interno en endpoint:', err);
+    return res.status(500).json({
+      success: false,
+      code: 'SERVER_ERROR',
+      message: 'Ocurrió un error inesperado al procesar la autenticación con Google.'
+    });
   }
 });
 
@@ -650,6 +825,42 @@ app.post('/api/db/judicaturas/:id/observaciones', (req, res) => {
     }
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error agregando observación.' });
+  }
+});
+
+// Modificar/editar observación de una judicatura
+app.put('/api/db/judicaturas/:id/observaciones/:obsId', (req, res) => {
+  try {
+    const { id, obsId } = req.params;
+    const { texto, modificadoPor } = req.body;
+    if (!texto || !texto.trim()) {
+      return res.status(400).json({ success: false, message: 'El texto de la observación no puede estar vacío.' });
+    }
+    const updated = updateJudicaturaObservation(id, obsId, texto, modificadoPor);
+    if (updated) {
+      notifyChange('judicatura_obs_updated', { id, obsId });
+      res.json({ success: true, judicatura: updated });
+    } else {
+      res.status(404).json({ success: false, message: 'Judicatura u observación no encontrada.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error editando observación.' });
+  }
+});
+
+// Eliminar observación de una judicatura
+app.delete('/api/db/judicaturas/:id/observaciones/:obsId', (req, res) => {
+  try {
+    const { id, obsId } = req.params;
+    const updated = deleteJudicaturaObservation(id, obsId);
+    if (updated) {
+      notifyChange('judicatura_obs_deleted', { id, obsId });
+      res.json({ success: true, judicatura: updated });
+    } else {
+      res.status(404).json({ success: false, message: 'Judicatura u observación no encontrada.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error eliminando observación.' });
   }
 });
 
