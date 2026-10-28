@@ -434,11 +434,25 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
               <button
                 type="button"
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2 focus:outline-none"
+                className="flex items-center gap-2 focus:outline-none cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-full bg-[#0d1f4d] border border-[#4682b4]/40 text-[#93c5fd] flex items-center justify-center font-bold text-xs shadow-sm hover:ring-2 hover:ring-[#4682b4] transition-all">
-                  {currentUser.username.slice(0, 2).toUpperCase()}
-                </div>
+                {currentUser.googlePictureUrl ? (
+                  <div className="relative">
+                    <img 
+                      src={currentUser.googlePictureUrl} 
+                      alt={currentUser.nombreCompleto} 
+                      className="w-8 h-8 rounded-full border border-blue-400/60 object-cover shadow-sm hover:ring-2 hover:ring-[#4682b4] transition-all"
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-white border border-slate-300 flex items-center justify-center text-[7px] font-bold text-blue-600 shadow-2xs">
+                      G
+                    </span>
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-[#0d1f4d] border border-[#4682b4]/40 text-[#93c5fd] flex items-center justify-center font-bold text-xs shadow-sm hover:ring-2 hover:ring-[#4682b4] transition-all">
+                    {currentUser.username.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
               </button>
             ) : (
               <button
@@ -456,9 +470,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                 <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50">
                   <p className="font-bold text-slate-900 truncate">{currentUser.nombreCompleto}</p>
                   <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
-                  <div className="mt-1 flex items-center gap-1.5">
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] text-slate-400">Rol:</span>
                     {getRoleBadge(currentUser.rol)}
+                    {currentUser.authMethod === 'GOOGLE_SSO' && (
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                        Google SSO
+                      </span>
+                    )}
                   </div>
                 </div>
 

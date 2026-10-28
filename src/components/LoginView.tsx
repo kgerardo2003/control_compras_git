@@ -30,6 +30,9 @@ import {
   generateTotpQrCodeDataUrl 
 } from '../utils/totpUtils';
 import { OJLogo } from './OJLogo';
+import { GoogleSignInButton } from './auth/GoogleSignInButton';
+import { UnauthorizedAccessModal } from './auth/UnauthorizedAccessModal';
+import { verifyGoogleToken } from '../utils/googleAuth';
 
 export const LoginView: React.FC = () => {
   const { 
@@ -40,7 +43,12 @@ export const LoginView: React.FC = () => {
     resend2FACode, 
     cancel2FA, 
     pending2FA, 
-    setActiveTab 
+    setActiveTab,
+    loginWithGoogle,
+    googleAuthError,
+    unauthorizedGoogleEmail,
+    isUnauthorizedModalOpen,
+    setIsUnauthorizedModalOpen
   } = useApp();
   
   // Paso de autenticación: 'credentials' (Paso 1) o 'twoFactor' (Paso 2)
@@ -53,13 +61,14 @@ export const LoginView: React.FC = () => {
   const [step1Secret, setStep1Secret] = useState<string>('');
   const [copiedStep1Secret, setCopiedStep1Secret] = useState<boolean>(false);
 
-  // Formulario Paso 1: Credenciales
+  // Formulario Paso 1: Credenciales y Google SSO
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   // Formulario Paso 2: Doble Factor (2FA)
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -160,6 +169,55 @@ export const LoginView: React.FC = () => {
       }, 150);
     }
   }, [step]);
+
+  // Manejo de Autenticación Federada con Google (GIS / Whitelist RBAC contra Firebase)
+  const handleGoogleSuccess = async (credential: string) => {
+    setIsGoogleLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('Validando token criptográfico de Google contra la colección de usuarios en Firebase...');
+
+    try {
+      // 1. Llamada a la función de utilidad verifyGoogleToken definida en src/utils/googleAuth.ts
+      const tokenVerification = await verifyGoogleToken(credential);
+      console.log('[LoginView] Resultado de verifyGoogleToken:', tokenVerification);
+
+      if (!tokenVerification.success) {
+        setIsGoogleLoading(false);
+        const failMessage = tokenVerification.message || 'Acceso denegado: Usuario no autorizado en la nómina de Firebase.';
+        setErrorMsg(failMessage);
+        if (tokenVerification.code === 'ACCOUNT_NOT_REGISTERED' || tokenVerification.code === 'ACCOUNT_INACTIVE') {
+          setIsUnauthorizedModalOpen(true);
+        }
+        return;
+      }
+
+      // 2. Establecer la sesión activa en el contexto de la aplicación
+      const result = await loginWithGoogle(credential);
+      setIsGoogleLoading(false);
+
+      if (result.success) {
+        if (result.requires2FA) {
+          setStep('twoFactor');
+          setTimeLeft(300);
+          setResendCooldown(30);
+          setOtpDigits(['', '', '', '', '', '']);
+          setSelectedMethod('totp');
+          setSuccessMsg('Identidad autorizada en Firebase. Ingrese el código de 6 dígitos de Google Authenticator para continuar.');
+        } else {
+          setSuccessMsg(`Autenticación federada exitosa. Bienvenido(a), ${result.user?.nombreCompleto || tokenVerification.user?.nombreCompleto || 'Usuario'}.`);
+          setActiveTab('dashboard');
+        }
+      } else {
+        setErrorMsg(result.message);
+        if (result.code === 'ACCOUNT_NOT_REGISTERED' || result.code === 'ACCOUNT_INACTIVE') {
+          setIsUnauthorizedModalOpen(true);
+        }
+      }
+    } catch (err: any) {
+      setIsGoogleLoading(false);
+      setErrorMsg(err?.message || 'Error durante la verificación del token de Google en Firebase.');
+    }
+  };
 
   // Manejo de envío del Paso 1 (Credenciales)
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
@@ -563,6 +621,29 @@ export const LoginView: React.FC = () => {
                     </>
                   )}
                 </button>
+
+                {/* Separador Institucional de Métodos de Acceso */}
+                <div className="relative my-4 flex items-center justify-center">
+                  <div className="border-t border-[#4682b4]/30 w-full" />
+                  <span className="bg-[#0b183c] px-3 text-[10px] font-bold uppercase tracking-wider text-slate-300 shrink-0">
+                    O ingresar con cuenta Google
+                  </span>
+                  <div className="border-t border-[#4682b4]/30 w-full" />
+                </div>
+
+                {/* Botón Sign in with Google (Google Identity Services) */}
+                <GoogleSignInButton
+                  onSuccess={handleGoogleSuccess}
+                  onError={(err) => setErrorMsg(err)}
+                  isLoading={isGoogleLoading}
+                  disabled={isLoading}
+                />
+
+                {/* Aviso Informativo de Seguridad Whitelist */}
+                <div className="p-2.5 rounded-lg bg-blue-950/40 border border-blue-500/20 flex items-center justify-center gap-2 text-[10px] text-blue-200 text-center">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Acceso restringido por Whitelist institucional (Solo personal autorizado)</span>
+                </div>
               </form>
             )}
 
@@ -988,6 +1069,19 @@ export const LoginView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Advertencia de Ciberseguridad: Rechazo por Whitelist de Google */}
+      <UnauthorizedAccessModal
+        isOpen={isUnauthorizedModalOpen}
+        onClose={() => setIsUnauthorizedModalOpen(false)}
+        attemptedEmail={unauthorizedGoogleEmail || undefined}
+        errorMessage={googleAuthError || undefined}
+        onRetryWithOtherAccount={() => {
+          if (window.google?.accounts?.id) {
+            window.google.accounts.id.prompt();
+          }
+        }}
+      />
 
     </div>
   );

@@ -25,6 +25,7 @@ import { getIndividualPurchasePDFBlob, downloadPdfBlob } from '../utils/pdfExpor
 import { useApp } from '../context/AppContext';
 import { getCategoriesForArea, getSuggestedCategoryForArea, isCategoryCoherentWithArea } from '../utils/areaCategoryMapping';
 import { getSystemAreas } from '../utils/rbacUtils';
+import { PdfCanvasViewer } from './PdfCanvasViewer';
 
 interface InstitutionalReportModalProps {
   purchase: PurchaseRecord;
@@ -199,9 +200,24 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
       return;
     }
     try {
-      window.open(pdfData.blobUrl, '_blank', 'noopener,noreferrer');
+      const win = window.open(pdfData.blobUrl, '_blank', 'noopener,noreferrer');
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        showToast({
+          type: 'info',
+          title: 'Bloqueador de Ventanas Activo',
+          message: 'Chrome bloqueó la pestaña emergente. El documento oficial se descargó directamente en su equipo.',
+          duration: 6000
+        });
+        handleDownloadPdf();
+      }
     } catch (err) {
       console.warn('window.open bloqueado, procediendo a descarga directa:', err);
+      showToast({
+        type: 'info',
+        title: 'Bloqueador de Ventanas Activo',
+        message: 'Descargando el documento oficial directamente en su equipo.',
+        duration: 5000
+      });
       handleDownloadPdf();
     }
   };
@@ -905,12 +921,15 @@ export const InstitutionalReportModal: React.FC<InstitutionalReportModalProps> =
                   <p className="font-bold text-sm">Generando Ficha Técnica Oficial en PDF...</p>
                   <p className="text-xs text-slate-300 mt-1">Incrustando logotipo institucional, metadatos y código de auditoría...</p>
                 </div>
-              ) : pdfData?.blobUrl ? (
-                <iframe
-                  src={pdfData.blobUrl}
-                  className="w-full h-full rounded-lg bg-white border border-slate-700 shadow-md"
-                  title={`Ficha Técnica Oficial NOG ${purchase.nog}`}
-                />
+              ) : pdfData?.blob ? (
+                <div className="w-full h-full flex flex-col overflow-auto">
+                  <PdfCanvasViewer
+                    pdfBlob={pdfData.blob}
+                    filename={pdfData.filename}
+                    purchase={purchase}
+                    title={`Ficha Técnica Oficial NOG ${purchase.nog}`}
+                  />
+                </div>
               ) : (
                 <div className="text-center p-8 bg-white rounded-xl shadow-lg border border-slate-300 max-w-md">
                   <FileText className="w-12 h-12 text-slate-400 mx-auto mb-3" />

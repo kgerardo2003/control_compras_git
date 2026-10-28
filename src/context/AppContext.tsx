@@ -182,8 +182,18 @@ interface AppContextType {
   verify2FACode: (code: string, method?: TwoFactorMethod) => { success: boolean; message: string };
   set2FAMethod: (method: TwoFactorMethod) => void;
   resend2FACode: () => Promise<{ success: boolean; message: string }>;
-  cancel2FA: () => void;
   login: (username: string, password?: string) => { success: boolean; message: string };
+  loginWithGoogle: (credential: string, requireStepUp2FA?: boolean) => Promise<{
+    success: boolean;
+    requires2FA?: boolean;
+    message: string;
+    user?: User;
+    code?: string;
+  }>;
+  googleAuthError: string | null;
+  unauthorizedGoogleEmail: string | null;
+  isUnauthorizedModalOpen: boolean;
+  setIsUnauthorizedModalOpen: (open: boolean) => void;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
   switchDemoUser: (role: UserRole) => void;
@@ -895,6 +905,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isGoogleAuthModalOpen, setIsGoogleAuthModalOpen] = useState<boolean>(false);
   const [isFirestoreStatusModalOpen, setIsFirestoreStatusModalOpen] = useState<boolean>(false);
+  const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
+  const [unauthorizedGoogleEmail, setUnauthorizedGoogleEmail] = useState<string | null>(null);
+  const [isUnauthorizedModalOpen, setIsUnauthorizedModalOpen] = useState<boolean>(false);
   const [recentlyImportedIds, setRecentlyImportedIds] = useState<string[]>(() => {
     try {
       const stored = safeGetLocalStorage('OJ_RECENTLY_IMPORTED_IDS');
@@ -2623,6 +2636,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // 4. Cancelar 2FA y regresar al Paso 1
   const cancel2FA = () => {
     setPending2FA(null);
+  };
+
+  // 5. Autenticación Federada con Google Identity Services (OAuth 2.0 / Whitelist RBAC)
+  const loginWithGoogle = async (credential: string, requireStepUp2FA: boolean = false): Promise<{
+    success: boolean;
+    requires2FA?: boolean;
+    message: string;
+    user?: User;
+    code?: string;
+  }> => {
+    try {
+      // 1. Enviar credencial criptográfica al endpoint institucional para verificación y whitelist
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential, requireStepUp2FA })
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.success) {
+        const errorCode = data?.code || (res.status === 403 ? 'ACCOUNT_NOT_REGISTERED' : 'AUTH_FAILED');
+        const errorMessage = data?.message || 'No fue posible validar la cuenta de Google con el sistema institucional.';
+        const attemptedEmail = data?.email || '';
+
+        setUnauthorizedGoogleEmail(attemptedEmail);
+        setGoogleAuthError(errorMessage);
+        if (errorCode === 'ACCOUNT_NOT_REGISTERED' || errorCode === 'ACCOUNT_INACTIVE') {
+          setIsUnauthorizedModalOpen(true);
+        }
+
+        return {
+          success: false,
+          code: errorCode,
+          message: errorMessage
+        };
+      }
+
+      // 2. Si la política exige Doble Factor obligatorio (Step-up TOTP)
+      if (data.requires2FA && data.pending2FA) {
+        setPending2FA(data.pending2FA);
+        return {
+          success: true,
+          requires2FA: true,
+          message: data.message,
+          user: data.user
+        };
+      }
+
+      // 3. Autenticación Completa Autorizada
+      const authenticatedUser: User = data.user;
+
+      safeSetSessionStorage('OJ_SESSION_ACTIVE', 'true');
+      safeSetLocalStorage(STORAGE_KEYS.SESSION, JSON.stringify(authenticatedUser));
+      if (data.token) {
+        safeSetLocalStorage('OJ_JWT_SESSION_TOKEN', data.token);
+      }
+      safeRemoveLocalStorage('OJ_LOGGED_OUT_EXPLICITLY');
+
+      setCurrentUser(authenticatedUser);
+      setPending2FA(null);
+      setGoogleAuthError(null);
+      setUnauthorizedGoogleEmail(null);
+      setIsUnauthorizedModalOpen(false);
+
+      showToast({
+        title: 'Inicio de Sesión con Google Exitoso',
+        message: `Identidad verificada. Bienvenido(a), ${authenticatedUser.nombreCompleto}.`,
+        type: 'exito'
+      });
+
+      return {
+        success: true,
+        requires2FA: false,
+        message: `Bienvenido(a), ${authenticatedUser.nombreCompleto}`,
+        user: authenticatedUser
+      };
+    } catch (err: any) {
+      const msg = err?.message || 'Error de comunicación con el servidor de autenticación.';
+      setGoogleAuthError(msg);
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: msg
+      };
+    }
   };
 
   // Login Directo (Compatibilidad con flujos sin 2FA o automáticos)
@@ -4363,13 +4462,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Reglas de respaldo si el perfil no fue cargado
     if (currentUser.rol === 'auditor') {
-      return ['dashboard', 'compras', 'servicios', 'judicaturas', 'presupuesto', 'reportes', 'auditoria'].includes(tab);
+      return ['dashboard', 'compras', 'servicios', 'judicaturas', 'presupuesto', 'reportes', 'auditoria', 'rentas'].includes(tab);
     }
     if (currentUser.rol === 'usuario_estandar') {
-      return ['dashboard', 'compras', 'servicios', 'judicaturas', 'reportes'].includes(tab);
+      return ['dashboard', 'compras', 'servicios', 'judicaturas', 'reportes', 'rentas'].includes(tab);
     }
 
-    return tab === 'dashboard';
+    return tab === 'dashboard' || tab === 'rentas';
   }, [currentUser, userProfiles]);
 
   const getUserProfile = useCallback((user?: User | null): UserProfile | undefined => {
@@ -6023,6 +6122,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resend2FACode,
         cancel2FA,
         login,
+        loginWithGoogle,
+        googleAuthError,
+        unauthorizedGoogleEmail,
+        isUnauthorizedModalOpen,
+        setIsUnauthorizedModalOpen,
         logout,
         changePassword,
         switchDemoUser,

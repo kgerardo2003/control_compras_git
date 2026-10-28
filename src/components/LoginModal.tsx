@@ -23,6 +23,7 @@ import {
   Phone
 } from 'lucide-react';
 import { TwoFactorMethod } from '../types';
+import { GoogleSignInButton } from './auth/GoogleSignInButton';
 
 export const LoginModal: React.FC = () => {
   const { 
@@ -33,11 +34,13 @@ export const LoginModal: React.FC = () => {
     set2FAMethod,
     resend2FACode, 
     cancel2FA, 
-    pending2FA 
+    pending2FA,
+    loginWithGoogle
   } = useApp();
   
   const [step, setStep] = useState<'credentials' | 'twoFactor'>('credentials');
   const [selectedMethod, setSelectedMethod] = useState<TwoFactorMethod>('totp');
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -109,6 +112,36 @@ export const LoginModal: React.FC = () => {
   }, [step]);
 
   if (!isLoginModalOpen) return null;
+
+  const handleGoogleSuccess = async (credential: string) => {
+    setIsGoogleLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      const result = await loginWithGoogle(credential);
+      setIsGoogleLoading(false);
+
+      if (result.success) {
+        if (result.requires2FA) {
+          setStep('twoFactor');
+          setTimeLeft(300);
+          setResendCooldown(30);
+          setOtpDigits(['', '', '', '', '', '']);
+          setSelectedMethod('totp');
+          setSuccessMsg('Verificación de Google completada. Ingrese el código temporal de Google Authenticator.');
+        } else {
+          setSuccessMsg('Autenticación federada exitosa.');
+          setIsLoginModalOpen(false);
+        }
+      } else {
+        setErrorMsg(result.message);
+      }
+    } catch (err: any) {
+      setIsGoogleLoading(false);
+      setErrorMsg(err?.message || 'Error durante la autenticación con Google.');
+    }
+  };
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -428,6 +461,21 @@ export const LoginModal: React.FC = () => {
                   </>
                 )}
               </button>
+
+              <div className="relative my-3 flex items-center justify-center">
+                <div className="border-t border-slate-200 w-full" />
+                <span className="bg-white px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+                  O con Google
+                </span>
+                <div className="border-t border-slate-200 w-full" />
+              </div>
+
+              <GoogleSignInButton
+                onSuccess={handleGoogleSuccess}
+                onError={(err) => setErrorMsg(err)}
+                isLoading={isGoogleLoading}
+                disabled={isLoading}
+              />
             </form>
           )}
 

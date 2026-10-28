@@ -18,7 +18,8 @@ import {
   GitBranch,
   FolderTree,
   ChevronRight,
-  Tag
+  Tag,
+  Save
 } from 'lucide-react';
 import { formatQuetzales, formatDate, formatDateTime, getModalidadCompraByMonto } from '../utils/formatters';
 import { InstitutionalReportModal } from './InstitutionalReportModal';
@@ -30,8 +31,9 @@ import { getPurchaseObservaciones } from '../utils/movementUtils';
 import { getAttachmentWithDataUrl } from '../utils/attachmentStorage';
 import { History } from 'lucide-react';
 import { canUserEditPurchase, canUserDeletePurchase, getCanonicalAreaName, getSystemAreas } from '../utils/rbacUtils';
-import { generateIndividualPurchasePDF } from '../utils/pdfExport';
+import { generateIndividualPurchasePDF, getIndividualPurchasePDFBlob, downloadPdfBlob } from '../utils/pdfExport';
 import { OJLogo } from './OJLogo';
+import { PdfCanvasViewer } from './PdfCanvasViewer';
 import { getPurchaseTimeline } from '../utils/timelineUtils';
 import { getCategoriesForArea, getSuggestedCategoryForArea, isCategoryCoherentWithArea } from '../utils/areaCategoryMapping';
 
@@ -65,10 +67,19 @@ export const PurchaseDetailModal: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [showDocumentPreview, setShowDocumentPreview] = useState(true);
-  // Por defecto 'ficha' para que "Ver Ficha" muestre de inmediato la hoja oficial
-  const [activeTab, setActiveTab] = useState<'general' | 'ficha' | 'arbol' | 'bitacora' | 'documento'>('ficha');
+  // Por defecto 'fichaPdf' para que se visualice la ficha técnica PDF inmediatamente con Canvas
+  const [activeTab, setActiveTab] = useState<'general' | 'ficha' | 'fichaPdf' | 'arbol' | 'bitacora' | 'documento'>('fichaPdf');
   const [isEditingFechaAdj, setIsEditingFechaAdj] = useState(false);
   const [inlineFechaAdj, setInlineFechaAdj] = useState('');
+
+  // Estados de PDF generado en memoria para visualización directa y descarga
+  const [pdfData, setPdfData] = useState<{
+    blob: Blob;
+    blobUrl: string;
+    dataUri: string;
+    filename: string;
+  } | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Estados de edición rápida de Área y Categoría Tecnológica
   const [isEditingClassification, setIsEditingClassification] = useState(false);
@@ -83,6 +94,33 @@ export const PurchaseDetailModal: React.FC = () => {
   const { recomendadas: areaRecommendedCats, otras: otherCats } = useMemo(() => {
     return getCategoriesForArea(editArea, catalogs);
   }, [editArea, catalogs]);
+
+  // Generación reactiva del PDF oficial con jsPDF
+  useEffect(() => {
+    if (!selectedPurchase) return;
+    let localBlobUrl = '';
+    setIsGeneratingPdf(true);
+    try {
+      const data = getIndividualPurchasePDFBlob(selectedPurchase, currentUser);
+      localBlobUrl = data.blobUrl;
+      setPdfData({
+        blob: data.blob,
+        blobUrl: data.blobUrl,
+        dataUri: data.dataUri,
+        filename: data.filename
+      });
+    } catch (err) {
+      console.warn('Error generando documento PDF con jsPDF:', err);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+
+    return () => {
+      if (localBlobUrl) {
+        URL.revokeObjectURL(localBlobUrl);
+      }
+    };
+  }, [selectedPurchase?.id, selectedPurchase?.nog, selectedPurchase?.monto, selectedPurchase?.areaSolicitante, selectedPurchase?.categoriaTecnologica, selectedPurchase?.fechaAdjudicacion, currentUser]);
 
   useEffect(() => {
     if (selectedPurchase) {
@@ -107,6 +145,25 @@ export const PurchaseDetailModal: React.FC = () => {
       dependenciaSolicitante: editDependencia
     });
     setIsEditingClassification(false);
+
+    // Regenerar el PDF con la clasificación actualizada
+    try {
+      const updatedData = getIndividualPurchasePDFBlob({
+        ...selectedPurchase,
+        areaSolicitante: editArea,
+        categoriaTecnologica: editCategory,
+        dependenciaSolicitante: editDependencia
+      }, currentUser);
+      setPdfData({
+        blob: updatedData.blob,
+        blobUrl: updatedData.blobUrl,
+        dataUri: updatedData.dataUri,
+        filename: updatedData.filename
+      });
+    } catch (e) {
+      console.warn('Error regenerando PDF tras clasificación:', e);
+    }
+
     showToast({
       type: 'success',
       title: 'Clasificación Actualizada',
@@ -153,13 +210,24 @@ export const PurchaseDetailModal: React.FC = () => {
   const handleDownloadFichaPdf = () => {
     if (!selectedPurchase) return;
     try {
-      const filename = generateIndividualPurchasePDF(selectedPurchase, currentUser);
-      showToast({
-        type: 'success',
-        title: 'Ficha Técnica Descargada',
-        message: `Se descargó exitosamente la Ficha Técnica Oficial "${filename}".`,
-        duration: 5000,
-      });
+      if (pdfData?.blob && pdfData?.filename) {
+        downloadPdfBlob(pdfData.blob, pdfData.filename);
+        showToast({
+          type: 'success',
+          title: 'Ficha Técnica Descargada',
+          message: `Se descargó exitosamente la Ficha Técnica Oficial "${pdfData.filename}".`,
+          duration: 5000,
+        });
+      } else {
+        const data = getIndividualPurchasePDFBlob(selectedPurchase, currentUser);
+        downloadPdfBlob(data.blob, data.filename);
+        showToast({
+          type: 'success',
+          title: 'Ficha Técnica Descargada',
+          message: `Se descargó exitosamente la Ficha Técnica Oficial "${data.filename}".`,
+          duration: 5000,
+        });
+      }
     } catch (err) {
       console.error('Error generando ficha técnica en PDF:', err);
       showToast({
@@ -168,6 +236,30 @@ export const PurchaseDetailModal: React.FC = () => {
         message: 'No fue posible generar la ficha técnica en PDF.',
         duration: 5000,
       });
+    }
+  };
+
+  const handleOpenPdfNewTab = () => {
+    if (!selectedPurchase) return;
+    try {
+      const targetBlob = pdfData?.blob || getIndividualPurchasePDFBlob(selectedPurchase, currentUser).blob;
+      const targetFilename = pdfData?.filename || `Ficha_Tecnica_NOG_${selectedPurchase.nog}.pdf`;
+      const url = pdfData?.blobUrl || URL.createObjectURL(targetBlob);
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      
+      // Detección de bloqueador de pop-ups en Chrome
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        showToast({
+          type: 'info',
+          title: 'Bloqueador de Ventanas Activo',
+          message: 'Chrome bloqueó la ventana emergente. Descargando directamente el PDF a su equipo.',
+          duration: 6000
+        });
+        downloadPdfBlob(targetBlob, targetFilename);
+      }
+    } catch (err) {
+      console.warn('window.open bloqueado por el navegador, procediendo a descarga directa:', err);
+      handleDownloadFichaPdf();
     }
   };
 
@@ -245,12 +337,26 @@ export const PurchaseDetailModal: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsReportModalOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
-                title="Generar y Visualizar Ficha Oficial de Adquisición en PDF con membrete del Organismo Judicial"
+                onClick={() => setActiveTab('fichaPdf')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                  activeTab === 'fichaPdf'
+                    ? 'bg-blue-500 text-white ring-2 ring-blue-300'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+                title="Visualizar la Ficha Oficial en PDF (jsPDF) con Canvas directo"
               >
-                <FileText className="w-3.5 h-3.5 text-white" />
-                <span>Generar Ficha PDF (F56-e)</span>
+                <Eye className="w-3.5 h-3.5 text-white" />
+                <span>Ver Ficha PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsReportModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer"
+                title="Abrir el visor en modal ampliado"
+              >
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Visor Ampliado</span>
               </button>
 
               <button
@@ -280,6 +386,34 @@ export const PurchaseDetailModal: React.FC = () => {
             <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2.5 overflow-x-auto">
               <button
                 type="button"
+                onClick={() => setActiveTab('fichaPdf')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                  activeTab === 'fichaPdf'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-blue-900 bg-blue-50/80 hover:bg-blue-100/80 border border-blue-200'
+                }`}
+                title="Visualizar la Ficha Oficial en PDF (jsPDF) en pantalla sin bloqueos"
+              >
+                <Eye className="w-3.5 h-3.5 text-blue-700" />
+                <span>Ficha PDF Oficial (jsPDF)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('ficha')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                  activeTab === 'ficha'
+                    ? 'bg-blue-900 text-white shadow-xs'
+                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="Ver Hoja Oficial de Ficha y Dictamen F56-e en formato web"
+              >
+                <FileText className="w-3.5 h-3.5 text-indigo-700" />
+                <span>Hoja F56-e (HTML)</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab('general')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                   activeTab === 'general'
@@ -289,20 +423,6 @@ export const PurchaseDetailModal: React.FC = () => {
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
                 <span>Ficha General y Detalles</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('ficha')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                  activeTab === 'ficha'
-                    ? 'bg-blue-900 text-white shadow-xs'
-                    : 'text-blue-900 bg-blue-50/70 hover:bg-blue-100/70 border border-blue-200'
-                }`}
-                title="Ver Hoja Oficial de Ficha y Dictamen F56-e"
-              >
-                <FileText className="w-3.5 h-3.5 text-blue-700" />
-                <span>Hoja Ficha Oficial F56-e</span>
               </button>
 
               <button
@@ -443,7 +563,160 @@ export const PurchaseDetailModal: React.FC = () => {
               </div>
             )}
 
-            {/* Vista 0: Hoja Ficha Oficial F56-e (Visualización Completa y Descarga PDF) */}
+            {/* Vista 0: Ficha Técnica Oficial en PDF (jsPDF con Canvas nativo sin iframe) */}
+            {activeTab === 'fichaPdf' && (
+              <div className="space-y-3 pt-1">
+                {/* Barra de Controles Rápidos de la Ficha PDF */}
+                <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-3 sm:p-4 rounded-xl text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md border border-blue-900">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300 shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                        <span>Ficha Técnica Oficial en PDF (jsPDF)</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-mono">
+                          Renderizado Canvas Directo
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-blue-200/80">
+                        NOG: <span className="font-mono font-bold text-white">{selectedPurchase.nog}</span> • Formulario F56-e: <span className="font-mono font-bold text-white">{selectedPurchase.f56e}</span> • Monto: <span className="font-mono font-bold text-emerald-300">{formatQuetzales(selectedPurchase.monto)}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingClassification(!isEditingClassification)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 border border-white/20 transition-colors cursor-pointer"
+                      title="Corregir o verificar el área y categoría tecnológica de la ficha"
+                    >
+                      <Tag className="w-3.5 h-3.5 text-amber-300" />
+                      <span>{isEditingClassification ? 'Ocultar Clasificación' : 'Corregir Clasificación'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('ficha')}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 border border-white/20 transition-colors cursor-pointer"
+                      title="Alternar a la versión de hoja web oficial (HTML)"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-indigo-300" />
+                      <span>Ver Hoja HTML</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenPdfNewTab}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                      title="Abrir en pestaña nueva con respaldo de descarga automática si Chrome tiene bloqueador"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Pestaña Nueva</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadFichaPdf}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer active:scale-95"
+                      title="Descargar el archivo PDF oficial generado por jsPDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Descargar PDF</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Editor de Clasificación Rápida si está activo */}
+                {isEditingClassification && (
+                  <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-300 text-xs text-amber-950 space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-amber-200 pb-2">
+                      <span className="font-bold flex items-center gap-1.5 text-amber-900">
+                        <Tag className="w-4 h-4 text-amber-600" />
+                        Corrección Rápida de Área y Categoría Tecnológica
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleSaveClassification}
+                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-xs cursor-pointer flex items-center gap-1"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Guardar Cambios</span>
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Área Solicitante:</label>
+                        <select
+                          value={editArea}
+                          onChange={(e) => {
+                            const a = e.target.value;
+                            setEditArea(a);
+                            if (!editCategory || !isCategoryCoherentWithArea(a, editCategory)) {
+                              setEditCategory(getSuggestedCategoryForArea(a));
+                            }
+                          }}
+                          className="w-full p-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-900"
+                        >
+                          {systemAreas.map((area) => (
+                            <option key={area} value={area}>{area}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Categoría Tecnológica:</label>
+                        <select
+                          value={editCategory}
+                          onChange={(e) => setEditCategory(e.target.value)}
+                          className="w-full p-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-900"
+                        >
+                          <optgroup label="⭐ Coherentes con el área">
+                            {areaRecommendedCats.map(cat => (
+                              <option key={cat} value={cat}>⭐ {cat}</option>
+                            ))}
+                          </optgroup>
+                          {otherCats.length > 0 && (
+                            <optgroup label="📁 Otras categorías">
+                              {otherCats.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Dependencia Solicitante:</label>
+                        <input
+                          type="text"
+                          value={editDependencia}
+                          onChange={(e) => setEditDependencia(e.target.value)}
+                          className="w-full p-2 text-xs border border-slate-300 rounded-lg bg-white text-slate-900"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Visor Directo con HTML5 Canvas sin iframe */}
+                {isGeneratingPdf ? (
+                  <div className="p-12 bg-slate-900 rounded-xl text-center text-white flex flex-col items-center justify-center">
+                    <div className="w-8 h-8 border-3 border-amber-400 border-t-transparent rounded-full animate-spin mb-3" />
+                    <p className="font-bold text-sm">Generando Ficha Oficial con jsPDF...</p>
+                    <p className="text-xs text-slate-400 mt-1">Preparando membrete institucional y código de auditoría...</p>
+                  </div>
+                ) : (
+                  <PdfCanvasViewer
+                    pdfBlob={pdfData?.blob}
+                    filename={pdfData?.filename}
+                    purchase={selectedPurchase}
+                    title={`Ficha Técnica Oficial NOG ${selectedPurchase.nog}`}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Vista 1: Hoja Ficha Oficial F56-e (Visualización Completa y Descarga PDF) */}
             {activeTab === 'ficha' && (
               <div className="space-y-4 pt-1">
                 {/* Barra de Controles de la Ficha */}
@@ -464,12 +737,12 @@ export const PurchaseDetailModal: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setIsReportModalOpen(true)}
+                      onClick={() => setActiveTab('fichaPdf')}
                       className="px-3.5 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer active:scale-95"
-                      title="Abrir el visor interactivo de la Ficha Técnica en PDF"
+                      title="Ver el documento PDF oficial generado con jsPDF directamente en pantalla"
                     >
                       <Eye className="w-3.5 h-3.5 text-white" />
-                      <span>Abrir Visor PDF Oficial</span>
+                      <span>Ver Ficha en PDF</span>
                     </button>
                     <button
                       type="button"

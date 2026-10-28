@@ -96,7 +96,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     try {
       if (blobUrl) {
         const win = window.open(blobUrl, '_blank', 'noopener,noreferrer');
-        if (!win) {
+        if (!win || win.closed || typeof win.closed === 'undefined') {
           handleDownload();
         }
       } else {

@@ -53,21 +53,51 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [viewAllPages, setViewAllPages] = useState<boolean>(false);
 
+  const [activeBlob, setActiveBlob] = useState<Blob | null>(pdfBlob || null);
+  const [activeBlobUrl, setActiveBlobUrl] = useState<string>('');
+  const [popupBlocked, setPopupBlocked] = useState<boolean>(false);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfDocRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
 
+  const effectiveFilename = filename || doc?.nombre || (purchase?.f56e ? `Ficha_Tecnica_F56e_${purchase.f56e}.pdf` : 'Ficha_Tecnica_Oficial.pdf');
+
   // Cargar el documento PDF con PDF.js
   useEffect(() => {
     let isMounted = true;
+    let localBlobUrl = '';
     setLoading(true);
     setError(null);
+    setPopupBlocked(false);
 
     const loadPdf = async () => {
       try {
-        const blob = getDocumentBlob(doc, purchase);
+        let blob: Blob | null = null;
+        if (pdfBlob) {
+          blob = pdfBlob;
+        } else if (pdfDataUrl) {
+          const parts = pdfDataUrl.split(',');
+          if (parts.length >= 2) {
+            const binary = atob(parts[1]);
+            const array = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
+            blob = new Blob([array], { type: 'application/pdf' });
+          }
+        } else if (doc) {
+          blob = getDocumentBlob(doc, purchase);
+        }
+
+        if (!blob) {
+          blob = getDocumentBlob(doc || { nombre: effectiveFilename }, purchase);
+        }
+
+        if (!isMounted) return;
+        setActiveBlob(blob);
+        localBlobUrl = URL.createObjectURL(blob);
+        setActiveBlobUrl(localBlobUrl);
+
         const arrayBuffer = await blob.arrayBuffer();
-        
         if (!isMounted) return;
 
         // Cargar documento en PDF.js usando los bytes del Blob
@@ -97,13 +127,16 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
 
     return () => {
       isMounted = false;
+      if (localBlobUrl) {
+        URL.revokeObjectURL(localBlobUrl);
+      }
       if (renderTaskRef.current) {
         try {
           renderTaskRef.current.cancel();
         } catch {}
       }
     };
-  }, [doc?.dataUrl, doc?.nombre, purchase]);
+  }, [doc?.dataUrl, doc?.nombre, pdfBlob, pdfDataUrl, filename, purchase?.id]);
 
   // Renderizar la página actual en el elemento Canvas
   useEffect(() => {
@@ -188,45 +221,55 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
   };
 
   const handleDownload = () => {
-    downloadDocumentFile(doc, purchase);
+    if (activeBlob) {
+      downloadPdfBlob(activeBlob, effectiveFilename);
+    } else if (doc) {
+      downloadDocumentFile(doc, purchase);
+    }
   };
 
   const handleOpenNewTab = () => {
+    setPopupBlocked(false);
     try {
-      const blob = getDocumentBlob(doc, purchase);
-      const url = URL.createObjectURL(blob);
+      const targetBlob = activeBlob || (doc ? getDocumentBlob(doc, purchase) : null);
+      if (!targetBlob) return;
+      
+      const url = activeBlobUrl || URL.createObjectURL(targetBlob);
       const win = window.open(url, '_blank');
-      if (!win) handleDownload();
-    } catch {
+      
+      // Detección de bloqueo de ventanas emergentes (Pop-up Blocker en Chrome)
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        console.warn('Chrome bloqueó la ventana emergente. Descargando directamente el archivo...');
+        setPopupBlocked(true);
+        downloadPdfBlob(targetBlob, effectiveFilename);
+      }
+    } catch (err) {
+      console.warn('Error al abrir pestaña nueva (posible bloqueador activo):', err);
+      setPopupBlocked(true);
       handleDownload();
     }
   };
 
   // Fallback si PDF.js no pudo cargar
   if (error) {
-    let fallbackBlobUrl = '';
-    try {
-      const blob = getDocumentBlob(doc, purchase);
-      fallbackBlobUrl = URL.createObjectURL(blob);
-    } catch {}
-
     return (
       <div className="p-4 bg-slate-900 text-white rounded-lg flex flex-col items-center justify-center min-h-[350px]">
         <AlertCircle className="w-8 h-8 text-amber-400 mb-2" />
         <h4 className="text-sm font-bold mb-1">Visualización de PDF</h4>
         <p className="text-xs text-slate-300 max-w-md text-center mb-4">
-          El documento está listo. Puede abrirlo directamente o descargarlo de forma segura.
+          El documento está generado y listo. Puede descargarlo de forma directa a su equipo o abrirlo en una ventana nueva.
         </p>
         <div className="flex items-center gap-2">
-          {fallbackBlobUrl && (
-            <button
-              type="button"
-              onClick={handleOpenNewTab}
+          {activeBlobUrl && (
+            <a
+              href={activeBlobUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              Abrir PDF en Ventana Nueva
-            </button>
+              Abrir PDF en Pestaña
+            </a>
           )}
           <button
             type="button"
@@ -355,6 +398,25 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
         </div>
       </div>
 
+      {/* Aviso de Bloqueador de Pop-ups */}
+      {popupBlocked && (
+        <div className="px-3 py-2 bg-amber-500/20 text-amber-200 border-b border-amber-500/30 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              <strong>Bloqueador de ventanas detectado:</strong> Chrome impidió abrir la pestaña emergente. El archivo se descargó automáticamente a su equipo y puede visualizarlo aquí mismo.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPopupBlocked(false)}
+            className="text-amber-400 hover:text-white text-xs font-bold px-1.5 py-0.5 rounded"
+          >
+            Entendido
+          </button>
+        </div>
+      )}
+
       {/* Área del Canvas donde se renderizan las páginas reales del PDF */}
       <div 
         className={`w-full overflow-auto bg-slate-900/95 flex items-center justify-center p-3 sm:p-6 ${
@@ -365,10 +427,10 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
             <RefreshCw className="w-8 h-8 animate-spin text-amber-500 mb-3" />
             <p className="text-xs font-semibold text-slate-200">
-              Renderizando páginas del PDF adjunto...
+              Renderizando páginas del documento PDF...
             </p>
             <p className="text-[11px] text-slate-400 mt-1 font-mono">
-              {doc.nombre}
+              {effectiveFilename}
             </p>
           </div>
         ) : (
@@ -382,17 +444,17 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
       <div className="px-3 py-1.5 bg-slate-950 text-[11px] text-slate-400 border-t border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2 truncate">
           <FileText className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span className="truncate font-medium text-slate-300">{doc.nombre}</span>
-          {doc.tamano ? (
+          <span className="truncate font-medium text-slate-300">{effectiveFilename}</span>
+          {(doc?.tamano || activeBlob?.size) ? (
             <span className="text-slate-400 hidden sm:inline">
-              ({(doc.tamano / 1024).toFixed(0)} KB)
+              ({(((doc?.tamano || activeBlob?.size) || 0) / 1024).toFixed(0)} KB)
             </span>
           ) : null}
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-emerald-400 font-medium hidden sm:inline">
-            ● Renderizado Directo (Sin Plugins)
+            ● Renderizado Directo (HTML5 Canvas)
           </span>
           <span className="font-mono text-slate-400">
             {currentPage} / {numPages || 1}

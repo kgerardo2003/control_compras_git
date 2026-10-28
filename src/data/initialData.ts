@@ -6,10 +6,10 @@ export const INITIAL_USER_PROFILES: UserProfile[] = [
     id: 'prof-admin',
     codigo: 'administrador',
     nombre: 'Administrador General',
-    descripcion: 'Control total de la plataforma, configuración global, gestión de compras, servicios contratados, disponibilidad presupuestaria, judicaturas, usuarios, perfiles y bitácoras.',
+    descripcion: 'Control total de la plataforma, configuración global, gestión de compras, servicios contratados, disponibilidad presupuestaria, judicaturas, usuarios, perfiles, módulo de rentas y bitácoras.',
     esSistema: true,
     color: 'rose',
-    modulosPermitidos: ['dashboard', 'compras', 'servicios', 'judicaturas', 'presupuesto', 'catalogos', 'auditoria', 'usuarios', 'reportes', 'personalizacion', 'correo'],
+    modulosPermitidos: ['dashboard', 'compras', 'servicios', 'judicaturas', 'presupuesto', 'catalogos', 'auditoria', 'usuarios', 'perfiles', 'reportes', 'personalizacion', 'correo', 'rentas'],
     activo: true,
     fechaCreacion: '2024-01-01T08:00:00Z'
   },
@@ -17,10 +17,10 @@ export const INITIAL_USER_PROFILES: UserProfile[] = [
     id: 'prof-auditor',
     codigo: 'auditor',
     nombre: 'Auditor de Control Interno',
-    descripcion: 'Supervisión y fiscalización sin alteración. Acceso a paneles ejecutivos, compras, servicios contratados, judicaturas, presupuesto, reportes y bitácora de auditoría inmutable.',
+    descripcion: 'Supervisión y fiscalización sin alteración. Acceso a paneles ejecutivos, compras, servicios contratados, judicaturas, presupuesto, reportes, rentas y bitácora de auditoría inmutable.',
     esSistema: true,
     color: 'amber',
-    modulosPermitidos: ['dashboard', 'compras', 'servicios', 'judicaturas', 'presupuesto', 'reportes', 'auditoria'],
+    modulosPermitidos: ['dashboard', 'compras', 'servicios', 'judicaturas', 'presupuesto', 'reportes', 'auditoria', 'rentas'],
     activo: true,
     fechaCreacion: '2024-01-01T08:00:00Z'
   },
@@ -31,7 +31,7 @@ export const INITIAL_USER_PROFILES: UserProfile[] = [
     descripcion: 'Gestión técnica y administrativa de procesos de adquisiciones de tecnología, servicios contratados, solicitudes F56-e, seguimiento de NOG y ofertas.',
     esSistema: true,
     color: 'blue',
-    modulosPermitidos: ['dashboard', 'compras', 'servicios', 'judicaturas', 'reportes'],
+    modulosPermitidos: ['dashboard', 'compras', 'servicios', 'judicaturas', 'reportes', 'rentas'],
     activo: true,
     fechaCreacion: '2024-01-01T08:00:00Z'
   },
@@ -42,7 +42,7 @@ export const INITIAL_USER_PROFILES: UserProfile[] = [
     descripcion: 'Administración de la matriz de disponibilidad presupuestaria institucional, registro de modificaciones y asignación de renglones.',
     esSistema: true,
     color: 'emerald',
-    modulosPermitidos: ['dashboard', 'presupuesto', 'compras', 'reportes'],
+    modulosPermitidos: ['dashboard', 'presupuesto', 'compras', 'reportes', 'rentas'],
     activo: true,
     fechaCreacion: '2024-01-01T08:00:00Z'
   },
@@ -53,7 +53,7 @@ export const INITIAL_USER_PROFILES: UserProfile[] = [
     descripcion: 'Visualización ejecutiva de indicadores clave, estadísticas de adquisiciones y dictámenes emitidos para toma de decisiones.',
     esSistema: true,
     color: 'purple',
-    modulosPermitidos: ['dashboard', 'reportes'],
+    modulosPermitidos: ['dashboard', 'reportes', 'rentas'],
     activo: true,
     fechaCreacion: '2024-01-01T08:00:00Z'
   }
