@@ -1,0 +1,2831 @@
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useApp } from '../../context/AppContext';
+import { 
+  BudgetLineItem, 
+  BudgetModification, 
+  BudgetDisponibilidadStatus,
+  PurchaseRecord 
+} from '../../types';
+import { exportBudgetLinesToExcel, downloadBudgetExcelTemplate } from '../../utils/budgetCalculations';
+import { OfficialRenglon } from '../../data/budgetStandardCatalog';
+import { ImportBudgetExcelModal } from './ImportBudgetExcelModal';
+import { BudgetModificationModal } from './BudgetModificationModal';
+import { BudgetLineModal } from './BudgetLineModal';
+import { BudgetOfficialCatalogView } from './BudgetOfficialCatalogView';
+import { BudgetStatsCharts } from './BudgetStatsCharts';
+import { BudgetReportsView } from './BudgetReportsView';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { OJ_LOGO_DATA_URI } from '../../utils/ojLogoAsset';
+import { formatDateTime } from '../../utils/formatters';
+import { 
+  DollarSign, 
+  TrendingUp, 
+  TrendingDown, 
+  ArrowRightLeft, 
+  FileSpreadsheet, 
+  FileText,
+  Download, 
+  PlusCircle, 
+  Search, 
+  Filter, 
+  CheckCircle2, 
+  AlertTriangle, 
+  XCircle, 
+  Layers, 
+  PieChart as PieChartIcon, 
+  ShoppingBag, 
+  Edit, 
+  Trash2, 
+  Check, 
+  X, 
+  ArrowUpRight,
+  Sparkles,
+  HelpCircle,
+  Eye,
+  RefreshCw,
+  BookOpen,
+  Calculator,
+  Columns,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  MoveRight,
+  MoveLeft,
+  Maximize2,
+  Minimize2
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip
+} from 'recharts';
+
+type BudgetSubTab = 'matriz' | 'catalogoOficial' | 'modificaciones' | 'estadisticas' | 'compras' | 'reportes';
+
+export const BudgetView: React.FC = () => {
+  const { 
+    budgetLines, 
+    budgetModifications, 
+    budgetAvailability, 
+    purchases, 
+    updatePurchase,
+    addPurchaseBitacoraEntry,
+    showToast,
+    deleteBudgetLine,
+    clearAllBudgetLines,
+    deduplicateBudgetLines,
+    deleteBudgetModification,
+    approveBudgetModification,
+    rejectBudgetModification,
+    togglePurchasePaymentState,
+    setSelectedPurchase,
+    setActiveTab,
+    currentUser,
+    themeConfig 
+  } = useApp();
+
+  // Estados de interfaz
+  const [subTab, setSubTab] = useState<BudgetSubTab>('matriz');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isModModalOpen, setIsModModalOpen] = useState(false);
+  const [modToEdit, setModToEdit] = useState<BudgetModification | null>(null);
+  const [lineToDelete, setLineToDelete] = useState<BudgetLineItem | null>(null);
+  const [isClearMatrixModalOpen, setIsClearMatrixModalOpen] = useState(false);
+  const [isClearingMatrix, setIsClearingMatrix] = useState(false);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+  const [isLineModalOpen, setIsLineModalOpen] = useState(false);
+  const [lineToEdit, setLineToEdit] = useState<BudgetLineItem | null>(null);
+  const [prefillRenglon, setPrefillRenglon] = useState<OfficialRenglon | null>(null);
+
+  // Filtros
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState<string>('todos');
+  const [selectedStatus, setSelectedStatus] = useState<string>('todos');
+
+  // Filtros de Adquisiciones Vinculadas (Subtab 'compras')
+  const [purchaseSearchTerm, setPurchaseSearchTerm] = useState('');
+  const [purchaseFilterRenglon, setPurchaseFilterRenglon] = useState('todos');
+  const [purchaseFilterEstado, setPurchaseFilterEstado] = useState<'todos' | 'comprometido' | 'pagado'>('todos');
+
+  // Asignación manual de Renglón desde la sección de Adquisiciones
+  // Asignación manual de Renglón desde la sección de Adquisiciones
+  const handleAssignRenglon = (purchaseId: string, newRenglon: string) => {
+    const cleanRenglon = String(newRenglon || '').trim();
+    const line = budgetAvailability.find(l => String(l.renglonPresupuestario).trim() === cleanRenglon);
+    
+    updatePurchase(purchaseId, {
+      renglonPresupuestario: cleanRenglon || undefined,
+      nombreRenglon: line ? line.nombreRenglon : undefined,
+      grupoPresupuestario: line ? line.grupoPresupuestario : undefined
+    });
+
+    if (cleanRenglon && line) {
+      showToast({
+        type: 'success',
+        title: 'Renglón Asignado',
+        message: `Se asignó el Renglón ${cleanRenglon} (${line.nombreRenglon}) a la adquisición. La matriz actualizó el compromiso pendiente.`
+      });
+    } else {
+      showToast({
+        type: 'info',
+        title: 'Renglón Desasignado',
+        message: 'Se retiró la asignación presupuestaria de esta adquisición.'
+      });
+    }
+  };
+
+  const isAdmin = currentUser?.rol === 'administrador';
+  const canEditBudget = isAdmin || currentUser?.rol === 'operador_compras' || currentUser?.rol === 'usuario_estandar' || Boolean(currentUser);
+
+  // Estados y referencias para la Matriz de Disponibilidad (Navegación horizontal y columnas inmovilizadas)
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [activeColumnSection, setActiveColumnSection] = useState<'inicio' | 'techo' | 'ejecucion' | 'disponibilidad'>('inicio');
+  const [isMatrixFullHeight, setIsMatrixFullHeight] = useState(false);
+
+  // Sincronización de scroll horizontal entre contenedor de tabla y barra superior
+  const handleTableScroll = () => {
+    if (!tableContainerRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = tableContainerRef.current;
+    const maxScroll = Math.max(0, scrollWidth - clientWidth);
+    setCanScrollLeft(scrollLeft > 15);
+    setCanScrollRight(scrollLeft < maxScroll - 15);
+    setScrollProgress(maxScroll > 0 ? Math.min(100, Math.round((scrollLeft / maxScroll) * 100)) : 0);
+
+    if (scrollLeft < 160) {
+      setActiveColumnSection('inicio');
+    } else if (scrollLeft < 460) {
+      setActiveColumnSection('techo');
+    } else if (scrollLeft < 800) {
+      setActiveColumnSection('ejecucion');
+    } else {
+      setActiveColumnSection('disponibilidad');
+    }
+
+    if (topScrollRef.current && !isSyncingScroll.current) {
+      isSyncingScroll.current = true;
+      topScrollRef.current.scrollLeft = scrollLeft;
+      setTimeout(() => {
+        isSyncingScroll.current = false;
+      }, 30);
+    }
+  };
+
+  const handleTopScroll = () => {
+    if (!topScrollRef.current || !tableContainerRef.current) return;
+    if (!isSyncingScroll.current) {
+      isSyncingScroll.current = true;
+      tableContainerRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      setTimeout(() => {
+        isSyncingScroll.current = false;
+      }, 30);
+    }
+  };
+
+  const scrollMatrixHorizontally = (pixels: number) => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: pixels, behavior: 'smooth' });
+    }
+  };
+
+  const scrollToMatrixSection = (section: 'inicio' | 'techo' | 'ejecucion' | 'disponibilidad' | 'final') => {
+    if (!tableContainerRef.current) return;
+    const targets: Record<string, number> = {
+      inicio: 0,
+      techo: 280,
+      ejecucion: 620,
+      disponibilidad: 980,
+      final: tableContainerRef.current.scrollWidth
+    };
+    tableContainerRef.current.scrollTo({ left: targets[section] ?? 0, behavior: 'smooth' });
+  };
+
+  // Extraer grupos presupuestarios únicos
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    budgetAvailability.forEach(l => {
+      if (l.grupoPresupuestario) set.add(l.grupoPresupuestario);
+    });
+    return Array.from(set).sort();
+  }, [budgetAvailability]);
+
+  // Filtrado de la matriz
+  const filteredLines = useMemo(() => {
+    return budgetAvailability.filter(line => {
+      const matchSearch = searchTerm === '' || 
+        String(line.renglonPresupuestario || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(line.nombreRenglon || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(line.grupoPresupuestario || '').toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchGroup = selectedGroup === 'todos' || line.grupoPresupuestario === selectedGroup;
+      const matchStatus = selectedStatus === 'todos' || line.estatusDisponibilidad === selectedStatus;
+
+      return matchSearch && matchGroup && matchStatus;
+    });
+  }, [budgetAvailability, searchTerm, selectedGroup, selectedStatus]);
+
+  // Filtrado de adquisiciones vinculadas
+  const filteredPurchases = useMemo(() => {
+    return purchases.filter(p => {
+      const f56 = p.f56e || p.f56 || p.numeroSolicitud || '';
+      const nog = p.nog || p.nogGuatecompras || '';
+      const matchSearch = purchaseSearchTerm === '' ||
+        f56.toLowerCase().includes(purchaseSearchTerm.toLowerCase()) ||
+        nog.toLowerCase().includes(purchaseSearchTerm.toLowerCase()) ||
+        p.descripcion.toLowerCase().includes(purchaseSearchTerm.toLowerCase()) ||
+        (p.proveedorAdjudicado || '').toLowerCase().includes(purchaseSearchTerm.toLowerCase());
+
+      const matchRenglon = purchaseFilterRenglon === 'todos' || p.renglonPresupuestario === purchaseFilterRenglon;
+
+      const isPaid = p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada';
+      const matchEstado = purchaseFilterEstado === 'todos' || 
+        (purchaseFilterEstado === 'pagado' ? isPaid : !isPaid);
+
+      return matchSearch && matchRenglon && matchEstado;
+    });
+  }, [purchases, purchaseSearchTerm, purchaseFilterRenglon, purchaseFilterEstado]);
+
+  // Conteo de renglones duplicados en la matriz
+  const duplicateCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    budgetAvailability.forEach(l => {
+      const code = String(l.renglonPresupuestario || '').trim();
+      if (code) counts[code] = (counts[code] || 0) + 1;
+    });
+    return Object.values(counts).filter(c => c > 1).reduce((s, c) => s + (c - 1), 0);
+  }, [budgetAvailability]);
+
+  const purchaseStats = useMemo(() => {
+    const totalCount = purchases.length;
+    const pagadas = purchases.filter(p => p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada');
+    const comprometidas = purchases.filter(p => p.estadoPago !== 'pagado' && p.estatusEvento !== 'Pagada');
+    const totalPagado = pagadas.reduce((s, p) => s + (Number(p.montoPagado) || Number(p.monto) || 0), 0);
+    const totalComprometido = comprometidas.reduce((s, p) => s + (Number(p.monto) || 0), 0);
+    return {
+      totalCount,
+      pagadasCount: pagadas.length,
+      comprometidasCount: comprometidas.length,
+      totalPagado,
+      totalComprometido
+    };
+  }, [purchases]);
+
+  // Datos de Gráficas de Círculo para Adquisiciones Vinculadas (F56-e)
+  const comprasEstadoDonutData = useMemo(() => {
+    return [
+      { name: 'Pagado que Rebaja', value: purchaseStats.totalPagado, color: '#2563eb' },
+      { name: 'Comprometido en Trámite', value: purchaseStats.totalComprometido, color: '#f59e0b' }
+    ].filter(d => d.value > 0);
+  }, [purchaseStats]);
+
+  const comprasRenglonesDonutData = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredPurchases.forEach(p => {
+      const r = p.renglonPresupuestario ? `R-${p.renglonPresupuestario}` : 'Sin Renglón';
+      map[r] = (map[r] || 0) + (Number(p.monto) || 0);
+    });
+    const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
+    const top4 = sorted.slice(0, 4);
+    const others = sorted.slice(4).reduce((sum, item) => sum + item[1], 0);
+    const palette = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981'];
+    const result = top4.map((item, idx) => ({
+      name: item[0],
+      value: item[1],
+      color: palette[idx % palette.length]
+    }));
+    if (others > 0) {
+      result.push({ name: 'Otros', value: others, color: '#94a3b8' });
+    }
+    return result;
+  }, [filteredPurchases]);
+
+  // Modo de visualización de columnas para Adquisiciones Vinculadas (F56-e)
+  // 'ajustado': columnas compactas y optimizadas para visión completa sin scroll horizontal excesivo
+  // 'amplio': columnas expandidas tradicionales
+  const [comprasColumnMode, setComprasColumnMode] = useState<'ajustado' | 'amplio'>('ajustado');
+
+  // Generador oficial de reporte PDF para Adquisiciones Vinculadas (F56-e) con cintilla azul oscuro institucional
+  const handleExportAdquisicionesPDF = () => {
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'letter'
+    });
+
+    const now = new Date();
+    const fechaEmision = formatDateTime(now.toISOString());
+
+    try {
+      // Cintilla del encabezado de color azul oscuro institucional (#0f172a / RGB 15, 23, 42)
+      doc.setFillColor(15, 23, 42);
+      doc.rect(14, 6, 251, 23, 'F');
+      doc.setFillColor(30, 64, 175); // Borde azul institucional más destacado (#1e40af)
+      doc.rect(14, 6, 3.5, 23, 'F');
+
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(20, 7.5, 19, 19, 2, 2, 'F');
+      doc.addImage(OJ_LOGO_DATA_URI, 'PNG', 21, 8.5, 17, 17);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 43, 12);
+
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(226, 232, 240);
+      doc.text('GERENCIA DE INFORMÁTICA Y TELECOMUNICACIONES • CONTROL PRESUPUESTARIO', 43, 17);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      doc.text('REPORTE OFICIAL DE ADQUISICIONES INSTITUCIONALES VINCULADAS (F56-E Y NOG)', 43, 23);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(226, 232, 240);
+      doc.text(`Fecha Emisión: ${fechaEmision} | Ejercicio: 2026`, 260, 12, { align: 'right' });
+      doc.text(`Total: ${filteredPurchases.length} Adquisiciones | Filtro: ${purchaseFilterRenglon === 'todos' ? 'Todos los Renglones' : `R-${purchaseFilterRenglon}`}`, 260, 17, { align: 'right' });
+    } catch (e) {
+      console.warn('Error al generar membrete PDF', e);
+      doc.setFillColor(15, 23, 42);
+      doc.rect(14, 6, 251, 23, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text('ORGANISMO JUDICIAL DE GUATEMALA', 14, 12);
+      doc.setFontSize(9);
+      doc.text('REPORTE DE ADQUISICIONES VINCULADAS AL PRESUPUESTO (F56-E)', 14, 20);
+    }
+
+    // Resumen Ejecutivo de Totales
+    const totalMontoCalc = filteredPurchases.reduce((s, p) => s + (Number(p.monto) || 0), 0);
+    autoTable(doc, {
+      startY: 32,
+      head: [['TOTAL ADQUISICIONES', 'MONTO TOTAL (Q)', 'COMPROMETIDO EN TRÁMITE', 'PAGADO QUE REBAJA SALDO REAL']],
+      body: [[
+        `${filteredPurchases.length} trámites F56`,
+        `Q ${totalMontoCalc.toLocaleString('es-GT', { minimumFractionDigits: 2 })}`,
+        `Q ${purchaseStats.totalComprometido.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${purchaseStats.comprometidasCount} compras)`,
+        `Q ${purchaseStats.totalPagado.toLocaleString('es-GT', { minimumFractionDigits: 2 })} (${purchaseStats.pagadasCount} compras)`
+      ]],
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 23, 42], // Azul oscuro institucional
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center',
+        fillColor: [248, 250, 252],
+        textColor: [15, 23, 42]
+      },
+      margin: { left: 14, right: 14 }
+    });
+
+    const startTableY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 3.5 : 44;
+
+    const head = [[
+      'No. Solicitud F56',
+      'NOG Guatecompras',
+      'Descripción de la Adquisición',
+      'Renglón',
+      'Monto Estimado (Q)',
+      'Estado del Gasto',
+      'Impacto en Matriz',
+      'Proveedor Adjudicado'
+    ]];
+
+    const body = filteredPurchases.map(p => {
+      const isPaid = p.estadoPago === 'pagado' || p.estatusEvento === 'Pagada';
+      return [
+        p.f56e || p.f56 || p.numeroSolicitud || 'S/N',
+        p.nog || p.nogGuatecompras || 'S/N',
+        (p.descripcion || '').slice(0, 48),
+        `R-${p.renglonPresupuestario || '158'}`,
+        Number(p.monto).toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+        isPaid ? 'Pagado que Rebaja' : 'Comprometido en Trámite',
+        isPaid ? 'Resta Disponible Real' : 'Resta Proyectado',
+        (p.proveedorAdjudicado || 'No Adjudicado').slice(0, 28)
+      ];
+    });
+
+    const foot = [[
+      'TOTAL GENERAL',
+      `${filteredPurchases.length} Compras`,
+      'Consolidado institucional F56-e',
+      '-',
+      totalMontoCalc.toLocaleString('es-GT', { minimumFractionDigits: 2 }),
+      '-',
+      '-',
+      '-'
+    ]];
+
+    autoTable(doc, {
+      startY: startTableY,
+      head,
+      body,
+      foot,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 23, 42], // Azul oscuro institucional
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold'
+      },
+      footStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [15, 23, 42],
+        fontSize: 7.5,
+        fontStyle: 'bold'
+      },
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.2
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      }
+    });
+
+    // Firmas Institucionales de Responsabilidad
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(100);
+      doc.text(`Página ${i} de ${pageCount} • Sistema Integrado de Control de Adquisiciones y Presupuesto GIT - Organismo Judicial`, 14, 205);
+
+      if (i === pageCount) {
+        doc.line(20, 185, 80, 185);
+        doc.text('Elaborado: Analista Financiero GIT', 20, 189);
+
+        doc.line(110, 185, 170, 185);
+        doc.text('Revisado: Encargado de Compras IT', 110, 189);
+
+        doc.line(200, 185, 260, 185);
+        doc.text('Autorizado: Gerente de Informática', 200, 189);
+      }
+    }
+
+    doc.save(`Reporte_Adquisiciones_Vinculadas_F56_OJ_${now.toISOString().slice(0, 10)}.pdf`);
+    showToast({
+      title: 'Reporte PDF Generado',
+      message: 'Se descargó exitosamente el reporte oficial de adquisiciones vinculadas en PDF con cintilla azul oscuro institucional.',
+      type: 'success'
+    });
+  };
+
+  // Totales consolidados de la matriz institucional completa (excluyendo renglones referenciales de Gerencia Administrativa)
+  const totals = useMemo(() => {
+    const standardLines = budgetAvailability.filter(l => !l.esReferencia && l.renglonPresupuestario !== '113');
+    const totalInicial = standardLines.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
+    const totalModificacionesPositivas = standardLines.reduce((s, l) => s + (Number(l.modificacionesPositivas) || 0), 0);
+    const totalModificacionesNegativas = standardLines.reduce((s, l) => s + (Number(l.modificacionesNegativas) || 0), 0);
+    const totalModificaciones = totalModificacionesPositivas - totalModificacionesNegativas;
+    const totalVigente = standardLines.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
+    const totalPagado = standardLines.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
+    const totalDisponibleReal = standardLines.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
+    const totalComprometido = standardLines.reduce((s, l) => s + (Number(l.comprometidoPendiente) || 0), 0);
+    const totalDisponibleProyectado = standardLines.reduce((s, l) => s + (Number(l.disponibleProyectado) || 0), 0);
+    
+    const totalAfectado = totalPagado + totalComprometido;
+    const porcentajeGlobal = totalVigente > 0 ? (totalAfectado / totalVigente) * 100 : 0;
+
+    const conDisponibilidadCount = standardLines.filter(l => l.estatusDisponibilidad === 'Con Disponibilidad').length;
+    const alertaCount = standardLines.filter(l => l.estatusDisponibilidad === 'Alerta Disponibilidad Baja').length;
+    const sinDisponibilidadCount = standardLines.filter(l => l.estatusDisponibilidad === 'Sin Disponibilidad').length;
+
+    return {
+      count: budgetAvailability.length,
+      totalInicial,
+      totalModificacionesPositivas,
+      totalModificacionesNegativas,
+      totalModificaciones,
+      totalVigente,
+      totalPagado,
+      totalDisponibleReal,
+      totalComprometido,
+      totalDisponibleProyectado,
+      porcentajeGlobal,
+      conDisponibilidadCount,
+      alertaCount,
+      sinDisponibilidadCount
+    };
+  }, [budgetAvailability]);
+
+  // Totales de las líneas actualmente filtradas y visibles en la tabla
+  const filteredTotals = useMemo(() => {
+    const totalInicial = filteredLines.reduce((s, l) => s + (Number(l.presupuestoInicial) || 0), 0);
+    const totalModificacionesPositivas = filteredLines.reduce((s, l) => s + (Number(l.modificacionesPositivas) || 0), 0);
+    const totalModificacionesNegativas = filteredLines.reduce((s, l) => s + (Number(l.modificacionesNegativas) || 0), 0);
+    const totalModificaciones = totalModificacionesPositivas - totalModificacionesNegativas;
+    const totalVigente = filteredLines.reduce((s, l) => s + (Number(l.presupuestoVigente) || 0), 0);
+    const totalPagado = filteredLines.reduce((s, l) => s + (Number(l.pagadoQueRebaja) || 0), 0);
+    const totalDisponibleReal = filteredLines.reduce((s, l) => s + (Number(l.disponibleReal) || 0), 0);
+    const totalComprometido = filteredLines.reduce((s, l) => s + (Number(l.comprometidoPendiente) || 0), 0);
+    const totalDisponibleProyectado = filteredLines.reduce((s, l) => s + (Number(l.disponibleProyectado) || 0), 0);
+    
+    const totalAfectado = totalPagado + totalComprometido;
+    const porcentajeGlobal = totalVigente > 0 ? (totalAfectado / totalVigente) * 100 : 0;
+
+    const conDisponibilidadCount = filteredLines.filter(l => l.estatusDisponibilidad === 'Con Disponibilidad').length;
+    const alertaCount = filteredLines.filter(l => l.estatusDisponibilidad === 'Alerta Disponibilidad Baja').length;
+    const sinDisponibilidadCount = filteredLines.filter(l => l.estatusDisponibilidad === 'Sin Disponibilidad').length;
+
+    return {
+      count: filteredLines.length,
+      totalInicial,
+      totalModificacionesPositivas,
+      totalModificacionesNegativas,
+      totalModificaciones,
+      totalVigente,
+      totalPagado,
+      totalDisponibleReal,
+      totalComprometido,
+      totalDisponibleProyectado,
+      porcentajeGlobal,
+      conDisponibilidadCount,
+      alertaCount,
+      sinDisponibilidadCount
+    };
+  }, [filteredLines]);
+
+  // Estadísticas por Grupo
+  const groupStats = useMemo(() => {
+    const map: Record<string, {
+      grupo: string;
+      vigente: number;
+      pagado: number;
+      comprometido: number;
+      disponible: number;
+      renglonesCount: number;
+    }> = {};
+
+    budgetAvailability.forEach(l => {
+      const g = l.grupoPresupuestario || 'Otros Grupos';
+      if (!map[g]) {
+        map[g] = {
+          grupo: g,
+          vigente: 0,
+          pagado: 0,
+          comprometido: 0,
+          disponible: 0,
+          renglonesCount: 0
+        };
+      }
+      map[g].vigente += l.presupuestoVigente;
+      map[g].pagado += l.pagadoQueRebaja;
+      map[g].comprometido += l.comprometidoPendiente;
+      map[g].disponible += l.disponibleProyectado;
+      map[g].renglonesCount += 1;
+    });
+
+    return Object.values(map);
+  }, [budgetAvailability]);
+
+  const handleCreateModForLine = (renglon: string) => {
+    setModToEdit(null);
+    setIsModModalOpen(true);
+  };
+
+  const handleEditLine = (line: BudgetLineItem) => {
+    const rawLine = budgetLines.find(l => l.id === line.id || String(l.renglonPresupuestario).trim() === String(line.renglonPresupuestario).trim()) || line;
+    setLineToEdit({
+      ...rawLine,
+      id: rawLine.id || line.id || `bl-${line.renglonPresupuestario}`,
+      renglonPresupuestario: String(rawLine.renglonPresupuestario || line.renglonPresupuestario),
+      nombreRenglon: rawLine.nombreRenglon || line.nombreRenglon,
+      grupoPresupuestario: rawLine.grupoPresupuestario || line.grupoPresupuestario,
+      presupuestoInicial: rawLine.presupuestoInicial ?? line.presupuestoInicial ?? 0,
+      pagadoQueRebaja: rawLine.pagadoQueRebaja ?? 0,
+      comprometidoPendiente: rawLine.comprometidoPendiente ?? 0,
+      modificacionesAprobadas: line.modificacionesAprobadas ?? rawLine.modificacionesAprobadas ?? 0,
+      presupuestoVigente: line.presupuestoVigente ?? rawLine.presupuestoVigente ?? 0,
+      observaciones: rawLine.observaciones || line.observaciones || ''
+    });
+    setIsLineModalOpen(true);
+  };
+
+  const formatCurrency = (val: number) => {
+    return `Q. ${val.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  return (
+    <div className="space-y-6 pb-12">
+      
+      {/* Cabecera Principal del Módulo de Presupuesto */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="p-2 rounded-xl bg-blue-50 text-blue-800 border border-blue-200">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">
+              Módulo Financiero y Presupuestario
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+              Gerencia de Informática
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 max-w-2xl">
+            Control integral del presupuesto por grupo y renglón, modificaciones presupuestarias aprobadas y matriz de disponibilidad presupuestaria en tiempo real integrada a las adquisiciones F56-e.
+          </p>
+        </div>
+
+        {/* Botonera de Acciones Rápidas */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Botón Importar Excel */}
+          <button
+            id="btn-importar-presupuesto-excel"
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+            <span>Importar Excel</span>
+          </button>
+
+          {/* Botón Exportar Matriz a Excel */}
+          <button
+            type="button"
+            onClick={() => exportBudgetLinesToExcel(budgetAvailability)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+            title="Exportar matriz completa con las 12 columnas a Excel"
+          >
+            <Download className="w-4 h-4 text-slate-600" />
+            <span>Exportar Excel</span>
+          </button>
+
+          {/* Botón Nueva Modificación */}
+          <button
+            type="button"
+            onClick={() => { setModToEdit(null); setIsModModalOpen(true); }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+          >
+            <ArrowRightLeft className="w-4 h-4 text-blue-200" />
+            <span>+ Modificación</span>
+          </button>
+
+          {/* Botón Nuevo Renglón */}
+          {canEditBudget && (
+            <button
+              id="btn-nuevo-renglon-header"
+              type="button"
+              onClick={() => { setLineToEdit(null); setIsLineModalOpen(true); }}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-100 text-blue-900 text-xs font-bold transition-all cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4 text-blue-700" />
+              <span>Nuevo Renglón</span>
+            </button>
+          )}
+
+          {/* Botón Vaciar / Eliminar Matriz Completa */}
+          {canEditBudget && budgetAvailability.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsClearMatrixModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              title="Eliminar por completo todos los registros de la matriz presupuestaria"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+              <span>Eliminar Matriz</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tarjetas de Métricas Resumen (Indicadores de Alto Nivel) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        
+        {/* Presupuesto Inicial */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Presupuesto Inicial</div>
+          <div className="text-sm sm:text-base font-extrabold text-slate-800 font-mono mt-1 truncate" title={formatCurrency(totals.totalInicial)}>
+            {formatCurrency(totals.totalInicial)}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1 font-medium">Asignación decretada</div>
+        </div>
+
+        {/* Modificaciones Aprobadas */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Modif. Aprobadas</div>
+          <div className={`text-sm sm:text-base font-extrabold font-mono mt-1 truncate ${totals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`} title={formatCurrency(totals.totalModificaciones)}>
+            {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
+            <span>{budgetModifications.filter(m => m.estado === 'aprobada').length} resoluciones DAF</span>
+          </div>
+        </div>
+
+        {/* Presupuesto Vigente */}
+        <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/30 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-900 flex items-center justify-between">
+            <span>Presupuesto Vigente</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">Col. 6</span>
+          </div>
+          <div className="text-sm sm:text-base font-black text-blue-950 font-mono mt-1 truncate" title={`Total Vigente: ${formatCurrency(totals.totalVigente)} (Suma de toda la columna 6)`}>
+            {formatCurrency(totals.totalVigente)}
+          </div>
+          <div className="text-[10px] text-blue-700 mt-1 font-medium flex items-center justify-between">
+            <span>Σ Columna Vigente</span>
+            <span title="Inicial + Modificaciones Aprobadas">Inicial ± Mods</span>
+          </div>
+        </div>
+
+        {/* Pagado que Rebaja */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pagado que Rebaja</div>
+          <div className="text-sm sm:text-base font-extrabold text-blue-700 font-mono mt-1 truncate" title={formatCurrency(totals.totalPagado)}>
+            {formatCurrency(totals.totalPagado)}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1 font-medium">Gastos devengados/pagados</div>
+        </div>
+
+        {/* Comprometido Pendiente */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Comprometido Pendiente</div>
+          <div className="text-sm sm:text-base font-extrabold text-amber-700 font-mono mt-1 truncate" title={formatCurrency(totals.totalComprometido)}>
+            {formatCurrency(totals.totalComprometido)}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1 font-medium">F56-e en trámite activo</div>
+        </div>
+
+        {/* Disponible Proyectado */}
+        <div className={`p-4 rounded-xl border shadow-2xs ${totals.totalDisponibleProyectado >= 0 ? 'bg-emerald-50/40 border-emerald-200' : 'bg-red-50/40 border-red-200'}`}>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-900">Disponible Proyectado</div>
+          <div className={`text-sm sm:text-base font-black font-mono mt-1 truncate ${totals.totalDisponibleProyectado >= 0 ? 'text-emerald-800' : 'text-red-700'}`} title={formatCurrency(totals.totalDisponibleProyectado)}>
+            {formatCurrency(totals.totalDisponibleProyectado)}
+          </div>
+          <div className="text-[10px] text-emerald-700 mt-1 font-semibold flex items-center justify-between">
+            <span>Saldo real libre</span>
+            <span>{totals.porcentajeGlobal.toFixed(1)}% usado</span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Navegación por Pestañas del Módulo */}
+      <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-4 pt-3 gap-2 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setSubTab('matriz')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            subTab === 'matriz'
+              ? 'border-blue-700 text-blue-900 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Matriz de Disponibilidad (12 Columnas)</span>
+          <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 font-mono">
+            {budgetAvailability.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('catalogoOficial')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            subTab === 'catalogoOficial'
+              ? 'border-blue-700 text-blue-900 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Catálogo Oficial (39 Renglones)</span>
+          <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">
+            39
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('modificaciones')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            subTab === 'modificaciones'
+              ? 'border-blue-700 text-blue-900 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <ArrowRightLeft className="w-4 h-4" />
+          <span>Modificaciones Presupuestarias</span>
+          <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-mono">
+            {budgetModifications.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('estadisticas')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            subTab === 'estadisticas'
+              ? 'border-blue-700 text-blue-900 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <PieChartIcon className="w-4 h-4" />
+          <span>Resumen y Estadísticas por Renglón</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('compras')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            subTab === 'compras'
+              ? 'border-blue-700 text-blue-900 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <ShoppingBag className="w-4 h-4" />
+          <span>Adquisiciones Vinculadas (F56-e)</span>
+          <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 font-mono">
+            {purchases.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('reportes')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            subTab === 'reportes'
+              ? 'border-blue-700 text-blue-900 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>Reportes y Dictámenes Oficiales</span>
+          <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">
+            6 Variantes Oficiales
+          </span>
+        </button>
+      </div>
+
+      {/* SUBPESTAÑA 1: MATRIZ DE DISPONIBILIDAD (12 COLUMNAS OFICIALES) */}
+      {subTab === 'matriz' && (
+        <div className="space-y-4">
+          
+          {/* Alerta de Detección de Registros Duplicados */}
+          {duplicateCount > 0 && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-500 text-white shrink-0 shadow-2xs">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-amber-950">
+                    Se detectaron {duplicateCount} registros duplicados en la matriz presupuestaria
+                  </h4>
+                  <p className="text-[11px] text-amber-800">
+                    Hay renglones que se han cargado más de una vez. Puede depurarlos automáticamente manteniendo un único registro limpio por código.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsDeduplicating(true);
+                  try {
+                    await deduplicateBudgetLines();
+                  } finally {
+                    setIsDeduplicating(false);
+                  }
+                }}
+                disabled={isDeduplicating}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{isDeduplicating ? 'Depurando Duplicados...' : 'Depurar y Eliminar Duplicados'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Barra de Filtros y Búsqueda */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+              {/* Buscador */}
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar por código de renglón o nombre (ej. 158, arrendamiento)..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                />
+              </div>
+
+              {/* Filtro por Grupo */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 hidden sm:inline">Grupo:</span>
+                <select
+                  value={selectedGroup}
+                  onChange={(e) => setSelectedGroup(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="todos">Todos los Grupos Presupuestarios</option>
+                  {availableGroups.map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro por Estatus */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 hidden sm:inline">Estatus:</span>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="todos">Todos los Estatus</option>
+                  <option value="Con Disponibilidad">Con Disponibilidad</option>
+                  <option value="Alerta Disponibilidad Baja">Alerta Disponibilidad Baja</option>
+                  <option value="Sin Disponibilidad">Sin Disponibilidad</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Contador de resultados */}
+            <div className="text-xs text-slate-500 font-medium">
+              Mostrando <strong className="text-slate-800">{filteredLines.length}</strong> de <strong>{budgetAvailability.length}</strong> renglones
+            </div>
+          </div>
+
+          {/* Banner de Verificación y Regla de Cálculo Institucional */}
+          <div className="bg-gradient-to-r from-blue-50/95 via-indigo-50/70 to-slate-50 border border-blue-200 rounded-xl p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs shadow-2xs">
+            <div className="flex items-start sm:items-center gap-2.5 text-blue-950 font-medium">
+              <div className="p-2 rounded-lg bg-blue-700 text-white shrink-0 shadow-2xs">
+                <Calculator className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="font-bold text-blue-950 flex flex-wrap items-center gap-1.5 text-xs">
+                  <span>Regla Presupuestaria Oficial:</span>
+                  <span className="text-blue-900 font-semibold bg-white/80 px-2 py-0.5 rounded border border-blue-200/60">
+                    Presupuesto Vigente (Col. 6) = Inicial (Col. 4) + Incrementos (+) - Disminuciones (-)
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  Total Vigente = Sumatoria de toda la columna Vigente: <strong className="text-blue-950 font-mono">{formatCurrency(totals.totalVigente)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold shadow-2xs" title="Total de Modificaciones que incrementan el presupuesto (Ampliaciones)">
+                (+) Incrementos: +{formatCurrency(totals.totalModificacionesPositivas)}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-300 text-rose-900 font-bold shadow-2xs" title="Total de Modificaciones que disminuyen el presupuesto (Disminuciones)">
+                (-) Disminuciones: -{formatCurrency(totals.totalModificacionesNegativas)}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-blue-900 text-white font-black shadow-2xs" title="Presupuesto Vigente Institucional Oficial">
+                = Vigente: {formatCurrency(totals.totalVigente)}
+              </span>
+            </div>
+          </div>
+
+          {/* Barra Superior de Control de Navegación Horizontal y Congelamiento de Columnas */}
+          <div className="bg-slate-900 text-white rounded-t-xl p-3 border border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+                <Columns className="w-4 h-4 text-amber-400" />
+                <span>Navegación de Columnas:</span>
+              </span>
+
+              {/* Botones de Desplazamiento Paso a Paso */}
+              <div className="inline-flex items-center rounded-lg bg-slate-800 p-0.5 border border-slate-700 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('inicio')}
+                  disabled={!canScrollLeft}
+                  className="px-2 py-1 text-xs font-bold text-slate-200 hover:text-white hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Ir al inicio (Columna 1: Grupo y Renglón)"
+                >
+                  <ChevronsLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Inicio</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollMatrixHorizontally(-320)}
+                  disabled={!canScrollLeft}
+                  className="px-2.5 py-1 text-xs font-bold text-amber-300 hover:text-amber-200 hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Desplazar hacia la izquierda (-320px)"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Izquierda</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollMatrixHorizontally(320)}
+                  disabled={!canScrollRight}
+                  className="px-2.5 py-1 text-xs font-bold text-amber-300 hover:text-amber-200 hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Desplazar hacia la derecha (+320px)"
+                >
+                  <span>Derecha</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('final')}
+                  disabled={!canScrollRight}
+                  className="px-2 py-1 text-xs font-bold text-slate-200 hover:text-white hover:bg-slate-700 rounded disabled:opacity-40 disabled:hover:bg-transparent flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Ir al final (Columnas 10-12: Disponible Proyectado y Estatus)"
+                >
+                  <span className="hidden sm:inline">Final</span>
+                  <ChevronsRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Botones de Salto Directo a Secciones de Columnas */}
+              <div className="hidden md:flex items-center gap-1 bg-slate-800/80 p-0.5 rounded-lg border border-slate-700/80 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('inicio')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'inicio' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Grupo Presupuestario, Renglón y Nombre"
+                >
+                  1-3. Renglón
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('techo')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'techo' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Inicial, Modificaciones Aprobadas y Presupuesto Vigente"
+                >
+                  4-6. Techo Vigente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('ejecucion')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'ejecucion' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Pagado Rebaja, Disponible Real y Comprometido Pendiente"
+                >
+                  7-9. Ejecución
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToMatrixSection('disponibilidad')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    activeColumnSection === 'disponibilidad' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Ver Disponible Proyectado, % Usado y Estatus"
+                >
+                  10-12. Disponibilidad
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Indicador de Desplazamiento Horizontal */}
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
+                <span className="hidden xl:inline text-slate-400">Desplazamiento:</span>
+                <span className="font-mono font-bold text-amber-400">{scrollProgress}%</span>
+                <div className="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden border border-slate-700 hidden sm:block">
+                  <div
+                    className="bg-amber-500 h-full rounded-full transition-all duration-150"
+                    style={{ width: `${scrollProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Toggle de Altura Completa vs Scroll Interno */}
+              <button
+                type="button"
+                onClick={() => setIsMatrixFullHeight(!isMatrixFullHeight)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 border border-slate-700 cursor-pointer transition-colors"
+                title={isMatrixFullHeight ? "Fijar altura con scroll interno (recomendado)" : "Desplegar toda la tabla sin límite de altura"}
+              >
+                {isMatrixFullHeight ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Altura Fija (Scroll)</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Ver Expandida</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Barra de Scroll Horizontal Superior Sincronizada (Accesible directamente en la parte superior sin tener que bajar) */}
+          <div 
+            ref={topScrollRef}
+            onScroll={handleTopScroll}
+            className="w-full overflow-x-auto bg-slate-100 border-x border-b border-slate-300 h-3.5 cursor-ew-resize scrollbar-thin select-none"
+            title="Barra de desplazamiento superior: Arrastre aquí para moverse a la derecha/izquierda rápidamente"
+          >
+            <div style={{ width: '1680px', height: '1px' }} />
+          </div>
+
+          {/* Tabla de la Matriz con las 12 Columnas Requeridas y Columnas Inmovilizadas */}
+          <div className="bg-white rounded-b-xl border border-t-0 border-slate-200 shadow-xs overflow-hidden relative">
+            <div 
+              ref={tableContainerRef}
+              onScroll={handleTableScroll}
+              className={`overflow-x-auto overflow-y-auto ${isMatrixFullHeight ? 'max-h-none' : 'max-h-[64vh]'} scrollbar-thin`}
+              style={{ scrollBehavior: 'smooth' }}
+            >
+              <table className="w-full text-xs text-left border-collapse min-w-[1640px]">
+                <thead className="sticky top-0 z-30 bg-slate-100 text-slate-700 font-bold border-b border-slate-300 uppercase text-[10px] tracking-wider shadow-xs select-none">
+                  <tr>
+                    {/* 1. Grupo Presupuestario (Inmovilizado / Sticky Left) */}
+                    <th className="sticky top-0 left-0 z-40 bg-slate-100 px-3.5 py-3.5 whitespace-nowrap min-w-[175px] max-w-[175px] w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)] border-b border-slate-300 text-slate-800">
+                      1. Grupo Presupuestario
+                    </th>
+
+                    {/* 2. Renglón Presupuestario (Inmovilizado / Sticky Left) */}
+                    <th className="sticky top-0 left-[175px] z-40 bg-slate-100 px-3 py-3.5 whitespace-nowrap text-center min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] border-b border-slate-300 text-blue-950 font-black">
+                      2. Renglón
+                    </th>
+
+                    {/* 3. Nombre del Renglón */}
+                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[200px]">3. Nombre del Renglón</th>
+
+                    {/* 4. Presupuesto Inicial */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap min-w-[125px]">4. Presupuesto Inicial</th>
+
+                    {/* 5. Modificaciones Aprobadas */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap min-w-[145px]" title="Modificaciones Aprobadas: Incrementos (+), Disminuciones (-) y Neto">
+                      5. Modif. Aprobadas (±)
+                    </th>
+
+                    {/* 6. Presupuesto Vigente */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap bg-blue-100/70 text-blue-950 border-x border-blue-300/80 font-black min-w-[135px]" title="Presupuesto Vigente = Presupuesto Inicial + Modificaciones Aprobadas">
+                      6. Presupuesto Vigente
+                    </th>
+
+                    {/* 7. Pagado Rebaja */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap text-blue-800 min-w-[125px]">7. Pagado Rebaja</th>
+
+                    {/* 8. Disponible Real */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap min-w-[125px]">8. Disponible Real</th>
+
+                    {/* 9. Comprometido Pendiente */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap text-amber-800 min-w-[140px]">9. Comprometido Pendiente</th>
+
+                    {/* 10. Disp. Proyectado */}
+                    <th className="px-3 py-3.5 text-right whitespace-nowrap bg-emerald-100/70 text-emerald-950 font-black min-w-[135px]">10. Disp. Proyectado</th>
+
+                    {/* 11. % Usado/Comp. */}
+                    <th className="px-3 py-3.5 text-center whitespace-nowrap min-w-[110px]">11. % Usado/Comp.</th>
+
+                    {/* 12. Estatus */}
+                    <th className="px-3 py-3.5 text-center whitespace-nowrap min-w-[130px]">12. Estatus</th>
+
+                    {/* Acciones */}
+                    <th className="px-3 py-3.5 text-center whitespace-nowrap min-w-[85px]">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredLines.length === 0 ? (
+                    <tr>
+                      <td colSpan={13} className="px-6 py-12 text-center text-slate-500">
+                        <div className="max-w-md mx-auto space-y-2">
+                          <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+                          <p className="font-bold text-slate-800 text-sm">No se encontraron renglones presupuestarios</p>
+                          <p className="text-xs text-slate-500">
+                            Intente ajustar los filtros de búsqueda o use el botón "Importar Excel" para cargar la matriz oficial de la Gerencia de Informática.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLines.map((line) => {
+                      const pct = line.porcentajeUsadoComprometido || 0;
+                      let pctColor = 'bg-emerald-500';
+                      if (pct > 85) pctColor = 'bg-red-500';
+                      else if (pct > 70) pctColor = 'bg-amber-500';
+
+                      return (
+                        <tr key={line.id} className="group hover:bg-blue-50/40 transition-colors">
+                          
+                          {/* 1. Grupo Presupuestario (Inmovilizado / Sticky Left) */}
+                          <td className="sticky left-0 z-20 bg-white group-hover:bg-slate-50 transition-colors px-3.5 py-2.5 font-medium text-slate-700 min-w-[175px] max-w-[175px] w-[175px] truncate shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)] border-b border-slate-200" title={line.grupoPresupuestario}>
+                            {line.grupoPresupuestario}
+                          </td>
+
+                          {/* 2. Renglón Presupuestario (Inmovilizado / Sticky Left) */}
+                          <td className="sticky left-[175px] z-20 bg-white group-hover:bg-slate-50 transition-colors px-3 py-2.5 text-center font-mono font-black text-blue-900 text-xs min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] border-b border-slate-200">
+                            <span className="px-2 py-0.5 rounded bg-blue-50 border border-blue-200">
+                              {line.renglonPresupuestario}
+                            </span>
+                          </td>
+
+                          {/* 3. Nombre del Renglón */}
+                          <td className="px-3.5 py-2.5 font-semibold text-slate-900 max-w-[220px]" title={line.nombreRenglon}>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>{line.nombreRenglon}</span>
+                              {(line.esReferencia || line.renglonPresupuestario === '113') && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 whitespace-nowrap">
+                                  Solo Referencia (Gerencia Administrativa)
+                                </span>
+                              )}
+                            </div>
+                            {line.observaciones && (
+                              <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={line.observaciones}>
+                                {line.observaciones}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 4. Presupuesto Inicial */}
+                          <td className="px-3 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">
+                            {formatCurrency(line.presupuestoInicial)}
+                          </td>
+
+                          {/* 5. Modificaciones Aprobadas (Desglose de Positivas y Negativas) */}
+                          <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">
+                            {line.modificacionesPositivas > 0 || line.modificacionesNegativas > 0 ? (
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className={`font-bold ${line.modificacionesAprobadas > 0 ? 'text-emerald-700' : line.modificacionesAprobadas < 0 ? 'text-red-700' : 'text-slate-600'}`}>
+                                  {line.modificacionesAprobadas > 0 ? '+' : ''}{formatCurrency(line.modificacionesAprobadas)}
+                                </span>
+                                <div className="flex items-center gap-1 text-[9px]">
+                                  {line.modificacionesPositivas > 0 && (
+                                    <span className="text-emerald-700 font-semibold" title="Ampliación / Incremento Aprobado">
+                                      +{formatCurrency(line.modificacionesPositivas)}
+                                    </span>
+                                  )}
+                                  {line.modificacionesPositivas > 0 && line.modificacionesNegativas > 0 && (
+                                    <span className="text-slate-300">/</span>
+                                  )}
+                                  {line.modificacionesNegativas > 0 && (
+                                    <span className="text-rose-700 font-semibold" title="Disminución / Reducción Aprobada">
+                                      -{formatCurrency(line.modificacionesNegativas)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-medium">Q. 0.00</span>
+                            )}
+                          </td>
+
+                          {/* 6. Presupuesto Vigente */}
+                          <td className="px-3 py-2.5 text-right font-mono font-bold text-blue-950 bg-blue-50/30 whitespace-nowrap">
+                            {formatCurrency(line.presupuestoVigente)}
+                          </td>
+
+                          {/* 7. Pagado que Rebaja */}
+                          <td className="px-3 py-2.5 text-right font-mono font-medium text-blue-700 whitespace-nowrap">
+                            {formatCurrency(line.pagadoQueRebaja)}
+                          </td>
+
+                          {/* 8. Disponible Real */}
+                          <td className="px-3 py-2.5 text-right font-mono font-semibold text-slate-800 whitespace-nowrap">
+                            {formatCurrency(line.disponibleReal)}
+                          </td>
+
+                          {/* 9. Comprometido Pendiente */}
+                          <td className="px-3 py-2.5 text-right font-mono font-medium text-amber-700 whitespace-nowrap">
+                            {formatCurrency(line.comprometidoPendiente)}
+                          </td>
+
+                          {/* 10. Disponible Proyectado */}
+                          <td className={`px-3 py-2.5 text-right font-mono font-black whitespace-nowrap bg-emerald-50/20 ${line.disponibleProyectado >= 0 ? 'text-emerald-800' : 'text-red-700'}`}>
+                            {formatCurrency(line.disponibleProyectado)}
+                          </td>
+
+                          {/* 11. Porcentaje Usado/Comprometido */}
+                          <td className="px-3 py-2.5 text-center">
+                            <div className="w-full flex flex-col items-center">
+                              <span className="font-mono font-bold text-[11px] text-slate-800 mb-1">
+                                {line.porcentajeUsadoComprometido.toFixed(1)}%
+                              </span>
+                              <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div 
+                                  className={`h-full ${pctColor} rounded-full transition-all`} 
+                                  style={{ width: `${Math.min(100, Math.max(0, line.porcentajeUsadoComprometido))}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 12. Estatus si hay disponibilidad o No */}
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                              line.estatusDisponibilidad === 'Con Disponibilidad'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : line.estatusDisponibilidad === 'Alerta Disponibilidad Baja'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                : 'bg-red-100 text-red-800 border border-red-300'
+                            }`}>
+                              {line.estatusDisponibilidad === 'Con Disponibilidad' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                              {line.estatusDisponibilidad === 'Alerta Disponibilidad Baja' && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                              {line.estatusDisponibilidad === 'Sin Disponibilidad' && <XCircle className="w-3 h-3 text-red-600" />}
+                              <span>{line.estatusDisponibilidad}</span>
+                            </span>
+                          </td>
+
+                          {/* Acciones de Fila */}
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1">
+                              {/* Crear modificación directa a este renglón */}
+                              <button
+                                type="button"
+                                onClick={() => handleCreateModForLine(line.renglonPresupuestario)}
+                                className="p-1 rounded text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors"
+                                title="Registrar modificación para este renglón"
+                              >
+                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Editar Renglón */}
+                              {canEditBudget && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditLine(line)}
+                                  className="p-1 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                  title="Editar renglón"
+                                  aria-label={`Editar renglón ${line.renglonPresupuestario}`}
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Eliminar Renglón */}
+                              {canEditBudget && (
+                                <button
+                                  type="button"
+                                  onClick={() => setLineToDelete(line)}
+                                  className="p-1 rounded text-slate-400 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+                                  title={`Eliminar renglón ${line.renglonPresupuestario}`}
+                                  aria-label={`Eliminar renglón ${line.renglonPresupuestario}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+
+                {/* Pie de Totales Oficiales de la Matriz (Inmovilizado / Sticky Bottom) */}
+                <tfoot className="sticky bottom-0 z-30 bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.06)] select-none">
+                  {/* Si hay filtros activos, mostrar primero el Subtotal de los renglones filtrados */}
+                  {filteredLines.length !== budgetAvailability.length && (
+                    <tr className="bg-amber-50/90 border-b border-amber-200">
+                      <td className="sticky left-0 z-20 bg-amber-100/95 px-3.5 py-3 text-left font-black uppercase text-amber-950 tracking-wider min-w-[175px] max-w-[175px] w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)] border-b border-amber-200">
+                        Subtotal Filtrado
+                      </td>
+                      <td className="sticky left-[175px] z-20 bg-amber-100/95 px-3 py-3 text-center font-mono font-black text-amber-950 min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] border-b border-amber-200">
+                        {filteredTotals.count} R
+                      </td>
+                      <td className="px-3.5 py-3 text-left font-bold text-amber-900 text-[11px] min-w-[200px]">
+                        ({filteredTotals.count} de {totals.count} renglones filtrados)
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap min-w-[125px]">
+                        {formatCurrency(filteredTotals.totalInicial)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap min-w-[145px]">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className={`font-bold ${filteredTotals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {filteredTotals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(filteredTotals.totalModificaciones)}
+                          </span>
+                          <div className="flex items-center gap-1 text-[9px] font-semibold">
+                            <span className="text-emerald-700" title="Subtotal Ampliaciones (+) Filtradas">
+                              +{formatCurrency(filteredTotals.totalModificacionesPositivas)}
+                            </span>
+                            <span className="text-slate-300">/</span>
+                            <span className="text-rose-700" title="Subtotal Disminuciones (-) Filtradas">
+                              -{formatCurrency(filteredTotals.totalModificacionesNegativas)}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-blue-100/70 text-blue-950 min-w-[135px]">
+                        {formatCurrency(filteredTotals.totalVigente)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold text-blue-800 whitespace-nowrap min-w-[125px]">
+                        {formatCurrency(filteredTotals.totalPagado)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap text-slate-900 min-w-[125px]">
+                        {formatCurrency(filteredTotals.totalDisponibleReal)}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap min-w-[140px]">
+                        {formatCurrency(filteredTotals.totalComprometido)}
+                      </td>
+                      <td className={`px-3 py-3 text-right font-mono font-black whitespace-nowrap bg-emerald-100/70 min-w-[135px] ${filteredTotals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
+                        {formatCurrency(filteredTotals.totalDisponibleProyectado)}
+                      </td>
+                      <td className="px-3 py-3 text-center whitespace-nowrap min-w-[110px]">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <span className="font-mono font-bold text-xs text-slate-900">
+                            {filteredTotals.porcentajeGlobal.toFixed(1)}%
+                          </span>
+                          <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${
+                                filteredTotals.porcentajeGlobal > 85 ? 'bg-red-500' : 
+                                filteredTotals.porcentajeGlobal > 70 ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(0, filteredTotals.porcentajeGlobal))}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            {filteredTotals.conDisponibilidadCount} Con Saldo
+                          </span>
+                          {filteredTotals.alertaCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              {filteredTotals.alertaCount} Alerta
+                            </span>
+                          )}
+                          {filteredTotals.sinDisponibilidadCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              <XCircle className="w-2.5 h-2.5" />
+                              {filteredTotals.sinDisponibilidadCount} Agotados
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">
+                        <span className="px-2 py-1 rounded bg-amber-100 text-amber-900 font-extrabold text-[11px] border border-amber-300">
+                          {filteredTotals.count} R
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Fila Principal de Totales Consolidados Institucionales */}
+                  <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
+                    <td className="sticky left-0 z-20 bg-slate-100 px-3.5 py-3.5 text-left font-black uppercase text-slate-900 tracking-wider min-w-[175px] max-w-[175px] w-[175px] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]">
+                      TOTAL CONSOLIDADO
+                    </td>
+                    <td className="sticky left-[175px] z-20 bg-slate-100 px-3 py-3.5 text-center font-mono font-black text-blue-950 min-w-[90px] max-w-[90px] w-[90px] border-r-2 border-slate-300 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)]">
+                      {totals.count} R
+                    </td>
+                    <td className="px-3.5 py-3.5 text-left font-bold text-slate-700 text-[11px] min-w-[200px]">
+                      {filteredLines.length !== budgetAvailability.length 
+                        ? `Gran Total Institucional (${totals.count} Renglones)` 
+                        : `Gerencia de Informática (${totals.count} Renglones Institucionales)`}
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900 min-w-[125px]">
+                      {formatCurrency(totals.totalInicial)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap min-w-[145px]">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className={`font-black ${totals.totalModificaciones >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {totals.totalModificaciones >= 0 ? '+' : ''}{formatCurrency(totals.totalModificaciones)}
+                        </span>
+                        <div className="flex items-center gap-1 text-[9px] font-bold">
+                          <span className="text-emerald-700" title="Total Ampliaciones (+) Global">
+                            +{formatCurrency(totals.totalModificacionesPositivas)}
+                          </span>
+                          <span className="text-slate-300">/</span>
+                          <span className="text-rose-700" title="Total Disminuciones (-) Global">
+                            -{formatCurrency(totals.totalModificacionesNegativas)}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-blue-100/70 text-blue-950 min-w-[135px]">
+                      {formatCurrency(totals.totalVigente)}
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-mono font-bold text-blue-800 whitespace-nowrap min-w-[125px]">
+                      {formatCurrency(totals.totalPagado)}
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-mono font-bold whitespace-nowrap text-slate-900 min-w-[125px]">
+                      {formatCurrency(totals.totalDisponibleReal)}
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-mono font-bold text-amber-800 whitespace-nowrap min-w-[140px]">
+                      {formatCurrency(totals.totalComprometido)}
+                    </td>
+                    <td className={`px-3 py-3.5 text-right font-mono font-black whitespace-nowrap bg-emerald-100/70 min-w-[135px] ${totals.totalDisponibleProyectado >= 0 ? 'text-emerald-950' : 'text-red-700'}`}>
+                      {formatCurrency(totals.totalDisponibleProyectado)}
+                    </td>
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap min-w-[110px]">
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        <span className="font-mono font-bold text-xs text-slate-900">
+                          {totals.porcentajeGlobal.toFixed(1)}%
+                        </span>
+                        <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${
+                              totals.porcentajeGlobal > 85 ? 'bg-red-500' : 
+                              totals.porcentajeGlobal > 70 ? 'bg-amber-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(0, totals.porcentajeGlobal))}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap min-w-[130px]">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          {totals.conDisponibilidadCount} Con Saldo
+                        </span>
+                        {totals.alertaCount > 0 && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            {totals.alertaCount} Alerta
+                          </span>
+                        )}
+                        {totals.sinDisponibilidadCount > 0 && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                            <XCircle className="w-2.5 h-2.5" />
+                            {totals.sinDisponibilidadCount} Agotados
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5 text-center whitespace-nowrap min-w-[85px]">
+                      <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 font-extrabold text-[11px] border border-slate-300">
+                        {totals.count} R
+                      </span>
+                    </td>
+                  </tr>
+                </tfoot>
+
+              </table>
+            </div>
+          </div>
+
+          {/* Tarjeta de Resumen Rápido de Totales Consolidados al Final de la Matriz */}
+          <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 shadow-md space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Resumen Totalizado al Final de la Matriz de Disponibilidad
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    {filteredLines.length !== budgetAvailability.length 
+                      ? `Mostrando totales de ${filteredLines.length} renglones seleccionados y gran total institucional.` 
+                      : `Totalización completa de los ${totals.count} renglones presupuestarios activos.`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-mono">
+                <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                  {totals.conDisponibilidadCount} con saldo activo
+                </span>
+                {totals.sinDisponibilidadCount > 0 && (
+                  <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                    {totals.sinDisponibilidadCount} agotados
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Barra de Cuadre y Ecuación Oficial */}
+            <div className="bg-slate-800/90 rounded-xl p-3 border border-slate-700/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-xs font-mono">
+              <div className="text-slate-300 flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-400 font-sans font-bold">Ecuación de Cuadre:</span>
+                <span className="text-white font-bold">{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}</span>
+                <span className="text-emerald-400 font-bold">+{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesPositivas)}</span>
+                <span className="text-rose-400 font-bold">-{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesNegativas)}</span>
+                <span className="text-blue-400 font-bold">= {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}</span>
+              </div>
+              <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Vigente cuadra al 100% con la sumatoria de la columna
+              </div>
+            </div>
+
+            {/* Cuadrícula de Tarjetas de Totales con Separación de Modificaciones */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-1">
+              
+              {/* 4. Presupuesto Inicial */}
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">4. Presupuesto Inicial</div>
+                <div className="text-sm font-black font-mono text-white mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalInicial)}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Asignación aprobada DAF</div>
+              </div>
+
+              {/* 5a. Ampliaciones (+) */}
+              <div className="bg-emerald-950/40 p-3 rounded-xl border border-emerald-800/40">
+                <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider flex items-center justify-between">
+                  <span>5a. (+) Incrementos</span>
+                  <TrendingUp className="w-3 h-3 text-emerald-400" />
+                </div>
+                <div className="text-sm font-black font-mono text-emerald-300 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesPositivas)}>
+                  +{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesPositivas)}
+                </div>
+                <div className="text-[10px] text-emerald-400/70 mt-1">Ampliaciones que suman</div>
+              </div>
+
+              {/* 5b. Disminuciones (-) */}
+              <div className="bg-rose-950/40 p-3 rounded-xl border border-rose-800/40">
+                <div className="text-[10px] font-bold text-rose-300 uppercase tracking-wider flex items-center justify-between">
+                  <span>5b. (-) Disminuciones</span>
+                  <TrendingDown className="w-3 h-3 text-rose-400" />
+                </div>
+                <div className="text-sm font-black font-mono text-rose-300 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesNegativas)}>
+                  -{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificacionesNegativas)}
+                </div>
+                <div className="text-[10px] text-rose-400/70 mt-1">Reducciones que restan</div>
+              </div>
+
+              {/* 5c. Modif. Neta */}
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">5. Modif. Neta (±)</div>
+                <div className={`text-sm font-black font-mono mt-0.5 truncate ${(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones >= 0 ? 'text-emerald-400' : 'text-rose-400'}`} title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones)}>
+                  {(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones >= 0 ? '+' : ''}{formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalModificaciones)}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Incrementos - Disminuciones</div>
+              </div>
+
+              {/* 6. Presupuesto Vigente */}
+              <div className="bg-blue-950/60 p-3 rounded-xl border border-blue-700/60">
+                <div className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">6. Presupuesto Vigente</div>
+                <div className="text-sm font-black font-mono text-blue-200 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalVigente)}
+                </div>
+                <div className="text-[10px] text-blue-300/80 mt-1 font-semibold">Suma de columna Vigente</div>
+              </div>
+
+              {/* 7. Pagado que Rebaja */}
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">7. Pagado que Rebaja</div>
+                <div className="text-sm font-black font-mono text-blue-400 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalPagado)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalPagado)}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Rebaja disponible real</div>
+              </div>
+
+              {/* 8. Disponible Real */}
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">8. Disponible Real</div>
+                <div className="text-sm font-black font-mono text-white mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleReal)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleReal)}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Vigente - Pagado</div>
+              </div>
+
+              {/* 9. Comprometido */}
+              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">9. Comprometido</div>
+                <div className="text-sm font-black font-mono text-amber-400 mt-0.5 truncate" title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalComprometido)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalComprometido)}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Compras en trámite</div>
+              </div>
+
+              {/* 10. Disp. Proyectado */}
+              <div className="bg-emerald-950/60 p-3 rounded-xl border border-emerald-800/50 col-span-2">
+                <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">10. Disp. Proyectado</div>
+                <div className={`text-sm font-black font-mono mt-0.5 truncate ${(filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado >= 0 ? 'text-emerald-300' : 'text-rose-400'}`} title={formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado)}>
+                  {formatCurrency((filteredLines.length !== budgetAvailability.length ? filteredTotals : totals).totalDisponibleProyectado)}
+                </div>
+                <div className="text-[10px] text-emerald-400/80 mt-1">Disponible Real - Comprometido</div>
+              </div>
+
+            </div>
+
+            {/* Desglose Detallado de Renglones con Modificaciones (Incrementos vs Disminuciones) */}
+            <div className="pt-3 border-t border-slate-800">
+              <div className="text-xs font-bold text-slate-300 mb-2 flex items-center justify-between">
+                <span>Renglones con Modificaciones Aprobadas en este ejercicio:</span>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  {budgetAvailability.filter(l => (l.modificacionesPositivas || 0) > 0 || (l.modificacionesNegativas || 0) > 0).length} renglones afectados
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Lista Incrementos */}
+                <div className="bg-slate-950/60 rounded-xl p-3 border border-emerald-900/30">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                    <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      Ampliaciones / Incrementos (+):
+                    </span>
+                    <span className="text-xs font-mono font-bold text-emerald-400">
+                      +{formatCurrency(totals.totalModificacionesPositivas)}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {budgetAvailability.filter(l => (l.modificacionesPositivas || 0) > 0).length === 0 ? (
+                      <div className="text-[11px] text-slate-500 py-1">No hay ampliaciones registradas.</div>
+                    ) : (
+                      budgetAvailability.filter(l => (l.modificacionesPositivas || 0) > 0).map(l => (
+                        <div key={`pos-${l.id}`} className="flex items-center justify-between text-[11px] bg-slate-900/80 px-2 py-1 rounded">
+                          <span className="text-slate-300 truncate max-w-[200px]" title={`[${l.renglonPresupuestario}] ${l.nombreRenglon}`}>
+                            <strong className="text-emerald-400 font-mono">[{l.renglonPresupuestario}]</strong> {l.nombreRenglon}
+                          </span>
+                          <span className="font-mono font-bold text-emerald-400 shrink-0">
+                            +{formatCurrency(l.modificacionesPositivas)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Lista Disminuciones */}
+                <div className="bg-slate-950/60 rounded-xl p-3 border border-rose-900/30">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                    <span className="text-[11px] font-bold text-rose-400 flex items-center gap-1.5">
+                      <TrendingDown className="w-3.5 h-3.5" />
+                      Disminuciones / Reducciones (-):
+                    </span>
+                    <span className="text-xs font-mono font-bold text-rose-400">
+                      -{formatCurrency(totals.totalModificacionesNegativas)}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {budgetAvailability.filter(l => (l.modificacionesNegativas || 0) > 0).length === 0 ? (
+                      <div className="text-[11px] text-slate-500 py-1">No hay disminuciones registradas.</div>
+                    ) : (
+                      budgetAvailability.filter(l => (l.modificacionesNegativas || 0) > 0).map(l => (
+                        <div key={`neg-${l.id}`} className="flex items-center justify-between text-[11px] bg-slate-900/80 px-2 py-1 rounded">
+                          <span className="text-slate-300 truncate max-w-[200px]" title={`[${l.renglonPresupuestario}] ${l.nombreRenglon}`}>
+                            <strong className="text-rose-400 font-mono">[{l.renglonPresupuestario}]</strong> {l.nombreRenglon}
+                          </span>
+                          <span className="font-mono font-bold text-rose-400 shrink-0">
+                            -{formatCurrency(l.modificacionesNegativas)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBPESTAÑA CATÁLOGO OFICIAL: 39 RENGLONES INSTITUCIONALES */}
+      {subTab === 'catalogoOficial' && (
+        <BudgetOfficialCatalogView
+          onOpenLineModal={(line, prefill) => {
+            setLineToEdit(line || null);
+            setPrefillRenglon(prefill || null);
+            setIsLineModalOpen(true);
+          }}
+          onNavigateToMatrix={(renglon) => {
+            if (renglon) setSearchTerm(renglon);
+            setSubTab('matriz');
+          }}
+        />
+      )}
+      {subTab === 'modificaciones' && (
+        <div className="space-y-4">
+          
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Historial de Modificaciones Presupuestarias Aprobadas y en Trámite
+              </h3>
+              <p className="text-xs text-slate-500">
+                Las modificaciones aprobadas afectan directamente en Quetzales el presupuesto vigente y la disponibilidad de cada renglón.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { setModToEdit(null); setIsModModalOpen(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Registrar Modificación Presupuestaria</span>
+            </button>
+          </div>
+
+          {/* Tabla de Modificaciones */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3">Correlativo</th>
+                    <th className="px-3 py-3">Tipo</th>
+                    <th className="px-3 py-3">Renglón Afectado</th>
+                    <th className="px-3 py-3 text-right">Monto</th>
+                    <th className="px-3 py-3">No. Resolución / Acuerdo</th>
+                    <th className="px-3 py-3">Fecha</th>
+                    <th className="px-4 py-3 max-w-xs">Justificación</th>
+                    <th className="px-3 py-3 text-center">Estado</th>
+                    <th className="px-3 py-3 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {budgetModifications.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
+                        No hay modificaciones presupuestarias registradas aún.
+                      </td>
+                    </tr>
+                  ) : (
+                    budgetModifications.map((mod) => (
+                      <tr key={mod.id} className="hover:bg-slate-50">
+                        
+                        <td className="px-4 py-3 font-mono font-bold text-slate-800">
+                          {mod.correlativo}
+                        </td>
+
+                        <td className="px-3 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold ${
+                            mod.tipo === 'ampliacion'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : mod.tipo === 'disminucion'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {mod.tipo === 'ampliacion' && <TrendingUp className="w-3 h-3 text-emerald-600" />}
+                            {mod.tipo === 'disminucion' && <TrendingDown className="w-3 h-3 text-red-600" />}
+                            {mod.tipo === 'transferencia' && <ArrowRightLeft className="w-3 h-3 text-blue-600" />}
+                            <span className="uppercase">{mod.tipo}</span>
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3 font-semibold text-slate-900">
+                          <div>Renglón {mod.renglonPresupuestario} - {mod.nombreRenglon}</div>
+                          {mod.tipo === 'transferencia' && mod.renglonOrigenPresupuestario && (
+                            <div className="text-[10px] text-slate-500">
+                              Origen: Renglón {mod.renglonOrigenPresupuestario}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className={`px-3 py-3 text-right font-mono font-bold ${
+                          mod.tipo === 'ampliacion' ? 'text-emerald-700' : mod.tipo === 'disminucion' ? 'text-red-700' : 'text-blue-800'
+                        }`}>
+                          {mod.tipo === 'ampliacion' ? '+' : mod.tipo === 'disminucion' ? '-' : '±'}{formatCurrency(mod.monto)}
+                        </td>
+
+                        <td className="px-3 py-3 text-slate-700 font-medium">
+                          {mod.noResolucion}
+                        </td>
+
+                        <td className="px-3 py-3 font-mono text-slate-500 whitespace-nowrap">
+                          {mod.fecha}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-600 max-w-xs truncate" title={mod.descripcion}>
+                          {mod.descripcion}
+                        </td>
+
+                        <td className="px-3 py-3 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            mod.estado === 'aprobada'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : mod.estado === 'en_tramite'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {mod.estado === 'aprobada' ? 'Aprobada (Vigente)' : mod.estado === 'en_tramite' ? 'En Trámite' : 'Rechazada'}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            {mod.estado === 'en_tramite' && isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => approveBudgetModification(mod.id)}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                title="Aprobar e impactar disponibilidad inmediatamente"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>Aprobar</span>
+                              </button>
+                            )}
+
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`¿Eliminar modificación presupuestaria ${mod.correlativo}?`)) {
+                                    deleteBudgetModification(mod.id);
+                                  }
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-red-700 hover:bg-red-50 transition-colors"
+                                title="Eliminar registro"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBPESTAÑA 3: RESUMEN Y ESTADÍSTICAS POR RENGLÓN */}
+      {subTab === 'estadisticas' && (
+        <div className="space-y-6">
+          {/* Gráficos Circulares de Torta/Donut y Tarjetas de Indicadores */}
+          <BudgetStatsCharts 
+            budgetAvailability={budgetAvailability} 
+            purchases={purchases} 
+            onNavigateToReports={() => setSubTab('reportes')}
+          />
+
+          {/* Tarjetas por Grupo Presupuestario */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {groupStats.map((gs, i) => {
+              const pct = gs.vigente > 0 ? ((gs.pagado + gs.comprometido) / gs.vigente) * 100 : 0;
+              return (
+                <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900 truncate" title={gs.grupo}>
+                      {gs.grupo}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono font-bold">
+                      {gs.renglonesCount} renglones
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Presupuesto Vigente:</span>
+                      <strong className="font-mono text-slate-900">{formatCurrency(gs.vigente)}</strong>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Pagado Rebaja:</span>
+                      <span className="font-mono text-blue-700 font-semibold">{formatCurrency(gs.pagado)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Comprometido:</span>
+                      <span className="font-mono text-amber-700 font-semibold">{formatCurrency(gs.comprometido)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs pt-1 border-t border-slate-100">
+                      <span className="font-semibold text-slate-700">Disponible Proyectado:</span>
+                      <strong className={`font-mono ${gs.disponible >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {formatCurrency(gs.disponible)}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Barra de Progreso */}
+                  <div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium mb-1">
+                      <span>Porcentaje Ejecutado + Comprometido</span>
+                      <span className="font-bold text-slate-800">{pct.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full ${pct > 85 ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Gráfico y Top de Renglones con Mayor Asignación */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Top 5 Renglones con Mayor Presupuesto Vigente */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-blue-600" />
+                Renglones con Mayor Asignación Vigente
+              </h4>
+              <div className="space-y-3">
+                {[...budgetAvailability]
+                  .sort((a, b) => b.presupuestoVigente - a.presupuestoVigente)
+                  .slice(0, 5)
+                  .map((line) => {
+                    const ratio = totals.totalVigente > 0 ? (line.presupuestoVigente / totals.totalVigente) * 100 : 0;
+                    return (
+                      <div key={line.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-900">
+                            Renglón {line.renglonPresupuestario} - {line.nombreRenglon}
+                          </span>
+                          <span className="font-mono font-bold text-blue-900">
+                            {formatCurrency(line.presupuestoVigente)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <span>{line.grupoPresupuestario}</span>
+                          <span>{ratio.toFixed(1)}% del techo total</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div className="bg-blue-600 h-full rounded-full" style={{ width: `${ratio}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* Renglones en Alerta o Mayor Porcentaje de Consumo */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                Renglones con Mayor Porcentaje de Compromiso / Alerta
+              </h4>
+              <div className="space-y-3">
+                {[...budgetAvailability]
+                  .sort((a, b) => b.porcentajeUsadoComprometido - a.porcentajeUsadoComprometido)
+                  .slice(0, 5)
+                  .map((line) => (
+                    <div key={line.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-900">
+                          Renglón {line.renglonPresupuestario} - {line.nombreRenglon}
+                        </span>
+                        <span className="font-mono font-bold text-slate-800">
+                          {line.porcentajeUsadoComprometido.toFixed(1)}% Usado
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">Disponible Proyectado:</span>
+                        <strong className={`font-mono ${line.disponibleProyectado >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {formatCurrency(line.disponibleProyectado)}
+                        </strong>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${
+                            line.porcentajeUsadoComprometido > 85 ? 'bg-red-500' : 'bg-amber-500'
+                          }`} 
+                          style={{ width: `${Math.min(100, line.porcentajeUsadoComprometido)}%` }} 
+                        />
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBPESTAÑA 4: ADQUISICIONES VINCULADAS AL PRESUPUESTO (F56-e) */}
+      {subTab === 'compras' && (
+        <div className="space-y-5">
+          
+          {/* Encabezado y Accesos Directos con Cintilla Azul Oscuro */}
+          <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-5 rounded-2xl border border-blue-900 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-blue-800/40 text-blue-200 border border-blue-700/50">
+                  <ShoppingBag className="w-5 h-5 text-blue-300" />
+                </span>
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  Adquisiciones Institucionales F56-e y Control Presupuestario
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-800/60 text-blue-100 border border-blue-600/50 font-bold text-xs">
+                  {purchases.length} Registros
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-3xl">
+                En esta sección puede asignar <strong>manualmente</strong> el renglón presupuestario a cada adquisición. 
+                Los montos asignados afectan inmediatamente la <strong>Matriz de Disponibilidad</strong> como <strong>Comprometido Pendiente</strong> y disminuyen el <strong>Disponible Proyectado</strong>. 
+                Al presionar <strong>"Marcar como Pagado"</strong>, el monto se traslada a <strong>"Pagado que Rebaja"</strong>, restándose del <strong>Disponible Real</strong>.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-generar-pdf-adquisiciones-banner"
+                type="button"
+                onClick={handleExportAdquisicionesPDF}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+                title="Generar dictamen oficial en PDF de adquisiciones vinculadas con membrete y firmas institucionales"
+              >
+                <FileText className="w-4 h-4 text-blue-900" />
+                <span>Generar Reporte PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('compras')}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-900/80 hover:bg-blue-900 text-white text-xs font-bold transition-all shadow-xs cursor-pointer border border-blue-700/50"
+              >
+                <ShoppingBag className="w-4 h-4 text-blue-200" />
+                <span>Ir al Panel de Adquisiciones</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Tarjetas de Resumen de Impacto de Adquisiciones */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Adquisiciones</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-mono text-slate-900">{purchaseStats.totalCount}</span>
+                <span className="text-xs text-slate-500">trámites</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Total acumulado en el panel institucional</p>
+            </div>
+
+            <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Comprometido Pendiente</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">
+                  {purchaseStats.comprometidasCount} en proceso
+                </span>
+              </div>
+              <div className="mt-1 text-2xl font-bold font-mono text-amber-900">
+                {formatCurrency(purchaseStats.totalComprometido)}
+              </div>
+              <p className="text-[11px] text-amber-700 mt-1 font-medium">
+                Resta directamente al <span className="font-bold">Disponible Proyectado</span>
+              </p>
+            </div>
+
+            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-800">Pagado que Rebaja</span>
+                <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-[10px] font-bold">
+                  {purchaseStats.pagadasCount} pagadas
+                </span>
+              </div>
+              <div className="mt-1 text-2xl font-bold font-mono text-blue-900">
+                {formatCurrency(purchaseStats.totalPagado)}
+              </div>
+              <p className="text-[11px] text-blue-700 mt-1 font-medium">
+                Descargado y restado del <span className="font-bold">Disponible Real</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Gráficas de Círculo para Adquisiciones Vinculadas (F56-e) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-blue-600" />
+                  Proporción del Gasto (Pagado vs Comprometido)
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                  {formatCurrency(purchaseStats.totalPagado + purchaseStats.totalComprometido)}
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {comprasEstadoDonutData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={comprasEstadoDonutData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={35}
+                        outerRadius={55}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {comprasEstadoDonutData.map((entry, index) => (
+                          <Cell key={`donut-est-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any) => [formatCurrency(Number(val)), 'Monto']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span className="text-xs text-slate-400">Sin datos de compras</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                {comprasEstadoDonutData.map((d, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600 truncate max-w-[120px]">{d.name}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatCurrency(d.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <PieChartIcon className="w-3.5 h-3.5 text-purple-600" />
+                  Concentración de Compras por Renglón
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                  {filteredPurchases.length} Adquisiciones
+                </span>
+              </div>
+              <div className="h-40 relative flex items-center justify-center">
+                {comprasRenglonesDonutData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={comprasRenglonesDonutData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={35}
+                        outerRadius={55}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {comprasRenglonesDonutData.map((entry, index) => (
+                          <Cell key={`donut-reng-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(val: any) => [formatCurrency(Number(val)), 'Monto']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', padding: '6px 10px', backgroundColor: '#0f172a', color: '#fff' }}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span className="text-xs text-slate-400">Sin compras asignadas</span>
+                )}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1 border-t border-slate-100 text-[10px]">
+                {comprasRenglonesDonutData.map((d, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                    <span className="text-slate-600">{d.name} ({formatCurrency(d.value)})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros de Adquisiciones y Acciones de Visualización */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+              {/* Buscador de compras */}
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar por F56, NOG Guatecompras, descripción o proveedor..."
+                  value={purchaseSearchTerm}
+                  onChange={(e) => setPurchaseSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              {/* Filtro por Renglón */}
+              <div className="flex items-center gap-2">
+                <Filter className="w-3.5 h-3.5 text-slate-400" />
+                <select
+                  value={purchaseFilterRenglon}
+                  onChange={(e) => setPurchaseFilterRenglon(e.target.value)}
+                  className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none cursor-pointer"
+                >
+                  <option value="todos">Todos los Renglones</option>
+                  {budgetAvailability.map((line) => (
+                    <option key={line.id} value={line.renglonPresupuestario}>
+                      Renglón {line.renglonPresupuestario} ({line.nombreRenglon})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro por Estado */}
+              <select
+                value={purchaseFilterEstado}
+                onChange={(e) => setPurchaseFilterEstado(e.target.value as any)}
+                className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none cursor-pointer"
+              >
+                <option value="todos">Todos los Estados</option>
+                <option value="comprometido">Solo Comprometido Pendiente</option>
+                <option value="pagado">Solo Pagados que Rebajan</option>
+              </select>
+            </div>
+
+            {/* Selector de Modo de Columnas y Generación de PDF */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setComprasColumnMode(comprasColumnMode === 'ajustado' ? 'amplio' : 'ajustado')}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-300 transition-colors cursor-pointer"
+                title={comprasColumnMode === 'ajustado' ? 'Cambiar a Columnas Amplias tradicionales' : 'Ajustar columnas para visión completa en pantalla sin scroll excesivo'}
+              >
+                <Columns className="w-3.5 h-3.5 text-sky-600" />
+                <span>{comprasColumnMode === 'ajustado' ? 'Visión Completa Ajustada' : 'Columnas Amplias'}</span>
+              </button>
+
+              <button
+                id="btn-generar-pdf-adquisiciones-toolbar"
+                type="button"
+                onClick={handleExportAdquisicionesPDF}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                title="Descargar reporte oficial de adquisiciones vinculadas en PDF con membrete institucional"
+              >
+                <FileText className="w-3.5 h-3.5 text-sky-100" />
+                <span>Generar PDF</span>
+              </button>
+
+              <div className="text-xs text-slate-500 font-medium hidden sm:block pl-1">
+                <strong>{filteredPurchases.length}</strong> de {purchases.length}
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de Adquisiciones con Asignación Manual y Cintilla Azul Oscuro */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                {/* Cintilla del Encabezado en Color Azul Oscuro */}
+                <thead className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-blue-800 shadow-xs">
+                  {comprasColumnMode === 'ajustado' ? (
+                    <tr>
+                      <th className="px-3.5 py-3 w-40 whitespace-nowrap">No. F56-e / NOG</th>
+                      <th className="px-3.5 py-3 min-w-[180px]">Descripción de la Adquisición</th>
+                      <th className="px-3 py-3 w-56">Renglón Asignado</th>
+                      <th className="px-3 py-3 text-right w-28 whitespace-nowrap">Monto Estimado</th>
+                      <th className="px-3 py-3 text-center w-44 whitespace-nowrap">Estado / Impacto en Matriz</th>
+                      <th className="px-3 py-3 text-center w-36 whitespace-nowrap">Acción Presupuestaria</th>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th className="px-4 py-3.5 whitespace-nowrap">No. Solicitud F56</th>
+                      <th className="px-3 py-3.5 whitespace-nowrap">NOG Guatecompras</th>
+                      <th className="px-4 py-3.5 min-w-[220px]">Descripción de la Adquisición</th>
+                      <th className="px-3 py-3.5 min-w-[240px]">Renglón Asignado (Manual)</th>
+                      <th className="px-3 py-3.5 text-right whitespace-nowrap">Monto Estimado</th>
+                      <th className="px-3 py-3.5 text-center whitespace-nowrap">Estado del Gasto</th>
+                      <th className="px-3 py-3.5 text-center min-w-[190px]">Impacto en Matriz</th>
+                      <th className="px-3 py-3.5 text-center whitespace-nowrap">Acción Presupuestaria</th>
+                    </tr>
+                  )}
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredPurchases.length === 0 ? (
+                    <tr>
+                      <td colSpan={comprasColumnMode === 'ajustado' ? 6 : 8} className="px-6 py-12 text-center text-slate-400">
+                        <ShoppingBag className="w-10 h-10 mx-auto mb-2 text-slate-300 stroke-1" />
+                        <p className="font-semibold text-slate-600">No se encontraron adquisiciones con los filtros aplicados</p>
+                        <p className="text-xs mt-1">Intente cambiar el término de búsqueda o seleccione otro renglón.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPurchases.map((purchase) => {
+                      const isPaid = purchase.estadoPago === 'pagado' || purchase.estatusEvento === 'Pagada';
+                      const f56Num = purchase.f56e || purchase.f56 || purchase.numeroSolicitud || 'S/N';
+                      const nogNum = purchase.nog || purchase.nogGuatecompras || 'S/N';
+                      const currentRenglon = purchase.renglonPresupuestario || '';
+                      const matchingLine = budgetAvailability.find(l => l.renglonPresupuestario === currentRenglon);
+
+                      if (comprasColumnMode === 'ajustado') {
+                        // Modo Ajustado para Visión Completa en Pantalla
+                        return (
+                          <tr key={purchase.id} className="hover:bg-sky-50/30 transition-colors">
+                            {/* Col 1: No. F56-e y NOG juntos sin perder legibilidad */}
+                            <td className="px-3.5 py-2.5 whitespace-nowrap align-top">
+                              <div className="space-y-1">
+                                <div className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block text-[11px]">
+                                  {f56Num}
+                                </div>
+                                <div>
+                                  {nogNum !== 'S/N' && nogNum !== 'N/A' ? (
+                                    <span className="font-mono text-purple-900 bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200 text-[10px] inline-block font-semibold">
+                                      NOG: {nogNum}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 italic text-[10px]">Sin NOG</span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Col 2: Descripción y Proveedor */}
+                            <td className="px-3.5 py-2.5 align-top">
+                              <div className="font-medium text-slate-900 line-clamp-2 text-xs" title={purchase.descripcion}>
+                                {purchase.descripcion}
+                              </div>
+                              {purchase.proveedorAdjudicado && (
+                                <div className="text-[10px] text-slate-500 mt-0.5 truncate" title={purchase.proveedorAdjudicado}>
+                                  Prov: <span className="font-semibold text-slate-700">{purchase.proveedorAdjudicado}</span>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Col 3: Asignación de Renglón */}
+                            <td className="px-3 py-2.5 align-top">
+                              <div className="space-y-1">
+                                <select
+                                  id={`select-renglon-adq-${purchase.id}`}
+                                  value={currentRenglon}
+                                  onChange={(e) => handleAssignRenglon(purchase.id, e.target.value)}
+                                  className={`w-full text-xs font-semibold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:outline-none focus:ring-2 ${
+                                    currentRenglon 
+                                      ? 'bg-blue-50/70 border-blue-300 text-blue-950 focus:ring-blue-500' 
+                                      : 'bg-red-50 border-red-300 text-red-900 focus:ring-red-500'
+                                  }`}
+                                >
+                                  <option value="">-- Asignar Renglón --</option>
+                                  {budgetAvailability.map((line) => (
+                                    <option key={line.id} value={line.renglonPresupuestario}>
+                                      R-{line.renglonPresupuestario} • {line.nombreRenglon.slice(0, 32)}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                {matchingLine ? (
+                                  <div className="text-[10px] text-slate-500 flex items-center justify-between px-0.5">
+                                    <span>Saldo Proy:</span>
+                                    <strong className={`font-mono ${matchingLine.disponibleProyectado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                      {formatCurrency(matchingLine.disponibleProyectado)}
+                                    </strong>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-red-500 font-semibold px-0.5">
+                                    ⚠️ Sin renglón
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Col 4: Monto Estimado */}
+                            <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap align-top">
+                              {formatCurrency(purchase.monto)}
+                            </td>
+
+                            {/* Col 5: Estado del Gasto e Impacto en Matriz combinados para legibilidad */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap align-top">
+                              <div className="space-y-1">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isPaid 
+                                    ? 'bg-blue-100 text-blue-900 border border-blue-200' 
+                                    : 'bg-amber-100 text-amber-900 border border-amber-200'
+                                }`}>
+                                  {isPaid ? <CheckCircle2 className="w-3 h-3 text-blue-700" /> : <AlertTriangle className="w-3 h-3 text-amber-700" />}
+                                  <span>{isPaid ? 'Pagado que Rebaja' : 'Comprometido Trámite'}</span>
+                                </span>
+                                <div>
+                                  <span className={`inline-block text-[9px] font-semibold px-2 py-0.5 rounded ${
+                                    isPaid ? 'bg-blue-50 text-blue-700 border border-blue-200/60' : 'bg-amber-50 text-amber-700 border border-amber-200/60'
+                                  }`}>
+                                    {isPaid ? 'Resta Disponible Real' : 'Resta Proyectado'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Col 6: Acción Presupuestaria */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap align-top">
+                              <button
+                                type="button"
+                                id={`btn-toggle-payment-${purchase.id}`}
+                                onClick={() => togglePurchasePaymentState(purchase.id)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                                  isPaid 
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300' 
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                }`}
+                              >
+                                {isPaid ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    <span>Revertir</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Marcar Pagado</span>
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      // Modo Amplio Tradicional (8 Columnas)
+                      return (
+                        <tr key={purchase.id} className="hover:bg-blue-50/30 transition-colors">
+                          
+                          {/* No. Solicitud F56 */}
+                          <td className="px-4 py-3 font-mono font-bold text-blue-950 whitespace-nowrap">
+                            <span className="px-2 py-1 bg-slate-100 rounded border border-slate-200">
+                              {f56Num}
+                            </span>
+                          </td>
+
+                          {/* NOG Guatecompras */}
+                          <td className="px-3 py-3 font-mono text-slate-900 font-semibold whitespace-nowrap">
+                            {nogNum !== 'S/N' && nogNum !== 'N/A' ? (
+                              <span className="px-2 py-1 bg-purple-50 text-purple-900 rounded border border-purple-200">
+                                {nogNum}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">S/N</span>
+                            )}
+                          </td>
+
+                          {/* Descripción de la adquisición */}
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900 line-clamp-2" title={purchase.descripcion}>
+                              {purchase.descripcion}
+                            </div>
+                            {purchase.proveedorAdjudicado && (
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                Prov: <span className="font-semibold text-slate-700">{purchase.proveedorAdjudicado}</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Asignación Manual de Renglón */}
+                          <td className="px-3 py-3">
+                            <div className="space-y-1">
+                              <select
+                                id={`select-renglon-adq-${purchase.id}`}
+                                value={currentRenglon}
+                                onChange={(e) => handleAssignRenglon(purchase.id, e.target.value)}
+                                className={`w-full text-xs font-semibold rounded-lg px-2.5 py-1.5 border transition-all cursor-pointer focus:outline-none focus:ring-2 ${
+                                  currentRenglon 
+                                    ? 'bg-blue-50/70 border-blue-300 text-blue-950 focus:ring-blue-500' 
+                                    : 'bg-red-50 border-red-300 text-red-900 focus:ring-red-500'
+                                }`}
+                              >
+                                <option value="">-- Asignar Renglón Manualmente --</option>
+                                {budgetAvailability.map((line) => (
+                                  <option key={line.id} value={line.renglonPresupuestario}>
+                                    Renglón {line.renglonPresupuestario} - {line.nombreRenglon}
+                                  </option>
+                                ))}
+                              </select>
+
+                              {matchingLine ? (
+                                <div className="text-[10px] text-slate-500 flex items-center justify-between px-1">
+                                  <span>Disp. Proyectado:</span>
+                                  <strong className={`font-mono ${matchingLine.disponibleProyectado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                    {formatCurrency(matchingLine.disponibleProyectado)}
+                                  </strong>
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-red-500 font-semibold px-1">
+                                  ⚠️ Sin renglón asignado
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Monto Estimado */}
+                          <td className="px-3 py-3 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {formatCurrency(purchase.monto)}
+                          </td>
+
+                          {/* Estado del Gasto */}
+                          <td className="px-3 py-3 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                              isPaid 
+                                ? 'bg-blue-100 text-blue-900 border border-blue-200' 
+                                : 'bg-amber-100 text-amber-900 border border-amber-200'
+                            }`}>
+                              {isPaid ? (
+                                <>
+                                  <CheckCircle2 className="w-3 h-3 text-blue-700" />
+                                  <span>Pagado / Devengado</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertTriangle className="w-3 h-3 text-amber-700" />
+                                  <span>Comprometido en Trámite</span>
+                                </>
+                              )}
+                            </span>
+                          </td>
+
+                          {/* Impacto en la Matriz de Disponibilidad */}
+                          <td className="px-3 py-3 text-center">
+                            {isPaid ? (
+                              <div className="inline-block text-left px-2.5 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900 text-[10px]">
+                                <div className="font-bold">Afecta: Pagado que Rebaja</div>
+                                <div className="text-[9px] text-blue-700">Resta de Disponibilidad Real</div>
+                              </div>
+                            ) : (
+                              <div className="inline-block text-left px-2.5 py-1 rounded bg-amber-50 border border-amber-200 text-amber-900 text-[10px]">
+                                <div className="font-bold">Afecta: Comprometido Pendiente</div>
+                                <div className="text-[9px] text-amber-700">Resta de Disponible Proyectado</div>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Alternar Estado */}
+                          <td className="px-3 py-3 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              id={`btn-toggle-payment-${purchase.id}`}
+                              onClick={() => togglePurchasePaymentState(purchase.id)}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                                isPaid 
+                                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300' 
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                              }`}
+                            >
+                              {isPaid ? (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <span>Revertir a Comprometido</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Marcar como Pagado</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* SUBPESTAÑA 5: REPORTES Y DICTÁMENES OFICIALES */}
+      {subTab === 'reportes' && (
+        <BudgetReportsView budgetAvailability={budgetAvailability} purchases={purchases} />
+      )}
+
+      {/* MODALES */}
+      <ImportBudgetExcelModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
+
+      <BudgetModificationModal
+        isOpen={isModModalOpen}
+        onClose={() => { setIsModModalOpen(false); setModToEdit(null); }}
+        modificationToEdit={modToEdit}
+      />
+
+      <BudgetLineModal
+        isOpen={isLineModalOpen}
+        onClose={() => { 
+          setIsLineModalOpen(false); 
+          setLineToEdit(null); 
+          setPrefillRenglon(null);
+        }}
+        lineToEdit={lineToEdit}
+        prefillRenglon={prefillRenglon}
+      />
+
+      {/* Modal de Confirmación para Eliminar Renglón Individual */}
+      {lineToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-red-50/60">
+              <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
+                <Trash2 className="w-4 h-4" />
+                <span>Eliminar Renglón Presupuestario</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLineToDelete(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-600">
+              <p>
+                ¿Está seguro de eliminar el siguiente renglón de la matriz presupuestaria?
+              </p>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="font-bold text-slate-900 text-sm">
+                  R-{lineToDelete.renglonPresupuestario} • {lineToDelete.nombreRenglon}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {lineToDelete.grupoPresupuestario}
+                </div>
+                <div className="text-[11px] font-mono text-slate-700 pt-1">
+                  Presupuesto Vigente: <strong>{formatCurrency(lineToDelete.presupuestoVigente)}</strong>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Esta acción removerá permanentemente este registro y sus duplicados tanto del sistema local como de la base de datos Firestore.
+              </p>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setLineToDelete(null)}
+                className="px-3.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteBudgetLine(lineToDelete.id);
+                  setLineToDelete(null);
+                }}
+                className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Sí, Eliminar Renglón
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación para Vaciar / Eliminar Matriz Completa */}
+      {isClearMatrixModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-red-50">
+              <div className="flex items-center gap-2.5 text-red-800 font-bold text-sm">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <span>Vaciar / Eliminar Matriz Presupuestaria Completa</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClearMatrixModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-600">
+              <p className="font-semibold text-slate-800">
+                ¿Desea eliminar por completo todos los registros de la matriz presupuestaria?
+              </p>
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1">
+                <div className="font-bold">
+                  Se eliminarán los {budgetAvailability.length} renglones presupuestarios
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Esta acción vaciará por completo la matriz presupuestaria tanto a nivel local como en la base de datos Firestore. Es ideal para limpiar duplicidades y cargar nuevamente su archivo oficial de Excel desde cero.
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-500 italic">
+                Nota: Los expedientes de adquisiciones F56-e registrados permanecerán intactos, pero los renglones de la matriz se eliminarán para que pueda cargarlos limpiamente.
+              </p>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsClearMatrixModalOpen(false)}
+                disabled={isClearingMatrix}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isClearingMatrix}
+                onClick={async () => {
+                  setIsClearingMatrix(true);
+                  try {
+                    await clearAllBudgetLines();
+                    setIsClearMatrixModalOpen(false);
+                  } finally {
+                    setIsClearingMatrix(false);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isClearingMatrix ? 'Eliminando Registros...' : 'Confirmar y Eliminar Todo'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
