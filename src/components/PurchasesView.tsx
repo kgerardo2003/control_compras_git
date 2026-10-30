@@ -82,6 +82,7 @@ export const PurchasesView: React.FC = () => {
   const [itemToDelete, setItemToDelete] = useState<PurchaseRecord | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [isAdjudicadosReportModalOpen, setIsAdjudicadosReportModalOpen] = useState(false);
+  const [adjudicadosModalFilter, setAdjudicadosModalFilter] = useState<'todos' | 'adjudicados' | 'evaluacion' | 'prescindidos'>('todos');
   const [modalInitialArea, setModalInitialArea] = useState<string>('todas');
   const [modalInitialTab, setModalInitialTab] = useState<'porArea' | 'graficas' | 'configuracion'>('porArea');
   const [pdfToast, setPdfToast] = useState<string | null>(null);
@@ -577,12 +578,15 @@ export const PurchasesView: React.FC = () => {
           <button
             id="btn-report-adjudicados-evaluacion"
             type="button"
-            onClick={() => setIsAdjudicadosReportModalOpen(true)}
+            onClick={() => {
+              setAdjudicadosModalFilter('todos');
+              setIsAdjudicadosReportModalOpen(true);
+            }}
             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 hover:from-blue-900 hover:to-indigo-900 text-amber-300 text-xs font-bold border border-amber-400/50 flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-            title="Generar informe oficial de eventos adjudicados y en evaluación con membrete y logo del Organismo Judicial de Guatemala"
+            title="Generar informe oficial de eventos adjudicados, en evaluación y prescindidos con membrete y logo del Organismo Judicial de Guatemala"
           >
             <Award className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>Informe Adjudicados / Evaluación (Logo OJ)</span>
+            <span>Informe por Estatus: Evaluación / Adjudicadas / Prescindidas (PDF)</span>
           </button>
 
           <button
@@ -853,7 +857,7 @@ export const PurchasesView: React.FC = () => {
           </div>
 
           {/* Filtro Estatus */}
-          <div className="lg:col-span-2 sm:col-span-1">
+          <div className="lg:col-span-2 sm:col-span-1 flex flex-col gap-1">
             <select
               id="filter-select-estatus"
               value={filterEstatus}
@@ -865,6 +869,22 @@ export const PurchasesView: React.FC = () => {
                 <option key={st} value={st}>{st}</option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => {
+                const lower = filterEstatus.toLowerCase();
+                if (lower.includes('adjudic')) setAdjudicadosModalFilter('adjudicados');
+                else if (lower.includes('evalua') || lower.includes('proceso')) setAdjudicadosModalFilter('evaluacion');
+                else if (lower.includes('prescind') || lower.includes('anula') || lower.includes('rechaz') || lower.includes('desierto')) setAdjudicadosModalFilter('prescindidos');
+                else setAdjudicadosModalFilter('todos');
+                setIsAdjudicadosReportModalOpen(true);
+              }}
+              className="w-full px-2 py-1 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 hover:from-slate-800 hover:to-blue-900 text-amber-300 rounded text-[11px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs border border-amber-400/30"
+              title="Generar consulta e informe oficial PDF para este estatus o todos con membrete del Organismo Judicial"
+            >
+              <Award className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>Informe PDF {filterEstatus !== 'todos' ? filterEstatus : 'por Estatus'}</span>
+            </button>
           </div>
 
           {/* Filtro Área Solicitante (Sincronizado con Catálogo de Sistema y accesible para todos) */}
@@ -1908,6 +1928,7 @@ export const PurchasesView: React.FC = () => {
         onClose={() => setIsAdjudicadosReportModalOpen(false)}
         purchases={rbacPurchases}
         currentUser={currentUser}
+        initialFilter={adjudicadosModalFilter}
       />
 
       {/* Modal de Ficha Oficial de Adquisición / Dictamen Tecnológico (F56-e) */}

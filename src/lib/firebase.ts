@@ -40,8 +40,39 @@ export const FIREBASE_CONFIG = {
   firestoreDatabaseId: SHARED_FIRESTORE_DATABASE_ID
 };
 
+import { getAuth, Auth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+
 // Inicialización de Firebase App
 export const app = getApps().length > 0 ? getApp() : initializeApp(FIREBASE_CONFIG);
+
+// Instancia oficial de Firebase Auth
+export const auth: Auth = getAuth(app);
+
+// Proveedor de Google con selección forzada de cuenta
+export const googleAuthProvider = new GoogleAuthProvider();
+googleAuthProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+// Función de autenticación alternativa mediante Popup oficial de Firebase Auth
+export async function signInWithGoogleFirebasePopup(): Promise<{ success: boolean; idToken?: string; user?: any; error?: string; code?: string }> {
+  try {
+    const result = await signInWithPopup(auth, googleAuthProvider);
+    const idToken = await result.user.getIdToken();
+    return {
+      success: true,
+      idToken,
+      user: result.user
+    };
+  } catch (error: any) {
+    console.warn('[Firebase Auth] Error en signInWithPopup:', error);
+    return {
+      success: false,
+      code: error?.code || 'AUTH_POPUP_ERROR',
+      error: error?.message || 'Error en inicio de sesión con Google'
+    };
+  }
+}
 
 // Conexión autoritativa a la base de datos compartida única de Firestore (CRITICAL: todos los usuarios y clientes conectan a la misma instancia exacta)
 export const db: Firestore = getFirestore(app, SHARED_FIRESTORE_DATABASE_ID);

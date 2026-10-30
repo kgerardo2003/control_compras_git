@@ -103,9 +103,10 @@ export const ReportsView: React.FC = () => {
   // Estado para visualización de boleta oficial de dictamen individual
   const [selectedDictamenPurchase, setSelectedDictamenPurchase] = useState<PurchaseRecord | null>(null);
 
-  // Estado para modal oficial de Eventos Adjudicados y en Evaluación
+  // Estado para modal oficial de Eventos Adjudicados, en Evaluación y Prescindidos
   const [isAdjudicadosEvaluacionModalOpen, setIsAdjudicadosEvaluacionModalOpen] = useState(false);
-  const [adjudicadosEvaluacionSubFilter, setAdjudicadosEvaluacionSubFilter] = useState<'todos' | 'adjudicados' | 'evaluacion'>('todos');
+  const [adjudicadosModalFilter, setAdjudicadosModalFilter] = useState<'todos' | 'adjudicados' | 'evaluacion' | 'prescindidos'>('todos');
+  const [adjudicadosEvaluacionSubFilter, setAdjudicadosEvaluacionSubFilter] = useState<'todos' | 'adjudicados' | 'evaluacion' | 'prescindidos'>('todos');
   const [adjudicadosEvaluacionSearch, setAdjudicadosEvaluacionSearch] = useState('');
   const [showAdjudicadosEvaluacionCharts, setShowAdjudicadosEvaluacionCharts] = useState(true);
 
@@ -155,6 +156,13 @@ export const ReportsView: React.FC = () => {
     });
   }, [basePurchases]);
 
+  const prescindidos = useMemo(() => {
+    return basePurchases.filter(p => {
+      const st = (p.estatusEvento || '').toLowerCase().trim();
+      return st.includes('prescind') || st.includes('precind') || st.includes('anula') || st.includes('rechaz') || st.includes('desierto');
+    });
+  }, [basePurchases]);
+
   const evaluadosGIT = useMemo(() => {
     return basePurchases.filter(p => p.evaluadoGIT === 'Sí' || Boolean(p.fechaDictamenGIT));
   }, [basePurchases]);
@@ -171,6 +179,10 @@ export const ReportsView: React.FC = () => {
   const totalMontoEnEvaluacion = useMemo(() => {
     return enEvaluacion.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
   }, [enEvaluacion]);
+
+  const totalMontoPrescindido = useMemo(() => {
+    return prescindidos.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
+  }, [prescindidos]);
 
   const totalMontoAdjudicadosYEvaluacion = useMemo(() => {
     return adjudicadosYEvaluacion.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
@@ -200,6 +212,18 @@ export const ReportsView: React.FC = () => {
       (p.renglonPresupuestario && p.renglonPresupuestario.toLowerCase().includes(q))
     );
   }, [enEvaluacion, adjudicadosEvaluacionSearch]);
+
+  const displayPrescindidosList = useMemo(() => {
+    if (!adjudicadosEvaluacionSearch.trim()) return prescindidos;
+    const q = adjudicadosEvaluacionSearch.toLowerCase().trim();
+    return prescindidos.filter(p =>
+      (p.nog && p.nog.toLowerCase().includes(q)) ||
+      (p.f56e && p.f56e.toLowerCase().includes(q)) ||
+      (p.areaSolicitante && p.areaSolicitante.toLowerCase().includes(q)) ||
+      (p.descripcion && p.descripcion.toLowerCase().includes(q)) ||
+      (p.renglonPresupuestario && p.renglonPresupuestario.toLowerCase().includes(q))
+    );
+  }, [prescindidos, adjudicadosEvaluacionSearch]);
 
   const totalMontoDictaminado = useMemo(() => {
     return evaluadosGIT.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
@@ -1725,12 +1749,15 @@ export const ReportsView: React.FC = () => {
           <button
             id="btn-open-adjudicados-evaluacion-modal"
             type="button"
-            onClick={() => setIsAdjudicadosEvaluacionModalOpen(true)}
+            onClick={() => {
+              setAdjudicadosModalFilter('todos');
+              setIsAdjudicadosEvaluacionModalOpen(true);
+            }}
             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 hover:from-blue-900 hover:to-indigo-900 text-amber-300 border border-amber-400/50 text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-            title="Generar informe oficial de eventos adjudicados y en evaluación con membrete y logo del Organismo Judicial de Guatemala"
+            title="Generar informe oficial de eventos adjudicados, en evaluación y prescindidos con membrete y logo del Organismo Judicial de Guatemala"
           >
             <Award className="w-4 h-4 text-amber-400" />
-            <span>Informe Adjudicados y Evaluación (Logo OJ)</span>
+            <span>Informe por Estatus: Evaluación / Adjudicadas / Prescindidas (PDF)</span>
           </button>
 
           <button
@@ -3021,7 +3048,7 @@ export const ReportsView: React.FC = () => {
                       : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
                   }`}
                 >
-                  Todos ({adjudicadosYEvaluacion.length})
+                  Todos ({basePurchases.length})
                 </button>
                 <button
                   type="button"
@@ -3032,7 +3059,7 @@ export const ReportsView: React.FC = () => {
                       : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
                   }`}
                 >
-                  Solo Adjudicados ({adjudicados.length})
+                  Adjudicados ({adjudicados.length})
                 </button>
                 <button
                   type="button"
@@ -3043,7 +3070,30 @@ export const ReportsView: React.FC = () => {
                       : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
                   }`}
                 >
-                  Solo en Evaluación ({enEvaluacion.length})
+                  En Evaluación ({enEvaluacion.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdjudicadosEvaluacionSubFilter('prescindidos')}
+                  className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                    adjudicadosEvaluacionSubFilter === 'prescindidos'
+                      ? 'bg-rose-800 text-white shadow-2xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
+                  }`}
+                >
+                  Prescindidos ({prescindidos.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdjudicadosModalFilter(adjudicadosEvaluacionSubFilter);
+                    setIsAdjudicadosEvaluacionModalOpen(true);
+                  }}
+                  className="px-2.5 py-1 rounded-md font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all cursor-pointer shadow-2xs flex items-center gap-1 border border-amber-600/40"
+                  title="Generar y descargar informe oficial en PDF para el filtro seleccionado"
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-950" />
+                  <span>PDF del Informe</span>
                 </button>
               </div>
 
@@ -3207,6 +3257,82 @@ export const ReportsView: React.FC = () => {
                           </td>
                           <td className="p-2 text-right font-mono text-xs text-amber-950 whitespace-nowrap">
                             {formatQuetzales(displayEvaluacionList.reduce((acc, p) => acc + (Number(p.monto) || 0), 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SECCIÓN III: EVENTOS PRESCINDIDOS Y ANULADOS */}
+            {(adjudicadosEvaluacionSubFilter === 'todos' || adjudicadosEvaluacionSubFilter === 'prescindidos') && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b-2 border-rose-900 pb-1.5">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4 text-rose-700" />
+                    <h4 className="text-xs sm:text-sm font-black uppercase text-rose-950 tracking-wide font-serif">
+                      SECCIÓN III: EVENTOS PRESCINDIDOS Y ANULADOS ({displayPrescindidosList.length})
+                    </h4>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-rose-950 bg-rose-100 px-2.5 py-0.5 rounded border border-rose-300">
+                    Subtotal: {formatQuetzales(displayPrescindidosList.reduce((acc, p) => acc + (Number(p.monto) || 0), 0))}
+                  </span>
+                </div>
+
+                {displayPrescindidosList.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic p-3 text-center bg-slate-50 rounded border border-dashed border-slate-200">
+                    No hay eventos prescindidos o anulados registrados.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto border border-rose-200 rounded-lg">
+                    <table className="w-full text-[11px] text-left border-collapse">
+                      <thead>
+                        <tr className="bg-rose-950 text-white font-bold">
+                          <th className="p-2 text-center w-10">#</th>
+                          <th className="p-2 w-24">NOG</th>
+                          <th className="p-2 w-20">F56-e</th>
+                          <th className="p-2 w-32">Área Solicitante</th>
+                          <th className="p-2">Descripción del Requerimiento</th>
+                          <th className="p-2 text-center w-24">Estatus</th>
+                          <th className="p-2 text-center w-20">Fecha Sol.</th>
+                          <th className="p-2 text-center w-14">Renglón</th>
+                          <th className="p-2 text-right font-mono w-28">Monto (GTQ)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {displayPrescindidosList.map((p, idx) => (
+                          <tr key={p.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-rose-50/20'}>
+                            <td className="p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
+                            <td className="p-1.5 font-mono font-bold text-slate-900">{p.nog}</td>
+                            <td className="p-1.5 font-mono text-slate-700">{p.f56e}</td>
+                            <td className="p-1.5 font-semibold text-slate-800">{p.areaSolicitante}</td>
+                            <td className="p-1.5 text-slate-900 max-w-xs">{p.descripcion}</td>
+                            <td className="p-1.5 text-center font-mono font-bold text-rose-800">
+                              <span className="px-2 py-0.5 rounded text-[10px] bg-rose-100 border border-rose-300">
+                                {p.estatusEvento || 'Prescindido'}
+                              </span>
+                            </td>
+                            <td className="p-1.5 text-center font-mono text-slate-600 whitespace-nowrap">
+                              {formatDate(p.fechaSolicitud)}
+                            </td>
+                            <td className="p-1.5 text-center font-mono font-bold text-slate-800">
+                              {p.renglonPresupuestario || '158'}
+                            </td>
+                            <td className="p-1.5 text-right font-mono font-bold text-slate-950 whitespace-nowrap">
+                              {formatQuetzales(p.monto)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-rose-100 font-black text-rose-950">
+                          <td colSpan={8} className="p-2 text-right uppercase tracking-wider">
+                            TOTAL SECCIÓN III ({displayPrescindidosList.length} EVENTOS PRESCINDIDOS):
+                          </td>
+                          <td className="p-2 text-right font-mono text-xs text-rose-950 whitespace-nowrap">
+                            {formatQuetzales(displayPrescindidosList.reduce((acc, p) => acc + (Number(p.monto) || 0), 0))}
                           </td>
                         </tr>
                       </tfoot>
@@ -5872,6 +5998,7 @@ export const ReportsView: React.FC = () => {
         onClose={() => setIsAdjudicadosEvaluacionModalOpen(false)}
         purchases={basePurchases}
         currentUser={currentUser}
+        initialFilter={adjudicadosModalFilter}
       />
 
     </div>

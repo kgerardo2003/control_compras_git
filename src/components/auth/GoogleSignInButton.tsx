@@ -10,11 +10,14 @@ import {
   loadGoogleIdentityServicesScript, 
   getGoogleClientId 
 } from '../../utils/googleIdentity';
-import { ShieldCheck, AlertCircle, RefreshCw } from 'lucide-react';
+import { signInWithGoogleFirebasePopup } from '../../lib/firebase';
+import { ShieldCheck, AlertCircle, RefreshCw, HelpCircle, Key } from 'lucide-react';
+import { OAuthPolicyGuideModal } from './OAuthPolicyGuideModal';
 
 interface GoogleSignInButtonProps {
   onSuccess: (credential: string) => void;
   onError?: (error: string) => void;
+  onSelectLocalLogin?: () => void;
   isLoading?: boolean;
   disabled?: boolean;
   text?: 'signin_with' | 'continue_with';
@@ -25,6 +28,7 @@ interface GoogleSignInButtonProps {
 export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   onSuccess,
   onError,
+  onSelectLocalLogin,
   isLoading = false,
   disabled = false,
   text = 'signin_with',
@@ -34,6 +38,8 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isGisReady, setIsGisReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
+  const [isPopupLoading, setIsPopupLoading] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -85,27 +91,60 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   }, [onSuccess, onError, text, theme]);
 
   // Manejador del botón personalizado interactivo
-  const handleCustomButtonClick = () => {
-    if (disabled || isLoading) return;
+  const handleCustomButtonClick = async () => {
+    if (disabled || isLoading || isPopupLoading) return;
 
+    // Intentar primero con Firebase Auth signInWithPopup (método de mayor compatibilidad)
+    setIsPopupLoading(true);
+    try {
+      const popupResult = await signInWithGoogleFirebasePopup();
+      if (popupResult.success && popupResult.idToken) {
+        setIsPopupLoading(false);
+        onSuccess(popupResult.idToken);
+        return;
+      }
+
+      // Si Firebase Auth devolvió error específico de dominio o política
+      const errText = popupResult.error || '';
+      if (
+        popupResult.code === 'auth/unauthorized-domain' ||
+        popupResult.code === 'auth/operation-not-allowed' ||
+        errText.toLowerCase().includes('policy') ||
+        errText.toLowerCase().includes('política') ||
+        errText.toLowerCase().includes('origin_mismatch')
+      ) {
+        setIsPolicyModalOpen(true);
+      }
+    } catch (firebaseErr: any) {
+      console.warn('[GoogleSignInButton] Popup Firebase aviso:', firebaseErr);
+    }
+
+    // Si el popup de Firebase no completó, intentar invocar Google Identity Services nativo
     if (window.google?.accounts?.id) {
-      // Activar prompt de One-Tap o selector de cuentas de Google
       window.google.accounts.id.prompt((notification) => {
         if (notification.isNotDisplayed()) {
-          console.log('[GIS] Prompt no desplegado:', notification.getNotDisplayedReason());
+          const reason = notification.getNotDisplayedReason();
+          console.log('[GIS] Prompt no desplegado:', reason);
+          if (reason === 'opt_out_or_no_session' || reason === 'suppressed_by_user') {
+            setIsPolicyModalOpen(true);
+          }
         }
       });
     } else {
-      // Reintentar cargar SDK si aún no estaba listo
       loadGoogleIdentityServicesScript().then((ok) => {
         if (ok && window.google?.accounts?.id) {
           window.google.accounts.id.prompt();
         } else {
-          if (onError) onError('El servicio de Google Identity no pudo ser contactado.');
+          setIsPolicyModalOpen(true);
+          if (onError) onError('Google bloqueó la solicitud por la política OAuth 2.0 (origen no registrado).');
         }
       });
     }
+
+    setIsPopupLoading(false);
   };
+
+  const isAnyLoading = isLoading || isPopupLoading;
 
   return (
     <div className={`w-full flex flex-col items-center gap-2 ${className}`}>
@@ -114,20 +153,20 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       <div 
         ref={containerRef} 
         id="g_id_signin_button"
-        className={`w-full flex justify-center items-center ${isGisReady && !isLoading ? 'min-h-[44px]' : 'hidden'}`}
+        className={`w-full flex justify-center items-center ${isGisReady && !isAnyLoading ? 'min-h-[44px]' : 'hidden'}`}
       />
 
-      {/* Botón Personalizado Interactivo (Fallback y Estado de Carga) */}
-      {(!isGisReady || isLoading) && (
+      {/* Botón Personalizado Interactivo (Fallback, Popup de Firebase y Estado de Carga) */}
+      {(!isGisReady || isAnyLoading) && (
         <button
           id="btn-google-signin"
           type="button"
           onClick={handleCustomButtonClick}
-          disabled={disabled || isLoading}
+          disabled={disabled || isAnyLoading}
           className="w-full relative flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-800 font-bold text-xs uppercase tracking-wider border border-slate-300 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed group"
           title="Iniciar sesión con cuenta de Google verificada"
         >
-          {isLoading ? (
+          {isAnyLoading ? (
             <div className="flex items-center gap-2 text-blue-700">
               <RefreshCw className="w-4 h-4 animate-spin" />
               <span className="font-semibold text-slate-700">Validando en Firebase...</span>
@@ -161,12 +200,22 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         </button>
       )}
 
-      {initError && (
-        <div className="flex items-center gap-1.5 text-[10px] text-amber-300">
-          <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
-          <span>Servicio de Google federado operando en modo directo.</span>
-        </div>
-      )}
+      {/* Enlace de Solución Rápida para Política OAuth 2.0 */}
+      <button
+        type="button"
+        onClick={() => setIsPolicyModalOpen(true)}
+        className="text-[10px] text-amber-300 hover:text-amber-200 flex items-center gap-1 underline transition-colors cursor-pointer pt-0.5"
+      >
+        <HelpCircle className="w-3 h-3 text-amber-400 shrink-0" />
+        <span>¿Problemas con la política OAuth 2.0 de Google? Ver solución</span>
+      </button>
+
+      {/* Modal interactivo de Diagnóstico y Configuración de Google OAuth 2.0 */}
+      <OAuthPolicyGuideModal
+        isOpen={isPolicyModalOpen}
+        onClose={() => setIsPolicyModalOpen(false)}
+        onSelectLocalLogin={onSelectLocalLogin}
+      />
     </div>
   );
 };

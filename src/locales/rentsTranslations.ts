@@ -144,6 +144,39 @@ export interface RentTranslationDictionary {
   applyCycleClosingBtn: string;
   monthCloseSuccessToast: string;
   resetCycleSuccessToast: string;
+
+  // Client & Unit Entry Modal / CRUD & PDF
+  btnNewClientUnit: string;
+  editUnitBtn: string;
+  deleteUnitBtn: string;
+  exportScorecardPdfBtn: string;
+  clientUnitModalTitleNew: string;
+  clientUnitModalTitleEdit: string;
+  clientUnitModalSub: string;
+  tabGeneral: string;
+  tabFinancials: string;
+  tabMetrics: string;
+  unitNumberLabel: string;
+  locationLabel: string;
+  addressLabel: string;
+  cityLabel: string;
+  occupancyStatusLabel: string;
+  tenantNameLabel: string;
+  tenantEmailLabel: string;
+  tenantPhoneLabel: string;
+  leaseStartLabel: string;
+  leaseEndLabel: string;
+  vacantMonthsLabel: string;
+  maintenanceDaysAvgLabel: string;
+  billingAccuracyRateLabel: string;
+  tenantRetentionRateLabel: string;
+  saveUnitBtn: string;
+  deleteUnitConfirmTitle: string;
+  deleteUnitConfirmMsg: string;
+  unitSavedToast: string;
+  unitDeletedToast: string;
+  liveCalculationPreview: string;
+  scorecardPdfSuccessToast: string;
 }
 
 export const RENT_TRANSLATIONS: Record<AppLanguage, RentTranslationDictionary> = {
@@ -290,7 +323,40 @@ export const RENT_TRANSLATIONS: Record<AppLanguage, RentTranslationDictionary> =
     totalCarryoverSum: 'Total Overdue Debt to Be Carried Forward:',
     applyCycleClosingBtn: 'Execute Month Close & Advance Cycle',
     monthCloseSuccessToast: 'Month closed! Arrears carried forward and late fees applied.',
-    resetCycleSuccessToast: 'Portfolio state restored to initial baseline.'
+    resetCycleSuccessToast: 'Portfolio state restored to initial baseline.',
+
+    // Client & Unit Entry Modal / CRUD & PDF
+    btnNewClientUnit: '+ Register Tenant / Unit',
+    editUnitBtn: 'Edit Unit / Tenant',
+    deleteUnitBtn: 'Delete Unit',
+    exportScorecardPdfBtn: 'Export Scorecard PDF',
+    clientUnitModalTitleNew: 'Register New Tenant & Rental Unit',
+    clientUnitModalTitleEdit: 'Edit Tenant & Rental Unit Record',
+    clientUnitModalSub: 'Feed and update executive KPIs, scheduled rents, tenant contracts, and operational indicators',
+    tabGeneral: '1. General & Tenant Info',
+    tabFinancials: '2. Financial Ledger & Rent',
+    tabMetrics: '3. Operational KPIs',
+    unitNumberLabel: 'Unit Number / Identifier',
+    locationLabel: 'Property Location / Sede',
+    addressLabel: 'Street Address',
+    cityLabel: 'City & State',
+    occupancyStatusLabel: 'Occupancy Status',
+    tenantNameLabel: 'Primary Tenant / Client Name',
+    tenantEmailLabel: 'Tenant Email Address',
+    tenantPhoneLabel: 'Tenant Contact Phone',
+    leaseStartLabel: 'Lease Agreement Start Date',
+    leaseEndLabel: 'Lease Agreement End Date',
+    vacantMonthsLabel: 'Accumulated Vacant Months',
+    maintenanceDaysAvgLabel: 'Avg. Maintenance Resolution (Days)',
+    billingAccuracyRateLabel: 'Billing Accuracy Rate (%)',
+    tenantRetentionRateLabel: 'Tenant Retention Probability (%)',
+    saveUnitBtn: 'Save & Update Portfolio',
+    deleteUnitConfirmTitle: 'Delete Rental Unit?',
+    deleteUnitConfirmMsg: 'Are you sure you want to remove this unit and tenant record from the portfolio? This will dynamically re-calculate all 10 scorecard KPIs.',
+    unitSavedToast: 'Unit and tenant record saved successfully! Executive scorecard recalibrated.',
+    unitDeletedToast: 'Unit removed from portfolio. KPIs recalculated.',
+    liveCalculationPreview: 'Live Calculated Accounting Preview',
+    scorecardPdfSuccessToast: 'Executive Scorecard PDF generated and downloaded successfully!'
   },
   es: {
     // Navigation & Header
@@ -435,6 +501,39 @@ export const RENT_TRANSLATIONS: Record<AppLanguage, RentTranslationDictionary> =
     totalCarryoverSum: 'Monto Total de Cartera Vencida que se Arrastrará:',
     applyCycleClosingBtn: 'Cerrar Mes y Trasladar Saldos',
     monthCloseSuccessToast: '¡Mes cerrado con éxito! Saldos trasladados y recargos aplicados.',
-    resetCycleSuccessToast: 'Datos del portafolio restaurados a los valores iniciales.'
+    resetCycleSuccessToast: 'Datos del portafolio restaurados a los valores iniciales.',
+
+    // Client & Unit Entry Modal / CRUD & PDF
+    btnNewClientUnit: '+ Registrar Inquilino / Unidad',
+    editUnitBtn: 'Editar Unidad / Inquilino',
+    deleteUnitBtn: 'Eliminar Unidad',
+    exportScorecardPdfBtn: 'Exportar Scorecard PDF',
+    clientUnitModalTitleNew: 'Registrar Nuevo Inquilino y Unidad de Renta',
+    clientUnitModalTitleEdit: 'Editar Datos de Inquilino y Unidad de Renta',
+    clientUnitModalSub: 'Alimentar y calibrar los 10 KPIs ejecutivos, rentas programadas, contratos e indicadores operativos',
+    tabGeneral: '1. Datos Generales e Inquilino',
+    tabFinancials: '2. Parámetros Financieros y Renta',
+    tabMetrics: '3. Indicadores Operativos (KPIs)',
+    unitNumberLabel: 'Número / Código de Unidad',
+    locationLabel: 'Sede / Ubicación Geográfica',
+    addressLabel: 'Dirección Inmobiliaria',
+    cityLabel: 'Ciudad y Estado / Municipio',
+    occupancyStatusLabel: 'Estado de Ocupación',
+    tenantNameLabel: 'Nombre Completo del Inquilino / Cliente',
+    tenantEmailLabel: 'Correo Electrónico del Inquilino',
+    tenantPhoneLabel: 'Teléfono de Contacto',
+    leaseStartLabel: 'Fecha Inicio de Contrato',
+    leaseEndLabel: 'Fecha Vencimiento de Contrato',
+    vacantMonthsLabel: 'Meses Acumulados Vacante',
+    maintenanceDaysAvgLabel: 'Tiempo Prom. Resolución Mantenimiento (Días)',
+    billingAccuracyRateLabel: 'Tasa de Precisión en Facturación (%)',
+    tenantRetentionRateLabel: 'Tasa de Retención / Fidelización (%)',
+    saveUnitBtn: 'Guardar y Calibrar Portafolio',
+    deleteUnitConfirmTitle: '¿Eliminar Unidad del Portafolio?',
+    deleteUnitConfirmMsg: '¿Está seguro de eliminar esta unidad e inquilino del padrón? Los 10 KPIs ejecutivos y balances se recalcularán automáticamente.',
+    unitSavedToast: '¡Unidad e inquilino guardados exitosamente! Tablero de KPIs recalibrado.',
+    unitDeletedToast: 'Unidad eliminada del padrón. KPIs recalculados.',
+    liveCalculationPreview: 'Previsualización Contable en Tiempo Real',
+    scorecardPdfSuccessToast: '¡Informe ejecutivo Scorecard PDF generado y descargado exitosamente!'
   }
 };

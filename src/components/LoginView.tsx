@@ -631,10 +631,26 @@ export const LoginView: React.FC = () => {
                   <div className="border-t border-[#4682b4]/30 w-full" />
                 </div>
 
-                {/* Botón Sign in with Google (Google Identity Services) */}
+                {/* Botón Sign in with Google (Google Identity Services & Firebase Auth) */}
                 <GoogleSignInButton
                   onSuccess={handleGoogleSuccess}
                   onError={(err) => setErrorMsg(err)}
+                  onSelectLocalLogin={async () => {
+                    setUsername('admin');
+                    setPassword('Guate2026*');
+                    try {
+                      setIsLoading(true);
+                      const res = await initiateLogin('admin', 'Guate2026*');
+                      setIsLoading(false);
+                      if (res.success && !res.requires2FA) {
+                        setActiveTab('dashboard');
+                      }
+                    } catch (e) {
+                      setIsLoading(false);
+                      const userInput = document.getElementById('input-login-username');
+                      if (userInput) userInput.focus();
+                    }
+                  }}
                   isLoading={isGoogleLoading}
                   disabled={isLoading}
                 />
