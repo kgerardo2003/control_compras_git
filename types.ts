@@ -34,6 +34,35 @@ export interface User {
   totpSecret?: string; // Clave secreta Base32 para Google Authenticator
   metodoPreferido2FA?: 'email' | 'totp' | 'sms' | 'ambos'; // Método preferido para 2FA
   permisoJudicaturas?: 'total' | 'lectura' | 'denegado' | 'perfil'; // Parametrización específica de acceso y permisos al Módulo de Judicaturas
+  authMethod?: 'LOCAL_CREDENTIALS' | 'GOOGLE_SSO'; // Método de inicio de sesión utilizado
+  googlePictureUrl?: string; // Avatar de perfil proporcionado por Google
+  googleSub?: string; // Identificador federado único de Google
+}
+
+export type AuthMethodType = 'LOCAL_CREDENTIALS' | 'GOOGLE_SSO';
+
+export interface GoogleAuthPayload {
+  email: string;
+  email_verified: boolean;
+  name: string;
+  picture?: string;
+  sub: string;
+  hd?: string;
+}
+
+export interface GoogleAuthVerifyResponse {
+  success: boolean;
+  code?: 'ACCOUNT_NOT_REGISTERED' | 'ACCOUNT_INACTIVE' | 'EMAIL_NOT_VERIFIED' | 'INVALID_TOKEN' | '2FA_REQUIRED' | 'SERVER_ERROR';
+  message: string;
+  user?: User;
+  token?: string;
+  requires2FA?: boolean;
+  pendingData?: TwoFactorState;
+  googleProfile?: {
+    name: string;
+    email: string;
+    picture?: string;
+  };
 }
 
 export type TwoFactorMethod = 'email' | 'totp' | 'sms';
@@ -256,6 +285,8 @@ export interface Catalog {
 
 export type AuditAction = 
   | 'LOGIN' 
+  | 'LOGIN_GOOGLE'
+  | 'INTENTO_LOGIN_NO_AUTORIZADO'
   | 'LOGOUT' 
   | 'CREAR_COMPRA' 
   | 'EDITAR_COMPRA' 
@@ -314,7 +345,7 @@ export interface AppNotification {
   categoria: 'vencimiento_oferta' | 'cambio_estatus' | 'aprobacion_vobo' | 'nuevo_registro' | 'sistema' | 'alerta_servicio';
 }
 
-export type ActiveTab = 'dashboard' | 'compras' | 'servicios' | 'judicaturas' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo';
+export type ActiveTab = 'dashboard' | 'compras' | 'servicios' | 'judicaturas' | 'presupuesto' | 'catalogos' | 'auditoria' | 'usuarios' | 'perfiles' | 'reportes' | 'personalizacion' | 'correo' | 'rentas';
 
 // ==========================================
 // MÓDULO DE SERVICIOS CONTRATADOS (GIT)
